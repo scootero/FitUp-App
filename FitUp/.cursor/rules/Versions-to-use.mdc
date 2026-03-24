@@ -1,0 +1,10 @@
+---
+alwaysApply: true
+---
+
+- Xcode: latest stable (26.3)
+- Swift: 5  (or 5.10)
+- iOS deployment target: 18.6 minimum
+- SwiftUI: use iOS 18+ APIs freely
+- Supabase Swift SDK: latest
+- RevenueCat SDK: latest
