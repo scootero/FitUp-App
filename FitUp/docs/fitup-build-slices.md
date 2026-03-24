@@ -1,6 +1,6 @@
 # FitUp — Build Slices
 *Implementation guide. Reference fitup-docs-pack.md and FitUp_Final_Mockup.jsx for all decisions.*
-*Build in order. Do not begin a slice until the previous passes all acceptance criteria.*
+*Build in order. Do not begin a slice until I ask you to, and only build the slice I ask you to*
 
 ---
 
@@ -8,7 +8,7 @@
 
 1. Work through slices **in exact order** — each depends on the previous
 2. For every slice, use the **Cursor Execution Template** at the bottom
-3. Commit after each slice passes all acceptance criteria before moving on
+3. Commit after each slice passes all acceptance criteria
 4. The JSX file at `FitUp-App/FitUp/docs/mockups/FitUp_Final_Mockup.jsx` is the visual source of truth — read the relevant components **before** implementing any UI
 5. All `[MOCK DATA]` sections in the JSX must be replaced with real HealthKit or backend data
 6. Every slice must wire real data — do not stop at working mock UI
