@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct FitUpApp: App {
+    init() {
+        AppThirdPartyConfig.configureIfPossible()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

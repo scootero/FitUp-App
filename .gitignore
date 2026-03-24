@@ -1,2 +1,8 @@
 .DS_Store
 **/.DS_Store
+
+# Local API keys (copy from Config/Secrets.example.xcconfig)
+FitUp/FitUp/Config/Secrets.xcconfig
+
+# Xcode user-specific
+**/xcuserdata/
