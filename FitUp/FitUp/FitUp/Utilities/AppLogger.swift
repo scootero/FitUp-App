@@ -21,6 +21,7 @@ enum AppLogger {
         category: String,
         level: LogLevel = .info,
         message: String,
+        userId: UUID? = nil,
         metadata: [String: String]? = nil
     ) {
         let line = "[\(category)] \(message)"
@@ -34,19 +35,27 @@ enum AppLogger {
         guard let client = SupabaseProvider.client else { return }
 
         Task {
-            await insertRemote(client: client, category: category, level: level, message: message, metadata: metadata)
+            await insertRemote(
+                client: client,
+                userId: userId,
+                category: category,
+                level: level,
+                message: message,
+                metadata: metadata
+            )
         }
     }
 
     private static func insertRemote(
         client: SupabaseClient,
+        userId: UUID?,
         category: String,
         level: LogLevel,
         message: String,
         metadata: [String: String]?
     ) async {
         let row = AppLogInsert(
-            userId: nil,
+            userId: userId,
             category: category,
             level: level.rawValue,
             message: message,

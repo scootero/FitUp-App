@@ -4,8 +4,8 @@ write clean, production-quality SwiftUI code, make smart
 architectural decisions, and always follow the project's 
 documented rules rather than inventing your own patterns.
 
-I'm building an iOS app called FitUp. The Xcode project already 
-exists — do NOT create a new one.
+were building an iOS app called FitUp. The Xcode project already 
+exists and we are working through the build slices one by one. 
 
 Read these three files completely before doing anything:
   FitUp-App/FitUp/docs/fitup-docs-pack.md
@@ -16,24 +16,20 @@ Key rules:
 - Xcode project: FitUp-App/FitUp/FitUp.xcodeproj
 - New Swift files go inside: FitUp-App/FitUp/FitUp/FitUp/
 - Do NOT restructure or move anything
-- iOS 17.0 minimum deployment target
+- iOS 18.2 minimum deployment target
 - Swift 5.10, SwiftUI only
-- Xcode 16.x
+- Xcode 26.3
 - All design values come from the T object in FitUp_Final_Mockup.jsx
 
-After each file you create, wait for my confirmation before 
-creating the next one.
 
-After a slice is fully complete and the app builds cleanly:
-- Run: git add -A
-- Run: git commit -m "Slice [N] — [slice name]"
 - Append a summary entry to: 
   FitUp-App/FitUp/docs/slice-tracker.md
   Format: slice number, date, files created/modified, 
   Supabase changes, any notes
 
-I will tell you which slice to implement. Do not move to the 
+I will tell you which slice to implement (Do only the slice I tell you, not do anything else ). Do not move to the 
 next slice until I explicitly say so.
 
-Confirm you have read all three files, then wait for my 
-instruction.
+read all three files, 
+
+and the build the  slice 2 only 

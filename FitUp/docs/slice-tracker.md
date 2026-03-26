@@ -22,6 +22,25 @@ Notes:
 - Do not use `.gitkeep` inside the synced `FitUp/` folder — Xcode copies them all to `.gitkeep` in the app bundle and fails the build.
 - Copy `Config/Secrets.example.xcconfig` → `Config/Secrets.xcconfig` for local keys.
 
+## Slice 2 — Onboarding
+Date: 2026-03-26
+Status: Complete
+Files created:
+- `FitUp/FitUp/FitUp/Services/NotificationService.swift`
+- `FitUp/FitUp/FitUp/Repositories/MatchSearchRepository.swift`
+- `FitUp/FitUp/FitUp/ViewModels/OnboardingViewModel.swift`
+- `FitUp/FitUp/FitUp/Views/Onboarding/OnboardingView.swift`, `TutorialCardsView.swift`, `PermissionExplainerView.swift`, `FindFirstMatchView.swift`
+Files modified:
+- `FitUp/FitUp/FitUp/Services/HealthKitService.swift`
+- `FitUp/FitUp/FitUp/ViewModels/SessionStore.swift`
+- `FitUp/FitUp/FitUp/ContentView.swift`
+Supabase changes:
+- No schema changes. Added client write to `match_search_requests` for onboarding first-match flow (`metric_type='steps'`, `duration_days=1`, `start_mode='today'`, optional `creator_baseline`).
+Notes:
+- Onboarding now follows: Tutorial → Health explainer + prompt → Notification explainer + prompt → Find First Match.
+- `HealthKitService` now computes real 7-day step average via `HKStatisticsCollectionQuery`.
+- Verified build success with `xcodebuild` (iOS Simulator destination). If insert fails in app, verify RLS permits authenticated user inserts into `match_search_requests` for their own `creator_id`.
+
 ## Slice [N] — [name]
 Date: [date]
 Status: Complete

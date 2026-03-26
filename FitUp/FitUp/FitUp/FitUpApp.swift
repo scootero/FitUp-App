@@ -9,6 +9,8 @@ import SwiftUI
 
 @main
 struct FitUpApp: App {
+    @StateObject private var sessionStore = SessionStore()
+
     init() {
         AppThirdPartyConfig.configureIfPossible()
     }
@@ -16,6 +18,7 @@ struct FitUpApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(sessionStore)
         }
     }
 }
