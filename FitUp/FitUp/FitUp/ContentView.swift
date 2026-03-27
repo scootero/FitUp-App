@@ -22,12 +22,9 @@ struct ContentView: View {
             } else if !sessionStore.isOnboardingComplete {
                 OnboardingView()
             } else {
-                HomePlaceholderView(
+                RootShellView(
                     profile: sessionStore.currentProfile,
-                    showSearchingCard: sessionStore.showSearchingCardOnHome,
-                    onSignOut: {
-                        Task { await sessionStore.signOut() }
-                    }
+                    showOnboardingSearching: sessionStore.showSearchingCardOnHome
                 )
             }
         }
@@ -35,51 +32,149 @@ struct ContentView: View {
     }
 }
 
-private struct HomePlaceholderView: View {
+private struct RootShellView: View {
+    @EnvironmentObject private var sessionStore: SessionStore
+
     let profile: Profile?
-    let showSearchingCard: Bool
-    var onSignOut: () -> Void
+    let showOnboardingSearching: Bool
+
+    @State private var selectedTab: MainTab = .home
+    @State private var challengeLaunchContext: ChallengeLaunchContext?
+    @State private var matchDetailsContext: MatchDetailsContext?
 
     var body: some View {
-        VStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Home Placeholder")
-                    .font(FitUpFont.display(24, weight: .black))
+        ZStack {
+            BackgroundGradientView()
+            currentTabContent
+        }
+        .safeAreaInset(edge: .bottom) {
+            FloatingTabBar(selected: $selectedTab) {
+                challengeLaunchContext = .battleEntry
+            }
+        }
+        .fullScreenCover(item: $challengeLaunchContext) { launchContext in
+            ChallengeFlowView(
+                profile: profile,
+                launchContext: launchContext
+            ) {
+                challengeLaunchContext = nil
+            }
+        }
+        .fullScreenCover(item: $matchDetailsContext) { context in
+            MatchDetailsView(
+                matchId: context.matchId,
+                profile: profile
+            ) {
+                matchDetailsContext = nil
+            } onRematch: { launchContext in
+                matchDetailsContext = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    challengeLaunchContext = launchContext
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var currentTabContent: some View {
+        switch selectedTab {
+        case .home:
+            HomeView(
+                profile: profile,
+                showOnboardingSearching: showOnboardingSearching,
+                onOpenChallenge: { prefilledOpponent in
+                    if let prefilledOpponent {
+                        challengeLaunchContext = .prefilled(opponent: prefilledOpponent)
+                    } else {
+                        challengeLaunchContext = .battleEntry
+                    }
+                },
+                onOpenMatchDetails: { matchId, _ in
+                    matchDetailsContext = MatchDetailsContext(matchId: matchId)
+                }
+            )
+        case .activity:
+            TabPlaceholderView(
+                title: "Activity",
+                subtitle: "Slice 10 will replace this placeholder."
+            )
+        case .health:
+            TabPlaceholderView(
+                title: "Health",
+                subtitle: "Slice 12 will replace this placeholder."
+            )
+        case .profile:
+            ProfilePlaceholderView(
+                profile: profile,
+                onSignOut: {
+                    Task { await sessionStore.signOut() }
+                }
+            )
+        case .ranks:
+            TabPlaceholderView(
+                title: "Ranks",
+                subtitle: "Slice 11 will replace this placeholder."
+            )
+        }
+    }
+}
+
+private struct TabPlaceholderView: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(title)
+                    .font(FitUpFont.display(28, weight: .black))
                     .foregroundStyle(FitUpColors.Text.primary)
-                Text("Signed in as \(profile?.displayName ?? "Unknown user")")
+                Text(subtitle)
                     .font(FitUpFont.body(14, weight: .medium))
                     .foregroundStyle(FitUpColors.Text.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            if showSearchingCard {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(FitUpColors.Neon.blue)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Finding opponent...")
-                            .font(FitUpFont.body(14, weight: .bold))
-                            .foregroundStyle(FitUpColors.Text.primary)
-                        Text("Steps · 1 day · Start today")
-                            .font(FitUpFont.body(12, weight: .medium))
-                            .foregroundStyle(FitUpColors.Text.secondary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(14)
-                .glassCard(.pending)
-            }
-
-            Button("Sign Out") {
-                onSignOut()
-            }
-            .ghostButton(color: FitUpColors.Neon.pink)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .glassCard(.base)
+            .padding(.horizontal, 16)
+            .padding(.top, 20)
         }
-        .padding(20)
-        .glassCard(.win)
-        .padding(.horizontal, 16)
     }
+}
+
+private struct ProfilePlaceholderView: View {
+    let profile: Profile?
+    var onSignOut: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                Text("Profile")
+                    .font(FitUpFont.display(28, weight: .black))
+                    .foregroundStyle(FitUpColors.Text.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Signed in as \(profile?.displayName ?? "Unknown user")")
+                    .font(FitUpFont.body(14, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Sign Out") {
+                    onSignOut()
+                }
+                .ghostButton(color: FitUpColors.Neon.pink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(20)
+            .glassCard(.base)
+            .padding(.horizontal, 16)
+            .padding(.top, 20)
+        }
+    }
+}
+
+private struct MatchDetailsContext: Identifiable {
+    let matchId: UUID
+
+    var id: UUID { matchId }
 }
 
 #Preview {

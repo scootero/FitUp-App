@@ -2,11 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>REVENUECAT_API_KEY</key>
-	<string>$(REVENUECAT_API_KEY)</string>
-	<key>SUPABASE_ANON_KEY</key>
-	<string>$(SUPABASE_ANON_KEY)</string>
-	<key>SUPABASE_URL</key>
-	<string>$(SUPABASE_URL)</string>
+<key>REVENUECAT_API_KEY</key>
+<string>$(REVENUECAT_API_KEY)</string>
+<key>SUPABASE_ANON_KEY</key>
+<string>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV1c2hlamJpem1seHp4b25rdWtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NTQxMjEsImV4cCI6MjA5MDEzMDEyMX0.Ofoo1Kb8NaAaH2sECFen3U6aQ2QREoB_U2lqf3OKnWQ</string>
+<key>SUPABASE_URL</key>
+<string>https://uushejbizmlxzxonkuki.supabase.co</string>
 </dict>
 </plist>
