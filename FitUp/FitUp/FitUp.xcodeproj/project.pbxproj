@@ -9,7 +9,33 @@
 /* Begin PBXBuildFile section */
 		A1B1C1D12E72E372000CB585 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D12E72E372000CB583 /* Supabase */; };
 		A1B1C1D12E72E372000CB586 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D12E72E372000CB584 /* RevenueCat */; };
+		E3C4B5A62F72E372000CB599 /* FitUpWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E3C4B5A62F72E372000CB5A2 /* FitUpActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C4B5A62F72E372000CB5A1 /* FitUpActivityAttributes.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		E3C4B5A62F72E372000CB59B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D2B71D922F72E372000CB580 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E3C4B5A62F72E372000CB595;
+			remoteInfo = FitUpWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		E3C4B5A62F72E372000CB59A /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				E3C4B5A62F72E372000CB599 /* FitUpWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		D2B71D9A2F72E372000CB580 /* FitUp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FitUp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -17,12 +43,19 @@
 		D2B71DAA2F72E373000CB580 /* Secrets.example.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.example.xcconfig; sourceTree = "<group>"; };
 		D2B71DAC2F72E373000CB580 /* Info-Additional.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-Additional.plist"; sourceTree = "<group>"; };
 		D2B71DAD2F72E373000CB580 /* FitUp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FitUp.entitlements; sourceTree = "<group>"; };
+		E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FitUpWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E3C4B5A62F72E372000CB5A1 /* FitUpActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FitUpActivityAttributes.swift; path = FitUp/Views/LiveActivity/FitUpActivityAttributes.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D2B71D9C2F72E372000CB580 /* FitUp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = FitUp;
+			sourceTree = "<group>";
+		};
+		E3C4B5A62F72E372000CB591 /* FitUpWidgetExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FitUpWidgetExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -37,6 +70,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E3C4B5A62F72E372000CB593 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -44,6 +84,7 @@
 			isa = PBXGroup;
 			children = (
 				D2B71D9C2F72E372000CB580 /* FitUp */,
+				E3C4B5A62F72E372000CB591 /* FitUpWidgetExtension */,
 				D2B71DA82F72E373000CB580 /* Config */,
 				D2B71D9B2F72E372000CB580 /* Products */,
 			);
@@ -53,6 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				D2B71D9A2F72E372000CB580 /* FitUp.app */,
+				E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -64,6 +106,7 @@
 				D2B71DAA2F72E373000CB580 /* Secrets.example.xcconfig */,
 				D2B71DAC2F72E373000CB580 /* Info-Additional.plist */,
 				D2B71DAD2F72E373000CB580 /* FitUp.entitlements */,
+				E3C4B5A62F72E372000CB5A1 /* FitUpActivityAttributes.swift */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -78,10 +121,12 @@
 				D2B71D962F72E372000CB580 /* Sources */,
 				D2B71D972F72E372000CB580 /* Frameworks */,
 				D2B71D982F72E372000CB580 /* Resources */,
+				E3C4B5A62F72E372000CB59A /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				E3C4B5A62F72E372000CB59C /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				D2B71D9C2F72E372000CB580 /* FitUp */,
@@ -95,6 +140,26 @@
 			productReference = D2B71D9A2F72E372000CB580 /* FitUp.app */;
 			productType = "com.apple.product-type.application";
 		};
+		E3C4B5A62F72E372000CB595 /* FitUpWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E3C4B5A62F72E372000CB598 /* Build configuration list for PBXNativeTarget "FitUpWidgetExtension" */;
+			buildPhases = (
+				E3C4B5A62F72E372000CB592 /* Sources */,
+				E3C4B5A62F72E372000CB593 /* Frameworks */,
+				E3C4B5A62F72E372000CB594 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E3C4B5A62F72E372000CB591 /* FitUpWidgetExtension */,
+			);
+			name = FitUpWidgetExtension;
+			productName = FitUpWidgetExtension;
+			productReference = E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -106,6 +171,9 @@
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					D2B71D992F72E372000CB580 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					E3C4B5A62F72E372000CB595 = {
 						CreatedOnToolsVersion = 26.3;
 					};
 				};
@@ -129,12 +197,20 @@
 			projectRoot = "";
 			targets = (
 				D2B71D992F72E372000CB580 /* FitUp */,
+				E3C4B5A62F72E372000CB595 /* FitUpWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		D2B71D982F72E372000CB580 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E3C4B5A62F72E372000CB594 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -151,7 +227,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E3C4B5A62F72E372000CB592 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E3C4B5A62F72E372000CB5A2 /* FitUpActivityAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E3C4B5A62F72E372000CB59C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E3C4B5A62F72E372000CB595 /* FitUpWidgetExtension */;
+			targetProxy = E3C4B5A62F72E372000CB59B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		D2B71DA32F72E373000CB580 /* Debug */ = {
@@ -357,6 +449,58 @@
 			};
 			name = Release;
 		};
+		E3C4B5A62F72E372000CB596 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = BLAUCQ8H26;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ScottOliver.FitUp.FitUpWidgetExtension;
+				PRODUCT_NAME = FitUpWidgetExtension;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E3C4B5A62F72E372000CB597 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = BLAUCQ8H26;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ScottOliver.FitUp.FitUpWidgetExtension;
+				PRODUCT_NAME = FitUpWidgetExtension;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -374,6 +518,15 @@
 			buildConfigurations = (
 				D2B71DA62F72E373000CB580 /* Debug */,
 				D2B71DA72F72E373000CB580 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E3C4B5A62F72E372000CB598 /* Build configuration list for PBXNativeTarget "FitUpWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E3C4B5A62F72E372000CB596 /* Debug */,
+				E3C4B5A62F72E372000CB597 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

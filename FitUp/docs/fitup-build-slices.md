@@ -257,6 +257,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] Cancel tap updates database row and removes card from UI
 - [ ] Accept tap writes `accepted_at`, card updates to active when backend confirms
 - [ ] Decline tap removes card from pending section
+
 - [ ] Realtime updates: opening a search on another device appears in Home without manual refresh
 - [ ] Background gradient visible behind all content
 

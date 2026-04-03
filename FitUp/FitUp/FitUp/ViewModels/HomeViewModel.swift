@@ -26,12 +26,14 @@ final class HomeViewModel: ObservableObject {
 
     private let repository = HomeRepository()
     private var userId: UUID?
+    private var myDisplayName: String = "You"
     private var waitTimerCancellable: AnyCancellable?
     private var shouldShowOnboardingPlaceholder = false
     private var hasStartedRealtime = false
 
     func start(profile: Profile?, showOnboardingSearching: Bool) {
         guard let profileId = profile?.id else { return }
+        myDisplayName = profile?.displayName ?? "You"
 
         if userId != profileId {
             stop()
@@ -78,6 +80,32 @@ final class HomeViewModel: ObservableObject {
         activeMatches = snapshot.activeMatches
         pendingMatches = snapshot.pendingMatches
         discoverUsers = snapshot.discoverUsers
+
+        syncLiveActivity()
+    }
+
+    // MARK: - Live Activity sync
+
+    private func syncLiveActivity() {
+        guard let firstActive = activeMatches.first,
+              let userId else {
+            LiveActivityCoordinator.shared.endActivity()
+            return
+        }
+
+        let currentDay = firstActive.dayPips.first(where: { $0.state == .today })?.dayNumber ?? 1
+        LiveActivityCoordinator.shared.startIfNeeded(
+            matchId: firstActive.id,
+            myDisplayName: myDisplayName,
+            opponentDisplayName: firstActive.opponent.displayName,
+            metricType: firstActive.metricType,
+            durationDays: firstActive.durationDays,
+            myTotal: firstActive.myToday,
+            opponentTotal: firstActive.theirToday,
+            myScore: firstActive.myScore,
+            theirScore: firstActive.theirScore,
+            dayNumber: currentDay
+        )
     }
 
     func cancelSearch(_ searchId: UUID) async {

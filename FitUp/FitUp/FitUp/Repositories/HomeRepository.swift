@@ -83,8 +83,12 @@ struct HomeDiscoverUser: Identifiable, Equatable {
 }
 
 final class HomeRepository {
-    private var matchesStreamTask: Task<Void, Never>?
-    private var searchStreamTask: Task<Void, Never>?
+    private var realtimeChannel: RealtimeChannelV2?
+    private var matchDayUpdateTask: Task<Void, Never>?
+    private var matchDayInsertTask: Task<Void, Never>?
+    private var matchStateTask: Task<Void, Never>?
+    private var searchUpdateTask: Task<Void, Never>?
+    private var searchInsertTask: Task<Void, Never>?
 
     deinit {
         stopRealtimeSubscriptions()
@@ -116,6 +120,11 @@ final class HomeRepository {
             pendingMatches: pendingRows,
             discoverUsers: discoverRows
         )
+    }
+
+    func loadActiveMatches(for currentUserId: UUID) async -> [HomeActiveMatch] {
+        let (activeMatches, _) = await fetchActiveAndPendingCards(currentUserId: currentUserId)
+        return activeMatches
     }
 
     // MARK: Actions
@@ -169,30 +178,105 @@ final class HomeRepository {
         onChange: @escaping @Sendable () async -> Void
     ) {
         stopRealtimeSubscriptions()
-        guard SupabaseProvider.client != nil else { return }
+        guard let client = SupabaseProvider.client else { return }
 
-        // Poll-based updates keep Home fresh until full table-change streams are wired.
-        matchesStreamTask = Task {
-            while !Task.isCancelled {
-                await onChange()
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+        let channel = client.channel("home-live-\(currentUserId.uuidString)")
+        realtimeChannel = channel
+
+        let matchDayUpdateStream = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "match_day_participants"
+        )
+        let matchDayInsertStream = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "match_day_participants"
+        )
+        let matchStateUpdateStream = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "matches"
+        )
+        let searchUpdateStream = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "match_search_requests",
+            filter: .eq("creator_id", value: currentUserId)
+        )
+        let searchInsertStream = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "match_search_requests",
+            filter: .eq("creator_id", value: currentUserId)
+        )
+
+        Task {
+            do {
+                try await channel.subscribeWithError()
+                AppLogger.log(
+                    category: "match_state",
+                    level: .debug,
+                    message: "home realtime subscribed",
+                    metadata: ["user_id": currentUserId.uuidString]
+                )
+            } catch {
+                AppLogger.log(
+                    category: "match_state",
+                    level: .warning,
+                    message: "home realtime subscribe failed",
+                    metadata: ["error": error.localizedDescription]
+                )
             }
         }
 
-        searchStreamTask = Task {
-            while !Task.isCancelled {
-                _ = currentUserId
+        matchDayUpdateTask = Task {
+            for await _ in matchDayUpdateStream {
                 await onChange()
-                try? await Task.sleep(nanoseconds: 4_000_000_000)
+            }
+        }
+        matchDayInsertTask = Task {
+            for await _ in matchDayInsertStream {
+                await onChange()
+            }
+        }
+        matchStateTask = Task {
+            for await _ in matchStateUpdateStream {
+                await onChange()
+            }
+        }
+        searchUpdateTask = Task {
+            for await _ in searchUpdateStream {
+                await onChange()
+            }
+        }
+        searchInsertTask = Task {
+            for await _ in searchInsertStream {
+                await onChange()
             }
         }
     }
 
     func stopRealtimeSubscriptions() {
-        matchesStreamTask?.cancel()
-        matchesStreamTask = nil
-        searchStreamTask?.cancel()
-        searchStreamTask = nil
+        matchDayUpdateTask?.cancel()
+        matchDayUpdateTask = nil
+        matchDayInsertTask?.cancel()
+        matchDayInsertTask = nil
+        matchStateTask?.cancel()
+        matchStateTask = nil
+        searchUpdateTask?.cancel()
+        searchUpdateTask = nil
+        searchInsertTask?.cancel()
+        searchInsertTask = nil
+
+        guard let channel = realtimeChannel else { return }
+        realtimeChannel = nil
+
+        guard let client = SupabaseProvider.client else { return }
+        Task {
+            await client.removeChannel(channel)
+            AppLogger.log(category: "match_state", level: .debug, message: "home realtime unsubscribed")
+        }
     }
 
     // MARK: Load Searching
@@ -419,6 +503,7 @@ final class HomeRepository {
             guard let dayNumber = int(from: row["day_number"]) else { return nil }
             return (dayNumber, row)
         })
+        let todayString = Self.calendarFormatter.string(from: Date())
 
         return (1...max(durationDays, 1)).map { dayNumber in
             guard let row = byNumber[dayNumber] else {
@@ -433,7 +518,11 @@ final class HomeRepository {
                 }
                 return HomeDayPip(dayNumber: dayNumber, state: .lost)
             }
-            return HomeDayPip(dayNumber: dayNumber, state: .today)
+
+            if string(from: row["calendar_date"]) == todayString {
+                return HomeDayPip(dayNumber: dayNumber, state: .today)
+            }
+            return HomeDayPip(dayNumber: dayNumber, state: .future)
         }
     }
 

@@ -617,7 +617,7 @@ In your Supabase dashboard:
 
 You only need this if testing Sign in with Apple. Skip for email-only testing.
 
-1. In Apple Developer → **Identifiers**, create an App ID for FitUp with Sign in with Apple enabled
+1. In, create an App ID for FitUp with Sign in with Apple enabled
 2. Create a **Services ID** (used as the OAuth client ID)
 3. Go to **Keys** → create a new key with Sign in with Apple enabled
 4. Download the `.p8` private key — you can only download it once
@@ -670,15 +670,168 @@ Add this to your Slice 4 prompt:
 
 ## What Comes Later (Not Needed Yet)
 
-These are backend features for later slices. Do not set them up now:
+These are backend features for later slices. Do not set them up until you reach that slice:
 
 | Feature | When needed |
 |---|---|
-| Edge Functions (matchmaking-pairing, finalize-match-day, etc.) | Slices 8–9 |
-| pg_cron (day cutoff check, morning checkins) | Slice 8 |
-| APNs push notification setup | Slice 9 |
+| `matchmaking-pairing` / `on-all-accepted` + `slice4-matchmaking.sql` | Slice 4 — [Matchmaking backend](#slice-4--matchmaking-edge-functions--database) (run after Slice 8 Vault secrets exist) |
+| APNs push notification sending (beyond queue rows) | Slice 9 |
 | Realtime ActivityKit push | Slice 9 |
 | RevenueCat product/entitlement setup | Slice 13 |
+
+**Slice 8** (day finalization) uses Edge Functions + SQL in-repo — see the next section when you deploy Slice 8.
+
+---
+
+## Slice 8 — Day finalization (Edge Functions + database)
+
+Source files live at repo root: `supabase/functions/` and `supabase/sql/slice8-finalization.sql`.
+
+### 1. Deploy Edge Functions
+
+From the repo root (`FitUp-App/`), with [Supabase CLI](https://supabase.com/docs/guides/cli) logged in and linked to your project:
+
+```bash
+supabase functions deploy finalize-match-day
+supabase functions deploy complete-match
+supabase functions deploy update-leaderboard
+supabase functions deploy dispatch-notification
+```
+
+Supabase injects `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` into the Edge runtime; the shared module `supabase/functions/_shared/supabase.ts` requires both.
+
+**Behavior (summary):**
+
+| Function | Role |
+|---|---|
+| `finalize-match-day` | Input: `{ "match_day_id": "<uuid>" }`. Copies `metric_total` → `finalized_value`, sets `match_days` winner/void/finalized, invokes `update-leaderboard`, may invoke `complete-match`, queues notifications via `dispatch-notification`. |
+| `complete-match` | Sets `matches.state = 'completed'` and `completed_at` when all days are finalized. |
+| `update-leaderboard` | Adds weekly points per docs (day win, match win, streak cap, steps bonus cap) into `leaderboard_entries`. |
+| `dispatch-notification` | Inserts `notification_events` rows (`status = pending`) for Slice 8; APNs delivery is Slice 9. |
+
+### 2. Vault secrets for SQL → HTTP (pg_net)
+
+The trigger and cron job call `finalize-match-day` over HTTPS. Create two secrets in **Supabase Dashboard → Project Settings → Vault** (names must match):
+
+| Secret name | Value |
+|---|---|
+| `fitup_project_url` | `https://<project-ref>.supabase.co` (no trailing slash) |
+| `fitup_service_role_key` | Service role JWT (Dashboard → Project Settings → API) |
+
+### 3. Run SQL migration
+
+In the **SQL Editor**, run the full script:
+
+`supabase/sql/slice8-finalization.sql`
+
+This enables `pg_net` and `pg_cron`, defines `private.invoke_finalize_match_day`, the trigger `tr_finalize_when_all_confirmed` on `match_day_participants`, and schedules `day-cutoff-check` hourly (cron expression `5 * * * *`).
+
+**Requirements:** `profiles.timezone` should be set for each user (Slice 1 onboarding already writes it) so the 10:00 cutoff logic aligns with local time.
+
+### 4. Verify
+
+- With two participants, after both have `data_status = 'confirmed'` for a `match_day`, the trigger should enqueue a finalize call; `match_days.status` becomes `finalized`.
+- After the last day finalizes, `matches.state` should become `completed` and completed matches appear in the app **Activity** tab.
+
+---
+
+## Slice 4 — Matchmaking (Edge Functions + database)
+
+Source files: `supabase/functions/matchmaking-pairing/`, `supabase/functions/on-all-accepted/`, and `supabase/sql/slice4-matchmaking.sql`.
+
+**Prerequisites:** Same Vault secrets as Slice 8 (`fitup_project_url`, `fitup_service_role_key`). Run this **after** `slice8-finalization.sql` so `pg_net` and the `private` schema are already in place.
+
+### 1. Deploy Edge Functions
+
+From the repo root (`FitUp-App/`):
+
+```bash
+supabase functions deploy matchmaking-pairing
+supabase functions deploy on-all-accepted
+```
+
+### 2. Run SQL migration
+
+In the **SQL Editor**, run the full script:
+
+`supabase/sql/slice4-matchmaking.sql`
+
+This defines `public.matchmaking_pair_atomic` and `public.activate_match_with_days`, adds `pg_net` triggers that call the Edge Functions over HTTPS, and **drops** the Slice 9 notification triggers `tr_notify_match_found_on_pairing` and `tr_activate_match_when_all_accepted` if they exist (those paths are superseded so `match_found` / activation + `match_days` creation stay consistent).
+
+If you apply `supabase/sql/slice9-notifications.sql` **after** this script, run `slice4-matchmaking.sql` again so those two older triggers stay dropped.
+
+### 3. Verify
+
+- Two users submit Quick Match with the same metric, duration, and start mode → one `matches` row (`public_matchmaking`), both `match_search_requests` rows `matched`, two `match_participants` with `joined_via = matchmaking`.
+- When both have accepted (`accepted_at` set) → `matches.state = active`, `match_days` row count equals `duration_days`, each day has two `match_day_participants`.
+
+---
+
+## Slice 9 — Notifications and Live Activities
+
+Source files: `supabase/functions/dispatch-notification/`, `supabase/functions/send-pending-reminders/`, `supabase/functions/send-morning-checkins/`, `supabase/functions/_shared/apns.ts`, and `supabase/sql/slice9-notifications.sql`.
+
+**Prerequisites:** Slice 8 Vault secrets (`fitup_project_url`, `fitup_service_role_key`) must already exist. `pg_net` and `pg_cron` must already be enabled (done by `slice8-finalization.sql`).
+
+### 1. Set Edge Function secrets (APNs)
+
+In **Supabase Dashboard → Project Settings → Edge Functions → Secrets**, add:
+
+| Secret | Value |
+|---|---|
+| `APNS_TEAM_ID` | Your 10-character Apple Developer Team ID (e.g. `BLAUCQ8H26`) |
+| `APNS_KEY_ID` | Key ID shown in Apple Developer portal → Keys (10 chars) |
+| `APNS_PRIVATE_KEY` | Full contents of the downloaded `.p8` file (including `-----BEGIN PRIVATE KEY-----` lines; use `\n` for line breaks if the dashboard requires a single-line value) |
+| `APNS_BUNDLE_ID` | `com.ScottOliver.FitUp` |
+| `APNS_USE_SANDBOX` | `true` (development / TestFlight); change to `false` for App Store production |
+
+### 2. Enable Push Notifications on the App ID
+
+In **Apple Developer portal → Identifiers**, find `com.ScottOliver.FitUp` and enable the **Push Notifications** capability. Xcode automatic signing will regenerate the provisioning profile on the next build.
+
+Also register the Widget Extension App ID: `com.ScottOliver.FitUp.FitUpWidgetExtension`.
+
+### 3. Deploy Edge Functions
+
+From the repo root (`FitUp-App/`):
+
+```bash
+supabase functions deploy dispatch-notification
+supabase functions deploy send-pending-reminders
+supabase functions deploy send-morning-checkins
+```
+
+`dispatch-notification` now enriches `live_activity_update` events with per-user totals, display names, and series scores before sending to APNs (token-based JWT auth via the `apns.ts` shared module).
+
+### 4. Run SQL migration
+
+In the **SQL Editor**, run the full script:
+
+`supabase/sql/slice9-notifications.sql`
+
+This script:
+- Adds `profiles.notifications_enabled` (boolean, default `true`) and `profiles.live_activity_push_token` (text)
+- Creates schema `private` and helper functions: `private.invoke_edge_function`, `private.invoke_dispatch_notification`, `private.notification_sent_today`, `private.resolve_leader_user`
+- Creates notification triggers:
+  - `tr_notify_match_found_on_pairing` — fires on `match_participants` INSERT (public matchmaking pairs)
+  - `tr_notify_challenge_received` — fires on `direct_challenges` INSERT
+  - `tr_notify_challenge_declined` — fires on `direct_challenges.status` UPDATE → `'declined'`
+  - `tr_activate_match_when_all_accepted` — fires on `match_participants.accepted_at` set; activates match and fires `match_active` push
+  - `tr_notify_lead_changed` — fires on `match_day_participants.metric_total` UPDATE when leader changes
+  - `tr_push_live_activity_updates` — fires on `match_day_participants.metric_total` INSERT/UPDATE; sends Live Activity push to both participants
+- Schedules pg_cron jobs:
+  - `send-pending-reminders`: daily at 16:15 UTC
+  - `send-morning-checkins`: daily at 13:00 UTC
+
+**Note:** If you run `supabase/sql/slice4-matchmaking.sql` after this, `tr_notify_match_found_on_pairing` and `tr_activate_match_when_all_accepted` are superseded by the Slice 4 matchmaking triggers and will be dropped by that script.
+
+### 5. Verify
+
+- Send a direct challenge → `notification_events` row inserted for recipient with `event_type = 'challenge_received'`; APNs push fires if `APNS_*` secrets are set and token is registered
+- Accept challenge → both participants get `match_active` push
+- Metric sync while match is active → `lead_changed` push fires on the trailing user when the leader flips
+- Live Activity appears on lock screen once a match goes active; updates when opponent syncs
+- `notification_events` count for any user stays ≤ 10 `status = 'sent'` rows per UTC day
 
 ---
 

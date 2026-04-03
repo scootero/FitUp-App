@@ -207,8 +207,17 @@ final class LiveMatchViewModel: ObservableObject {
             await MainActor.run {
                 self.meCount = value
                 self.updateLeadAndToasts()
+                if self.errorMessage == HealthKitError.authorizationDenied.errorDescription {
+                    self.errorMessage = nil
+                }
             }
+            await MetricSyncCoordinator.shared.requestSync(trigger: .liveMatchRead)
         } catch {
+            if let healthError = error as? HealthKitError, case .authorizationDenied = healthError {
+                await MainActor.run {
+                    self.errorMessage = HealthKitError.authorizationDenied.errorDescription
+                }
+            }
             if let profile {
                 AppLogger.log(
                     category: "healthkit_read",

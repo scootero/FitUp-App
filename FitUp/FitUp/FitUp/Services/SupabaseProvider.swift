@@ -5,6 +5,7 @@
 //  Holds optional Supabase client after keys are loaded from Info.plist (via xcconfig).
 //
 
+import Combine
 import Foundation
 import RevenueCat
 import Supabase

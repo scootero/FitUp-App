@@ -13,6 +13,7 @@ struct MatchCardView: View {
     var onTap: () -> Void
 
     @State private var isVisible = false
+    @State private var todayPipPulse = false
 
     var body: some View {
         Button {
@@ -45,6 +46,13 @@ struct MatchCardView: View {
         .buttonStyle(.plain)
         .onAppear {
             isVisible = true
+            todayPipPulse = false
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                todayPipPulse = true
+            }
+        }
+        .onDisappear {
+            todayPipPulse = false
         }
     }
 
@@ -149,9 +157,12 @@ struct MatchCardView: View {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .fill(pipColor(for: pip.state))
                     .frame(width: pip.state == .today ? 22 : 16, height: 5)
+                    .opacity(pip.state == .today ? (todayPipPulse ? 1 : 0.68) : 1)
                     .shadow(
-                        color: pip.state == .today ? FitUpColors.Neon.cyan.opacity(0.8) : .clear,
-                        radius: pip.state == .today ? 6 : 0,
+                        color: pip.state == .today
+                            ? FitUpColors.Neon.cyan.opacity(todayPipPulse ? 0.9 : 0.45)
+                            : .clear,
+                        radius: pip.state == .today ? (todayPipPulse ? 7 : 3) : 0,
                         x: 0,
                         y: 0
                     )

@@ -159,8 +159,20 @@ final class MatchRepository {
 
         let acceptedAt = Self.isoFormatter.string(from: Date())
         let participants: [MatchParticipantInsert] = [
-            .init(matchId: matchId, userId: challengerId, acceptedAt: acceptedAt),
-            .init(matchId: matchId, userId: recipientId, acceptedAt: nil),
+            .init(
+                matchId: matchId,
+                userId: challengerId,
+                acceptedAt: acceptedAt,
+                role: "challenger",
+                joinedVia: "direct_challenge"
+            ),
+            .init(
+                matchId: matchId,
+                userId: recipientId,
+                acceptedAt: nil,
+                role: "opponent",
+                joinedVia: "direct_challenge"
+            ),
         ]
 
         try await client
@@ -438,11 +450,15 @@ private struct MatchParticipantInsert: Encodable {
     let matchId: UUID
     let userId: UUID
     let acceptedAt: String?
+    let role: String
+    let joinedVia: String
 
     enum CodingKeys: String, CodingKey {
         case matchId = "match_id"
         case userId = "user_id"
         case acceptedAt = "accepted_at"
+        case role
+        case joinedVia = "joined_via"
     }
 }
 

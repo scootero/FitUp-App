@@ -45,6 +45,27 @@ struct ProfileRepository {
         return try decodeProfiles(from: response.data).first
     }
 
+    /// Patches `apns_token` and/or `live_activity_push_token` on the caller's own profile.
+    /// Only the fields passed as non-nil are written. Runs as authenticated user; RLS
+    /// must allow UPDATE on own row (policy: auth.uid() = auth_user_id).
+    func updatePushTokens(apnsToken: String? = nil, liveActivityPushToken: String? = nil) async {
+        guard apnsToken != nil || liveActivityPushToken != nil else { return }
+        guard let client = SupabaseProvider.client else { return }
+        do {
+            let session = try await client.auth.session
+            var fields: [String: String] = [:]
+            if let token = apnsToken { fields["apns_token"] = token }
+            if let token = liveActivityPushToken { fields["live_activity_push_token"] = token }
+            try await client
+                .from("profiles")
+                .update(fields)
+                .eq("auth_user_id", value: session.user.id.uuidString)
+                .execute()
+        } catch {
+            AppLogger.log(category: "notifications", level: .warning, message: "push token update failed: \(error.localizedDescription)")
+        }
+    }
+
     func createProfileIfNeeded(authUserId: UUID, displayName: String?) async throws -> Profile {
         if let existing = try await fetchProfile(authUserId: authUserId) {
             return existing

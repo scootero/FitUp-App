@@ -9,6 +9,8 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var sessionStore: SessionStore
+    @EnvironmentObject private var notificationService: NotificationService
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -29,11 +31,26 @@ struct ContentView: View {
             }
         }
         .screenTransition()
+        .task(id: sessionStore.currentProfile?.id) {
+            await MetricSyncCoordinator.shared.updateProfile(sessionStore.currentProfile)
+            if sessionStore.currentProfile != nil {
+                await MetricSyncCoordinator.shared.requestSync(trigger: .manual, force: true)
+                // Register for APNs now that we have a valid session + profile.
+                notificationService.registerForRemoteNotifications()
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task {
+                await MetricSyncCoordinator.shared.appDidBecomeActive()
+            }
+        }
     }
 }
 
 private struct RootShellView: View {
     @EnvironmentObject private var sessionStore: SessionStore
+    @EnvironmentObject private var notificationService: NotificationService
 
     let profile: Profile?
     let showOnboardingSearching: Bool
@@ -73,6 +90,22 @@ private struct RootShellView: View {
                 }
             }
         }
+        .onChange(of: notificationService.pendingDeepLink) { _, deepLink in
+            guard let deepLink else { return }
+            _ = notificationService.consumeDeepLink()
+            handleDeepLink(deepLink)
+        }
+    }
+
+    private func handleDeepLink(_ deepLink: NotificationDeepLink) {
+        switch deepLink {
+        case .home:
+            selectedTab = .home
+        case .matchDetails(let matchId):
+            matchDetailsContext = MatchDetailsContext(matchId: matchId)
+        case .activity:
+            selectedTab = .activity
+        }
     }
 
     @ViewBuilder
@@ -94,9 +127,11 @@ private struct RootShellView: View {
                 }
             )
         case .activity:
-            TabPlaceholderView(
-                title: "Activity",
-                subtitle: "Slice 10 will replace this placeholder."
+            ActivityView(
+                profile: profile,
+                onOpenMatchDetails: { matchId, _ in
+                    matchDetailsContext = MatchDetailsContext(matchId: matchId)
+                }
             )
         case .health:
             TabPlaceholderView(
@@ -180,4 +215,5 @@ private struct MatchDetailsContext: Identifiable {
 #Preview {
     ContentView()
         .environmentObject(SessionStore())
+        .environmentObject(NotificationService.shared)
 }

@@ -5,6 +5,7 @@
 //  Structured logs to Supabase `app_logs` when configured; otherwise os.Logger.
 //
 
+import Combine
 import Foundation
 import OSLog
 import Supabase

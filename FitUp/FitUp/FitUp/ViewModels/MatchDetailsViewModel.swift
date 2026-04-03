@@ -38,7 +38,7 @@ final class MatchDetailsViewModel: ObservableObject {
         guard !hasStarted else { return }
         hasStarted = true
         Task { await refresh(showLoading: true) }
-        detailsRepository.startLiveRefresh { [weak self] in
+        detailsRepository.startLiveRefresh(matchId: matchId) { [weak self] in
             guard let self else { return }
             await self.refresh(showLoading: false)
         }

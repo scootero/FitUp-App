@@ -5,6 +5,7 @@
 //  Slice 0: minimal connectivity check against `profiles`.
 //
 
+import Combine
 import Foundation
 import Supabase
 
