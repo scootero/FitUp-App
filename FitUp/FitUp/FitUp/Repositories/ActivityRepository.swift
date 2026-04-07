@@ -5,6 +5,7 @@
 //  Slice 8 minimal Activity completed matches feed.
 //
 
+import Combine
 import Foundation
 import Supabase
 

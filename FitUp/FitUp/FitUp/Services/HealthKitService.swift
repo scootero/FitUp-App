@@ -8,6 +8,55 @@
 import Foundation
 import HealthKit
 
+// MARK: - Health screen summaries (Slice 12)
+
+struct HealthSleepStagePercentages: Equatable {
+    var deep: Double
+    var core: Double
+    var rem: Double
+    var awake: Double
+}
+
+/// Stage slice for the last-night hypnogram (chronological segments).
+enum HealthSleepTimelineStage: String, Equatable {
+    case deep
+    case core
+    case rem
+    case awake
+}
+
+struct HealthSleepTimelineSegment: Equatable {
+    let start: Date
+    let end: Date
+    let stage: HealthSleepTimelineStage
+
+    var duration: TimeInterval { end.timeIntervalSince(start) }
+}
+
+struct HealthSleepSummary: Equatable {
+    /// Mean hours asleep across the last `nights` calendar days (0 if no data).
+    var averageHoursLastNights: Double
+    /// Sample standard deviation of nightly hours (0 if &lt; 2 nights of data).
+    var varianceHours: Double
+    /// Aggregate stage mix over the 7 wake days (percentages sum to ~100).
+    var stagePercentagesSevenNight: HealthSleepStagePercentages
+    /// Total asleep hours for the most recent wake day that has data (readiness / chips).
+    var lastNightAsleepHours: Double?
+    /// Hours asleep per wake day, **oldest first** (same order as 7-day charts).
+    var nightlyAsleepHoursOldestFirst: [Double]
+    /// Stage mix for `lastNightAsleepHours` only; nil when no last-night data.
+    var lastNightStagePercentages: HealthSleepStagePercentages?
+    /// Chronological segments for the last wake night (for hypnogram); empty if none.
+    var lastNightTimeline: [HealthSleepTimelineSegment]
+}
+
+struct HealthHRZoneRow: Identifiable, Equatable {
+    let id: Int
+    let label: String
+    let valueLabel: String
+    let percent: Double
+}
+
 enum HealthMetricType: String {
     case steps
     case activeCalories = "active_calories"
@@ -21,20 +70,46 @@ enum HealthKitService {
         HKHealthStore.isHealthDataAvailable()
     }
 
+    /// Read types requested by `requestAuthorization()` (single source of truth).
+    private static var readAuthorizationTypes: Set<HKObjectType> {
+        [
+            HKObjectType.quantityType(forIdentifier: .stepCount)!,
+            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
+            HKObjectType.quantityType(forIdentifier: .heartRate)!,
+            HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
+            HKObjectType.workoutType(),
+        ]
+    }
+
+    /// True if any requested read type is still `notDetermined` (user has not been through the system prompt).
+    private static func anyReadTypeIsNotDetermined() -> Bool {
+        for objectType in readAuthorizationTypes {
+            if store.authorizationStatus(for: objectType) == .notDetermined {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Calls `requestAuthorization()` only when at least one read type is `notDetermined`, to avoid redundant prompts after denial.
+    static func requestAuthorizationIfNeeded() async {
+        guard isHealthDataAvailable else { return }
+        guard anyReadTypeIsNotDetermined() else { return }
+        do {
+            try await requestAuthorization()
+        } catch {
+            // Denied, unavailable, or other; Health screen / banner handle recovery.
+        }
+    }
+
     /// Requests read access for v1 HealthKit types (fitup-docs-pack §11).
     static func requestAuthorization() async throws {
         guard isHealthDataAvailable else {
             throw HealthKitError.notAvailable
         }
 
-        let readTypes: Set<HKObjectType> = [
-            HKObjectType.quantityType(forIdentifier: .stepCount)!,
-            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
-            HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
-        ]
-
-        try await store.requestAuthorization(toShare: [], read: readTypes)
+        try await store.requestAuthorization(toShare: [], read: readAuthorizationTypes)
         await configureBackgroundDelivery()
     }
 
@@ -51,14 +126,19 @@ enum HealthKitService {
 
             let query = HKObserverQuery(sampleType: quantityType, predicate: nil) { _, completionHandler, error in
                 if let error {
+                    var meta: [String: String] = [
+                        "metric_type": metric.metricType.rawValue,
+                        "error": error.localizedDescription,
+                    ]
+                    if let hk = error as? HKError {
+                        meta["hk_error_code"] = "\(hk.code.rawValue)"
+                        meta["hk_error_domain"] = String(describing: hk.code)
+                    }
                     AppLogger.log(
                         category: "healthkit_sync",
                         level: .warning,
                         message: "health observer callback failed",
-                        metadata: [
-                            "metric_type": metric.metricType.rawValue,
-                            "error": error.localizedDescription,
-                        ]
+                        metadata: meta
                     )
                     completionHandler()
                     return
@@ -75,13 +155,37 @@ enum HealthKitService {
         }
 
         await configureBackgroundDelivery()
+
+        AppLogger.log(
+            category: "healthkit_sync",
+            level: .info,
+            message: "metric observers started",
+            metadata: [
+                "pipeline": "HealthKitService.startMetricObservers",
+                "hk_observer_count": "\(observerQueries.count)",
+                "hk_observer_types": "stepCount, activeEnergyBurned",
+                "background_delivery_frequency": "immediate",
+            ]
+        )
     }
 
     static func stopMetricObservers() {
+        let count = observerQueries.count
         for query in observerQueries.values {
             store.stop(query)
         }
         observerQueries.removeAll()
+        if count > 0 {
+            AppLogger.log(
+                category: "healthkit_sync",
+                level: .info,
+                message: "metric observers stopped",
+                metadata: [
+                    "pipeline": "HealthKitService.stopMetricObservers",
+                    "stopped_count": "\(count)",
+                ]
+            )
+        }
     }
 
     /// Returns the average daily steps over the last 7 calendar days (including today).
@@ -170,6 +274,371 @@ enum HealthKitService {
         return Int(total.rounded())
     }
 
+    /// Most recent resting heart rate sample (bpm), if any.
+    static func fetchRestingHeartRate() async throws -> Double? {
+        guard isHealthDataAvailable else { throw HealthKitError.notAvailable }
+        guard let quantityType = HKObjectType.quantityType(forIdentifier: .restingHeartRate) else {
+            throw HealthKitError.noStatisticsData
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let query = HKSampleQuery(
+                sampleType: quantityType,
+                predicate: nil,
+                limit: 1,
+                sortDescriptors: [sort]
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchRestingHeartRate"))
+                    return
+                }
+                guard let sample = samples?.first as? HKQuantitySample else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let bpm = sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+                continuation.resume(returning: bpm)
+            }
+            store.execute(query)
+        }
+    }
+
+    /// Seven daily totals, **oldest first**, index 6 = today (`HealthScreen` week chart).
+    static func fetchSevenDayStepsArray() async throws -> [Int] {
+        try await fetchSevenDayDailyTotals(quantityIdentifier: .stepCount, unit: .count())
+    }
+
+    /// Seven daily active calorie totals (kcal), **oldest first**, index 6 = today.
+    static func fetchSevenDayCaloriesArray() async throws -> [Int] {
+        try await fetchSevenDayDailyTotals(quantityIdentifier: .activeEnergyBurned, unit: .kilocalorie())
+    }
+
+    /// Sleep aggregates for the Health screen (last `nights` local calendar days).
+    static func fetchSleepSummary(nights: Int = 7) async throws -> HealthSleepSummary {
+        guard isHealthDataAvailable else { throw HealthKitError.notAvailable }
+        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+            throw HealthKitError.noStatisticsData
+        }
+        let calendar = Calendar.current
+        let endDate = Date()
+        guard let startDate = calendar.date(byAdding: .day, value: -(nights + 2), to: calendar.startOfDay(for: endDate)) else {
+            throw HealthKitError.invalidDateRange
+        }
+
+        let samples: [HKCategorySample] = try await fetchSleepCategorySamples(type: sleepType, start: startDate, end: endDate)
+
+        var secondsAsleepByDay: [Date: Double] = [:]
+        var stageSecondsSevenNight: [String: Double] = [
+            "deep": 0, "core": 0, "rem": 0, "awake": 0,
+        ]
+
+        let dayStarts: [Date] = (0..<nights).compactMap { i in
+            calendar.date(byAdding: .day, value: -(nights - 1 - i), to: calendar.startOfDay(for: endDate))
+        }
+        let daySet = Set(dayStarts)
+
+        for sample in samples {
+            let duration = sample.endDate.timeIntervalSince(sample.startDate)
+            guard duration > 0 else { continue }
+            let dayKey = calendar.startOfDay(for: sample.endDate)
+            let value = sample.value
+
+            if let asleep = asleepSecondsContribution(for: value, duration: duration) {
+                secondsAsleepByDay[dayKey, default: 0] += asleep
+            }
+            if daySet.contains(dayKey) {
+                accumulateSleepStage(value: value, duration: duration, into: &stageSecondsSevenNight)
+            }
+        }
+
+        var nightlyHours: [Double] = []
+        for day in dayStarts {
+            let hrs = (secondsAsleepByDay[day] ?? 0) / 3600
+            nightlyHours.append(hrs)
+        }
+
+        let sumH = nightlyHours.reduce(0, +)
+        let avg = nightlyHours.isEmpty ? 0 : sumH / Double(nightlyHours.count)
+        let variance: Double = {
+            guard nightlyHours.count >= 2 else { return 0 }
+            let mean = avg
+            let v = nightlyHours.map { pow($0 - mean, 2) }.reduce(0, +) / Double(nightlyHours.count - 1)
+            return sqrt(v)
+        }()
+
+        let totalStage7 = stageSecondsSevenNight.values.reduce(0, +)
+        let pct7: (Double) -> Double = { totalStage7 > 0 ? ($0 / totalStage7) * 100 : 0 }
+        let stagesSevenNight = HealthSleepStagePercentages(
+            deep: pct7(stageSecondsSevenNight["deep"] ?? 0),
+            core: pct7(stageSecondsSevenNight["core"] ?? 0),
+            rem: pct7(stageSecondsSevenNight["rem"] ?? 0),
+            awake: pct7(stageSecondsSevenNight["awake"] ?? 0)
+        )
+
+        let lastWakeDay: Date? = dayStarts.reversed().first { (secondsAsleepByDay[$0] ?? 0) > 0 }
+        let lastNightHours: Double? = lastWakeDay.map { (secondsAsleepByDay[$0] ?? 0) / 3600 }
+
+        var lastNightStageSeconds: [String: Double] = [
+            "deep": 0, "core": 0, "rem": 0, "awake": 0,
+        ]
+        var lastNightTimeline: [HealthSleepTimelineSegment] = []
+        if let wake = lastWakeDay {
+            let nightSamples = samples
+                .filter { calendar.startOfDay(for: $0.endDate) == wake }
+                .sorted { $0.startDate < $1.startDate }
+            for sample in nightSamples {
+                let duration = sample.endDate.timeIntervalSince(sample.startDate)
+                guard duration > 0 else { continue }
+                accumulateSleepStage(value: sample.value, duration: duration, into: &lastNightStageSeconds)
+                if let stage = timelineStage(for: sample.value) {
+                    lastNightTimeline.append(
+                        HealthSleepTimelineSegment(start: sample.startDate, end: sample.endDate, stage: stage)
+                    )
+                }
+            }
+        }
+
+        let totalStageLN = lastNightStageSeconds.values.reduce(0, +)
+        let pctLN: (Double) -> Double = { totalStageLN > 0 ? ($0 / totalStageLN) * 100 : 0 }
+        let lastNightStages: HealthSleepStagePercentages? = (lastWakeDay != nil && totalStageLN > 0)
+            ? HealthSleepStagePercentages(
+                deep: pctLN(lastNightStageSeconds["deep"] ?? 0),
+                core: pctLN(lastNightStageSeconds["core"] ?? 0),
+                rem: pctLN(lastNightStageSeconds["rem"] ?? 0),
+                awake: pctLN(lastNightStageSeconds["awake"] ?? 0)
+            )
+            : nil
+
+        return HealthSleepSummary(
+            averageHoursLastNights: avg,
+            varianceHours: variance,
+            stagePercentagesSevenNight: stagesSevenNight,
+            lastNightAsleepHours: lastNightHours,
+            nightlyAsleepHoursOldestFirst: nightlyHours,
+            lastNightStagePercentages: lastNightStages,
+            lastNightTimeline: lastNightTimeline
+        )
+    }
+
+    /// Heart-rate zone distribution from the most recent workout (percent of samples in each zone).
+    static func fetchHRZoneRows(defaultMaxHeartRate: Double = 190) async throws -> [HealthHRZoneRow] {
+        guard isHealthDataAvailable else { throw HealthKitError.notAvailable }
+        guard let hrType = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+            throw HealthKitError.noStatisticsData
+        }
+        guard let workout = try await fetchMostRecentWorkout() else {
+            return Self.emptyHRZoneRows
+        }
+
+        let samples: [HKQuantitySample] = try await fetchQuantitySamples(
+            type: hrType,
+            start: workout.startDate,
+            end: workout.endDate
+        )
+
+        guard !samples.isEmpty else {
+            return Self.emptyHRZoneRows
+        }
+
+        var buckets = [Int: Int]()
+        for s in samples {
+            let bpm = s.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+            let z = zoneIndex(bpm: bpm, maxHR: defaultMaxHeartRate)
+            buckets[z, default: 0] += 1
+        }
+
+        let total = max(samples.count, 1)
+        let labels = [
+            "Zone 1 · Rest",
+            "Zone 2 · Fat burn",
+            "Zone 3 · Cardio",
+            "Zone 4 · Peak",
+            "Zone 5 · Max",
+        ]
+        return (0..<5).map { i in
+            let c = buckets[i] ?? 0
+            let p = Double(c) / Double(total) * 100
+            return HealthHRZoneRow(
+                id: i,
+                label: labels[i],
+                valueLabel: "\(Int(p.rounded()))%",
+                percent: p
+            )
+        }
+    }
+
+    private static let emptyHRZoneRows: [HealthHRZoneRow] = [
+        HealthHRZoneRow(id: 0, label: "Zone 1 · Rest", valueLabel: "0%", percent: 0),
+        HealthHRZoneRow(id: 1, label: "Zone 2 · Fat burn", valueLabel: "0%", percent: 0),
+        HealthHRZoneRow(id: 2, label: "Zone 3 · Cardio", valueLabel: "0%", percent: 0),
+        HealthHRZoneRow(id: 3, label: "Zone 4 · Peak", valueLabel: "0%", percent: 0),
+        HealthHRZoneRow(id: 4, label: "Zone 5 · Max", valueLabel: "0%", percent: 0),
+    ]
+
+    private static func zoneIndex(bpm: Double, maxHR: Double) -> Int {
+        let pct = bpm / maxHR
+        if pct < 0.6 { return 0 }
+        if pct < 0.7 { return 1 }
+        if pct < 0.8 { return 2 }
+        if pct < 0.9 { return 3 }
+        return 4
+    }
+
+    private static func fetchMostRecentWorkout() async throws -> HKWorkout? {
+        let type = HKObjectType.workoutType()
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: nil,
+                limit: 1,
+                sortDescriptors: [sort]
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchMostRecentWorkout"))
+                    return
+                }
+                continuation.resume(returning: samples?.first as? HKWorkout)
+            }
+            store.execute(query)
+        }
+    }
+
+    private static func fetchQuantitySamples(type: HKQuantityType, start: Date, end: Date) async throws -> [HKQuantitySample] {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchQuantitySamples"))
+                    return
+                }
+                let qs = (samples as? [HKQuantitySample]) ?? []
+                continuation.resume(returning: qs)
+            }
+            store.execute(query)
+        }
+    }
+
+    private static func fetchCategorySamples(type: HKCategoryType, start: Date, end: Date) async throws -> [HKCategorySample] {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchCategorySamples"))
+                    return
+                }
+                let cs = (samples as? [HKCategorySample]) ?? []
+                continuation.resume(returning: cs)
+            }
+            store.execute(query)
+        }
+    }
+
+    /// Overlapping sleep samples (no `strictStartDate`) so segments that begin before the window still count.
+    private static func fetchSleepCategorySamples(type: HKCategoryType, start: Date, end: Date) async throws -> [HKCategorySample] {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+            ) { _, samples, error in
+                if let error {
+                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchSleepCategorySamples"))
+                    return
+                }
+                let cs = (samples as? [HKCategorySample]) ?? []
+                continuation.resume(returning: cs)
+            }
+            store.execute(query)
+        }
+    }
+
+    private static func timelineStage(for value: Int) -> HealthSleepTimelineStage? {
+        guard let v = HKCategoryValueSleepAnalysis(rawValue: value) else { return nil }
+        switch v {
+        case .asleepDeep:
+            return .deep
+        case .asleepCore, .asleepUnspecified:
+            return .core
+        case .asleepREM:
+            return .rem
+        case .awake:
+            return .awake
+        case .inBed:
+            return nil
+        @unknown default:
+            return nil
+        }
+    }
+
+    private static func asleepSecondsContribution(for value: Int, duration: TimeInterval) -> Double? {
+        guard let v = HKCategoryValueSleepAnalysis(rawValue: value) else { return nil }
+        switch v {
+        case .asleepDeep, .asleepCore, .asleepREM, .asleepUnspecified:
+            return duration
+        case .awake, .inBed:
+            return nil
+        @unknown default:
+            return nil
+        }
+    }
+
+    private static func accumulateSleepStage(value: Int, duration: TimeInterval, into dict: inout [String: Double]) {
+        guard let v = HKCategoryValueSleepAnalysis(rawValue: value) else { return }
+        switch v {
+        case .asleepDeep:
+            dict["deep", default: 0] += duration
+        case .asleepCore, .asleepUnspecified:
+            dict["core", default: 0] += duration
+        case .asleepREM:
+            dict["rem", default: 0] += duration
+        case .awake:
+            dict["awake", default: 0] += duration
+        case .inBed:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    private static func fetchSevenDayDailyTotals(quantityIdentifier: HKQuantityTypeIdentifier, unit: HKUnit) async throws -> [Int] {
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: Date())
+        var values: [Int] = []
+        for offset in (0..<7).reversed() {
+            guard let dayStart = calendar.date(byAdding: .day, value: -offset, to: todayStart) else {
+                values.append(0)
+                continue
+            }
+            let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+            let endBound = offset == 0 ? Date() : dayEnd
+            let total = try await fetchCumulativeTotal(
+                quantityIdentifier: quantityIdentifier,
+                unit: unit,
+                startDate: dayStart,
+                endDate: endBound
+            )
+            values.append(Int(total.rounded()))
+        }
+        return values
+    }
+
     private static var observedMetrics: [(identifier: HKQuantityTypeIdentifier, metricType: HealthMetricType)] {
         [
             (.stepCount, .steps),
@@ -188,7 +657,6 @@ enum HealthKitService {
         guard let quantityType = HKObjectType.quantityType(forIdentifier: quantityIdentifier) else {
             throw typeError(for: quantityIdentifier)
         }
-        try assertNotDenied(quantityType: quantityType)
 
         let calendar = Calendar.current
         let endDate = Date()
@@ -210,7 +678,7 @@ enum HealthKitService {
 
             query.initialResultsHandler = { _, collection, error in
                 if let error {
-                    continuation.resume(throwing: mapHealthKitError(error))
+                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchSevenDayAverage"))
                     return
                 }
                 guard let collection else {
@@ -301,7 +769,6 @@ enum HealthKitService {
         guard let quantityType = HKObjectType.quantityType(forIdentifier: quantityIdentifier) else {
             throw typeError(for: quantityIdentifier)
         }
-        try assertNotDenied(quantityType: quantityType)
 
         let predicate = HKQuery.predicateForSamples(
             withStart: startDate,
@@ -316,7 +783,7 @@ enum HealthKitService {
                 options: [.cumulativeSum]
             ) { _, statistics, error in
                 if let error {
-                    continuation.resume(throwing: mapHealthKitError(error))
+                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchCumulativeTotal"))
                     return
                 }
                 let total = statistics?.sumQuantity()?.doubleValue(for: unit) ?? 0
@@ -351,7 +818,7 @@ enum HealthKitService {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             store.enableBackgroundDelivery(for: quantityType, frequency: .immediate) { success, error in
                 if let error {
-                    continuation.resume(throwing: mapHealthKitError(error))
+                    continuation.resume(throwing: mapHealthKitError(error, context: "enableBackgroundDelivery"))
                     return
                 }
                 guard success else {
@@ -363,13 +830,35 @@ enum HealthKitService {
         }
     }
 
-    private static func assertNotDenied(quantityType: HKQuantityType) throws {
-        if store.authorizationStatus(for: quantityType) == .sharingDenied {
-            throw HealthKitError.authorizationDenied
+    private static func logHealthKitQueryFailure(_ error: Error, context: String) {
+        if let hk = error as? HKError {
+            AppLogger.log(
+                category: "healthkit_read",
+                level: .warning,
+                message: "HealthKit query failed",
+                metadata: [
+                    "context": context,
+                    "hk_error_code": "\(hk.code.rawValue)",
+                    "hk_error_domain": String(describing: hk.code),
+                    "error": hk.localizedDescription,
+                ]
+            )
+        } else {
+            AppLogger.log(
+                category: "healthkit_read",
+                level: .warning,
+                message: "HealthKit query failed",
+                metadata: [
+                    "context": context,
+                    "error_type": String(describing: type(of: error)),
+                    "error": error.localizedDescription,
+                ]
+            )
         }
     }
 
-    private static func mapHealthKitError(_ error: Error) -> Error {
+    private static func mapHealthKitError(_ error: Error, context: String) -> Error {
+        logHealthKitQueryFailure(error, context: context)
         guard let healthError = error as? HKError else { return error }
         if healthError.code == .errorAuthorizationDenied {
             return HealthKitError.authorizationDenied

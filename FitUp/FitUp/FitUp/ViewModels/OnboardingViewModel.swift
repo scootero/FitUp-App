@@ -49,7 +49,7 @@ final class OnboardingViewModel: ObservableObject {
 
         do {
             try await HealthKitService.requestAuthorization()
-            AppLogger.log(category: "onboarding", level: .info, message: "health permission granted")
+            AppLogger.log(category: "onboarding", level: .info, message: "health authorization request completed")
         } catch {
             AppLogger.log(
                 category: "onboarding",

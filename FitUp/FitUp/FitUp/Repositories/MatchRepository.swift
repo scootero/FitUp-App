@@ -5,6 +5,7 @@
 //  Slice 4 challenge flow reads/writes for matchmaking and direct challenges.
 //
 
+import Combine
 import Foundation
 import Supabase
 
@@ -98,6 +99,28 @@ final class MatchRepository {
 
     // MARK: - Writes
 
+    /// Cancels any prior open matchmaking rows for this user so only one `searching` request exists (avoids duplicate queue rows).
+    func cancelPriorSearchingRequests(creatorId: UUID) async throws {
+        let client = try client
+        try await client
+            .from("match_search_requests")
+            .update(MatchSearchStatusUpdate(status: "cancelled"))
+            .eq("creator_id", value: creatorId.uuidString)
+            .eq("status", value: "searching")
+            .execute()
+    }
+
+    /// Authenticated retry: same pairing logic as the DB trigger (useful if pg_net delivery failed).
+    func retryMatchmakingSearch(requestId: UUID) async throws {
+        let client = try client
+        try await client.functions.invoke(
+            "retry-matchmaking-search",
+            options: FunctionInvokeOptions(
+                body: RetryMatchmakingBody(match_search_request_id: requestId.uuidString)
+            )
+        )
+    }
+
     @discardableResult
     func createQuickMatchSearch(
         creatorId: UUID,
@@ -105,6 +128,8 @@ final class MatchRepository {
         durationDays: Int,
         startMode: ChallengeStartMode
     ) async throws -> UUID {
+        try await cancelPriorSearchingRequests(creatorId: creatorId)
+
         let creatorBaseline = try await fetchCreatorBaseline(userId: creatorId, metricType: metricType)
         let payload = MatchSearchInsert(
             creatorId: creatorId,
@@ -406,6 +431,14 @@ enum MatchRepositoryError: LocalizedError {
             return "Could not save challenge data."
         }
     }
+}
+
+private struct MatchSearchStatusUpdate: Encodable {
+    let status: String
+}
+
+private struct RetryMatchmakingBody: Encodable {
+    let match_search_request_id: String
 }
 
 private struct MatchSearchInsert: Encodable {

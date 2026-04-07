@@ -5,6 +5,7 @@
 //  Slice 6 data source for Live Match bootstrap + realtime opponent updates.
 //
 
+import Combine
 import Foundation
 import Supabase
 

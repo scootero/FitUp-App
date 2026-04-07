@@ -48,6 +48,14 @@ enum FitUpColors {
         static let secondary = Color.white.opacity(0.52)
         static let tertiary = Color.white.opacity(0.27)
     }
+
+    /// Sleep stage segment colors — `HealthScreen` / `HEALTH_MOCK` in FitUp_Final_Mockup.jsx
+    enum HealthSleepStage {
+        static let deep = Color(rgb: 0x1E90FF)
+        static let core = Color(rgb: 0x00A8FF)
+        static let rem = Neon.cyan
+        static let awake = Color.white.opacity(0.27)
+    }
 }
 
 // MARK: - Radii (T.radius)

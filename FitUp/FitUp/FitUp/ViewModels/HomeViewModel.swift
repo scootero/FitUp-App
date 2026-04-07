@@ -10,10 +10,18 @@ import Foundation
 
 @MainActor
 final class HomeViewModel: ObservableObject {
+    struct ActivityStats: Equatable {
+        let matchCount: Int
+        let winCount: Int
+        let winRateText: String
+    }
+
     @Published private(set) var searchingRequests: [HomeSearchingRequest] = []
     @Published private(set) var activeMatches: [HomeActiveMatch] = []
     @Published private(set) var pendingMatches: [HomePendingMatch] = []
     @Published private(set) var discoverUsers: [HomeDiscoverUser] = []
+    @Published private(set) var completedMatches: [ActivityCompletedMatch] = []
+    @Published private(set) var stats = ActivityStats(matchCount: 0, winCount: 0, winRateText: "0%")
     @Published private(set) var isLoading = false
     @Published private(set) var now = Date()
     @Published var errorMessage: String?
@@ -21,10 +29,12 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var activeActionPendingMatchID: UUID?
 
     var hasAnyContent: Bool {
-        !searchingRequests.isEmpty || !activeMatches.isEmpty || !pendingMatches.isEmpty || !discoverUsers.isEmpty
+        !searchingRequests.isEmpty || !activeMatches.isEmpty || !pendingMatches.isEmpty
+            || !discoverUsers.isEmpty || !completedMatches.isEmpty
     }
 
     private let repository = HomeRepository()
+    private let activityRepository = ActivityRepository()
     private var userId: UUID?
     private var myDisplayName: String = "You"
     private var waitTimerCancellable: AnyCancellable?
@@ -70,18 +80,35 @@ final class HomeViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        let snapshot = await repository.loadSnapshot(
+        async let snapshotTask = repository.loadSnapshot(
             for: userId,
             showOnboardingSearching: shouldShowOnboardingPlaceholder
         )
+        async let completedTask = activityRepository.loadCompletedMatches(currentUserId: userId)
+
+        let snapshot = await snapshotTask
+        let completed = await completedTask
         shouldShowOnboardingPlaceholder = false
 
         searchingRequests = snapshot.searching
         activeMatches = snapshot.activeMatches
         pendingMatches = snapshot.pendingMatches
         discoverUsers = snapshot.discoverUsers
+        completedMatches = completed
+        stats = Self.makeStats(from: completed)
 
         syncLiveActivity()
+    }
+
+    private static func makeStats(from completedMatches: [ActivityCompletedMatch]) -> ActivityStats {
+        let matchCount = completedMatches.count
+        let winCount = completedMatches.filter(\.myWon).count
+        guard matchCount > 0 else {
+            return ActivityStats(matchCount: 0, winCount: 0, winRateText: "0%")
+        }
+
+        let rate = Int((Double(winCount) / Double(matchCount) * 100).rounded())
+        return ActivityStats(matchCount: matchCount, winCount: winCount, winRateText: "\(rate)%")
     }
 
     // MARK: - Live Activity sync

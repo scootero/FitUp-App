@@ -16,11 +16,17 @@ final class SessionStore: ObservableObject {
     @Published private(set) var isLoadingSession = true
     @Published var authErrorMessage: String?
     @Published private(set) var isOnboardingComplete = UserDefaults.standard.bool(forKey: "onboardingComplete")
+    /// Per-profile: user finished the onboarding Health authorization step (sheet dismissed).
+    @Published private(set) var healthKitPromptCompleted = false
     @Published private(set) var showSearchingCardOnHome = false
 
     private let profileRepository = ProfileRepository()
 
     private static let onboardingKey = "onboardingComplete"
+
+    private static func healthKitPromptKey(profileId: UUID) -> String {
+        "fitup.healthKitOnboardingPromptCompleted.\(profileId.uuidString)"
+    }
 
     init() {
         Task { await restoreSession() }
@@ -44,6 +50,7 @@ final class SessionStore: ObservableObject {
             currentProfile = try await profileRepository.fetchProfile(authUserId: authUserId)
             isAuthenticated = true
             showSearchingCardOnHome = false
+            syncHealthKitPromptCompletedFromDefaults()
             AppLogger.log(
                 category: "auth",
                 level: .info,
@@ -54,6 +61,7 @@ final class SessionStore: ObservableObject {
             isAuthenticated = false
             currentProfile = nil
             showSearchingCardOnHome = false
+            healthKitPromptCompleted = false
             AppLogger.log(category: "auth", level: .info, message: "no active session on launch")
         }
 
@@ -87,6 +95,7 @@ final class SessionStore: ObservableObject {
             let authUserId = try Self.resolveAuthUserId(from: session.user.id)
             currentProfile = try await profileRepository.createProfileIfNeeded(authUserId: authUserId, displayName: displayName)
             isAuthenticated = true
+            syncHealthKitPromptCompletedFromDefaults()
             AppLogger.log(
                 category: "auth",
                 level: .info,
@@ -100,7 +109,7 @@ final class SessionStore: ObservableObject {
         }
     }
 
-    func signInWithApple(idToken: String) async {
+    func signInWithApple(idToken: String, preferredDisplayName: String? = nil) async {
         authErrorMessage = nil
         do {
             let client = try requireClient()
@@ -109,8 +118,12 @@ final class SessionStore: ObservableObject {
             )
             let session = try await client.auth.session
             let authUserId = try Self.resolveAuthUserId(from: session.user.id)
-            currentProfile = try await profileRepository.createProfileIfNeeded(authUserId: authUserId, displayName: nil)
+            currentProfile = try await profileRepository.createProfileIfNeeded(
+                authUserId: authUserId,
+                displayName: preferredDisplayName
+            )
             isAuthenticated = true
+            syncHealthKitPromptCompletedFromDefaults()
             AppLogger.log(
                 category: "auth",
                 level: .info,
@@ -132,6 +145,7 @@ final class SessionStore: ObservableObject {
             isAuthenticated = false
             currentProfile = nil
             showSearchingCardOnHome = false
+            healthKitPromptCompleted = false
             AppLogger.log(
                 category: "auth",
                 level: .info,
@@ -154,6 +168,25 @@ final class SessionStore: ObservableObject {
         UserDefaults.standard.set(false, forKey: Self.onboardingKey)
         isOnboardingComplete = false
         showSearchingCardOnHome = false
+        if let id = currentProfile?.id {
+            UserDefaults.standard.removeObject(forKey: Self.healthKitPromptKey(profileId: id))
+        }
+        healthKitPromptCompleted = false
+    }
+
+    func markHealthKitPromptCompleted() {
+        guard let profileId = currentProfile?.id else { return }
+        UserDefaults.standard.set(true, forKey: Self.healthKitPromptKey(profileId: profileId))
+        healthKitPromptCompleted = true
+        AppLogger.log(category: "onboarding", level: .info, message: "health onboarding prompt completed (metric sync may start)")
+    }
+
+    private func syncHealthKitPromptCompletedFromDefaults() {
+        guard let id = currentProfile?.id else {
+            healthKitPromptCompleted = false
+            return
+        }
+        healthKitPromptCompleted = UserDefaults.standard.bool(forKey: Self.healthKitPromptKey(profileId: id))
     }
 
     func markOnboardingSearchVisible() {

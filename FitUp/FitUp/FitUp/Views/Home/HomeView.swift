@@ -20,6 +20,8 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
 
+                statsRow
+
                 if let errorMessage = viewModel.errorMessage, !errorMessage.isEmpty {
                     Text(errorMessage)
                         .font(FitUpFont.body(12, weight: .semibold))
@@ -27,7 +29,7 @@ struct HomeView: View {
                         .padding(.horizontal, 2)
                 }
 
-                // Locked order: Searching -> Active -> Pending -> Discover Players
+                // Stats -> Searching -> Pending -> Active Battles -> Past Matches -> Discover
                 if !viewModel.searchingRequests.isEmpty {
                     SearchingSection(
                         requests: viewModel.searchingRequests,
@@ -35,15 +37,6 @@ struct HomeView: View {
                         waitTimeText: { viewModel.waitTimeLabel(for: $0) },
                         onCancel: { searchId in
                             Task { await viewModel.cancelSearch(searchId) }
-                        }
-                    )
-                }
-
-                if !viewModel.activeMatches.isEmpty {
-                    ActiveSection(
-                        matches: viewModel.activeMatches,
-                        onOpenMatch: { match in
-                            onOpenMatchDetails(match.id, match.opponent.displayName)
                         }
                     )
                 }
@@ -63,6 +56,20 @@ struct HomeView: View {
                         }
                     )
                 }
+
+                ActiveSection(
+                    matches: viewModel.activeMatches,
+                    onOpenMatch: { match in
+                        onOpenMatchDetails(match.id, match.opponent.displayName)
+                    }
+                )
+
+                PastMatchesSection(
+                    matches: viewModel.completedMatches,
+                    onOpenMatch: { match in
+                        onOpenMatchDetails(match.id, match.opponentName)
+                    }
+                )
 
                 if !viewModel.discoverUsers.isEmpty {
                     DiscoverSection(
@@ -88,6 +95,42 @@ struct HomeView: View {
         .onDisappear {
             viewModel.stop()
         }
+    }
+
+    private var statsRow: some View {
+        HStack(spacing: 10) {
+            statCell(value: "\(viewModel.stats.matchCount)", label: "Matches")
+            statCell(value: "\(viewModel.stats.winCount)", label: "Wins")
+            statCell(
+                value: viewModel.stats.winRateText,
+                label: "Win Rate",
+                accentColor: FitUpColors.Neon.cyan,
+                variant: .win
+            )
+        }
+    }
+
+    private func statCell(
+        value: String,
+        label: String,
+        accentColor: Color? = nil,
+        variant: GlassCardVariant = .base
+    ) -> some View {
+        VStack(spacing: 5) {
+            Text(value)
+                .font(FitUpFont.display(28, weight: .black))
+                .foregroundStyle(accentColor ?? FitUpColors.Text.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(label.uppercased())
+                .font(FitUpFont.body(10, weight: .medium))
+                .foregroundStyle(FitUpColors.Text.tertiary)
+                .tracking(0.5)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 8)
+        .glassCard(variant)
     }
 
     private var header: some View {

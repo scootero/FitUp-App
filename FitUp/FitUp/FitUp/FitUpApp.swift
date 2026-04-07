@@ -15,6 +15,7 @@ struct FitUpApp: App {
 
     init() {
         AppThirdPartyConfig.configureIfPossible()
+        Task { await SubscriptionService.shared.refreshEntitlement() }
     }
 
     var body: some Scene {

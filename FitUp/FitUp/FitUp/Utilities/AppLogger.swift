@@ -17,6 +17,9 @@ enum LogLevel: String {
 enum AppLogger {
     private static let osLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FitUp", category: "app")
 
+    /// Per-value cap so huge fields (e.g. `hk_snapshot`) don’t flood the Xcode console.
+    private static let maxConsoleMetadataValueLength = 800
+
     /// Fire-and-forget log line (never throws to callers).
     static func log(
         category: String,
@@ -25,7 +28,7 @@ enum AppLogger {
         userId: UUID? = nil,
         metadata: [String: String]? = nil
     ) {
-        let line = "[\(category)] \(message)"
+        let line = consoleLine(category: category, message: message, userId: userId, metadata: metadata)
         switch level {
         case .debug: osLog.debug("\(line)")
         case .info: osLog.info("\(line)")
@@ -67,6 +70,32 @@ enum AppLogger {
         } catch {
             osLog.error("app_logs insert failed: \(error.localizedDescription)")
         }
+    }
+
+    private static func consoleLine(
+        category: String,
+        message: String,
+        userId: UUID?,
+        metadata: [String: String]?
+    ) -> String {
+        var segments: [String] = ["[\(category)] \(message)"]
+        if let userId {
+            segments.append("userId=\(userId.uuidString)")
+        }
+        guard let metadata, !metadata.isEmpty else {
+            return segments.joined(separator: " ")
+        }
+        let sorted = metadata.sorted { $0.key < $1.key }
+        for pair in sorted {
+            let value: String
+            if pair.value.count > maxConsoleMetadataValueLength {
+                value = String(pair.value.prefix(maxConsoleMetadataValueLength)) + "…(truncated)"
+            } else {
+                value = pair.value.replacingOccurrences(of: "\n", with: "\\n")
+            }
+            segments.append("\(pair.key)=\(value)")
+        }
+        return segments.joined(separator: " ")
     }
 }
 

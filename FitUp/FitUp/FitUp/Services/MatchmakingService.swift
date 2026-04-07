@@ -111,7 +111,7 @@ final class MatchmakingService {
     }
 
     func evaluateEntryGate(profile: Profile?) async -> ChallengeEntryGate {
-        let isPremium = isPremiumUser(profile: profile)
+        let isPremium = await MainActor.run { SubscriptionService.shared.isPremium }
         if isPremium {
             return ChallengeEntryGate(
                 isBlocked: false,
@@ -121,9 +121,11 @@ final class MatchmakingService {
             )
         }
 
+        // Per spec: the paywall is never shown before the user has completed their first match.
+        let canShowPaywall = await MainActor.run { SubscriptionService.shared.canShowPaywall }
         guard let profileId = profile?.id else {
             return ChallengeEntryGate(
-                isBlocked: true,
+                isBlocked: canShowPaywall,
                 isPremium: false,
                 usedSlots: 1,
                 slotLimit: 1
@@ -132,8 +134,9 @@ final class MatchmakingService {
 
         do {
             let usedSlots = try await repository.countOpenSlots(currentUserId: profileId)
+            let isBlocked = canShowPaywall && !(SubscriptionService.shared.canCreateMatch(usedSlots: usedSlots))
             return ChallengeEntryGate(
-                isBlocked: usedSlots >= 1,
+                isBlocked: isBlocked,
                 isPremium: false,
                 usedSlots: usedSlots,
                 slotLimit: 1
@@ -182,15 +185,41 @@ final class MatchmakingService {
             ]
         )
 
+        scheduleMatchmakingRetries(repository: repository, requestId: requestId)
+
         return requestId
     }
 
-    private func isPremiumUser(profile: Profile?) -> Bool {
-        #if DEBUG
-        if UserDefaults.standard.bool(forKey: "devMode") {
-            return true
+    /// Re-invokes pairing after delays in case the INSERT trigger's pg_net call failed or a partner joined slightly later.
+    private func scheduleMatchmakingRetries(repository: MatchRepository, requestId: UUID) {
+        Task(priority: .utility) {
+            let delaysNanoseconds: [UInt64] = [
+                5 * 1_000_000_000,
+                15 * 1_000_000_000,
+            ]
+            for nanos in delaysNanoseconds {
+                try? await Task.sleep(nanoseconds: nanos)
+                do {
+                    try await repository.retryMatchmakingSearch(requestId: requestId)
+                    AppLogger.log(
+                        category: "matchmaking",
+                        level: .debug,
+                        message: "matchmaking retry invoked",
+                        metadata: ["request_id": requestId.uuidString]
+                    )
+                } catch {
+                    AppLogger.log(
+                        category: "matchmaking",
+                        level: .warning,
+                        message: "matchmaking retry failed",
+                        metadata: [
+                            "request_id": requestId.uuidString,
+                            "error": error.localizedDescription,
+                        ]
+                    )
+                }
+            }
         }
-        #endif
-        return profile?.subscriptionTier.lowercased() == "premium"
     }
+
 }

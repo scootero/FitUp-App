@@ -15,6 +15,8 @@ struct Profile: Codable, Equatable, Identifiable {
     let avatarURL: String?
     let subscriptionTier: String
     let timezone: String?
+    // Added in Slice 9 schema — nil means default (true) for users created before the column.
+    let notificationsEnabled: Bool?
     let createdAt: Date
     let updatedAt: Date
 
@@ -26,6 +28,7 @@ struct Profile: Codable, Equatable, Identifiable {
         case avatarURL = "avatar_url"
         case subscriptionTier = "subscription_tier"
         case timezone
+        case notificationsEnabled = "notifications_enabled"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }

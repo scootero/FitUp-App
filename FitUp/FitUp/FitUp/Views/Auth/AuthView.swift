@@ -6,6 +6,7 @@
 //
 
 import AuthenticationServices
+import Foundation
 import SwiftUI
 
 struct AuthView: View {
@@ -175,10 +176,23 @@ struct AuthView: View {
                 return
             }
 
-            await sessionStore.signInWithApple(idToken: idToken)
+            // Apple sends `fullName` only on the first authorization for this app + Apple ID.
+            let preferredName = Self.displayNameFromApple(credential.fullName)
+            await sessionStore.signInWithApple(idToken: idToken, preferredDisplayName: preferredName)
         } catch {
             sessionStore.authErrorMessage = error.localizedDescription
         }
+    }
+
+    /// Prefers given name; falls back to a locale-formatted full name from `PersonNameComponents`.
+    private static func displayNameFromApple(_ components: PersonNameComponents?) -> String? {
+        guard let components else { return nil }
+        let given = components.givenName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !given.isEmpty { return given }
+        let formatter = PersonNameComponentsFormatter()
+        formatter.style = .default
+        let formatted = formatter.string(from: components).trimmingCharacters(in: .whitespacesAndNewlines)
+        return formatted.isEmpty ? nil : formatted
     }
 }
 

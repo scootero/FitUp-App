@@ -326,6 +326,8 @@ You should see all 13 tables:
 
 Go to **Authentication → Policies** or run this SQL. RLS must be enabled before the app can talk to Supabase from the client safely.
 
+**Existing projects:** If you previously applied the recursive `match_participants` policies (subquerying `match_participants` inside `match_participants` policies), run `supabase/sql/fix-match-participants-rls-recursion.sql` from the repository root in the SQL Editor to replace them with `public.current_user_match_ids()` (see that file for details).
+
 ### Enable RLS on all tables
 
 ```sql
@@ -414,33 +416,36 @@ CREATE POLICY "msr: own update"
 
 ### Policies — matches and match_participants
 
+Run the helper function once (avoids infinite RLS recursion when policies on `match_participants` would otherwise subquery `match_participants`):
+
+```sql
+CREATE OR REPLACE FUNCTION public.current_user_match_ids()
+RETURNS SETOF uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT mp.match_id
+  FROM match_participants mp
+  WHERE mp.user_id = (SELECT id FROM profiles WHERE auth_user_id = auth.uid());
+$$;
+
+REVOKE ALL ON FUNCTION public.current_user_match_ids() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.current_user_match_ids() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.current_user_match_ids() TO service_role;
+```
+
 ```sql
 -- Users can read matches they are participating in
 CREATE POLICY "matches: participant read"
   ON matches FOR SELECT
-  USING (
-    id IN (
-      SELECT match_id FROM match_participants
-      WHERE user_id = (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-    )
-  );
+  USING (id IN (SELECT public.current_user_match_ids()));
 
--- Users can read their own match_participants rows
-CREATE POLICY "mp: own read"
+-- Users can read their own row and co-participants (same match)
+CREATE POLICY "mp: participant read"
   ON match_participants FOR SELECT
-  USING (
-    user_id = (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-  );
-
--- Users can read co-participant rows (to see opponent info)
-CREATE POLICY "mp: co-participant read"
-  ON match_participants FOR SELECT
-  USING (
-    match_id IN (
-      SELECT match_id FROM match_participants
-      WHERE user_id = (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-    )
-  );
+  USING (match_id IN (SELECT public.current_user_match_ids()));
 
 -- Users can update their own accepted_at
 CREATE POLICY "mp: own update"
@@ -482,23 +487,17 @@ CREATE POLICY "dc: recipient update"
 -- Participants can read match_days for their matches
 CREATE POLICY "md: participant read"
   ON match_days FOR SELECT
-  USING (
-    match_id IN (
-      SELECT match_id FROM match_participants
-      WHERE user_id = (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-    )
-  );
+  USING (match_id IN (SELECT public.current_user_match_ids()));
 
 -- Participants can read match_day_participants for their matches
 CREATE POLICY "mdp: participant read"
   ON match_day_participants FOR SELECT
   USING (
-    match_day_id IN (
-      SELECT id FROM match_days
-      WHERE match_id IN (
-        SELECT match_id FROM match_participants
-        WHERE user_id = (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-      )
+    EXISTS (
+      SELECT 1
+      FROM match_days md
+      WHERE md.id = match_day_participants.match_day_id
+        AND md.match_id IN (SELECT public.current_user_match_ids())
     )
   );
 
@@ -519,12 +518,7 @@ CREATE POLICY "ms: own insert"
 -- Participants can read metric_snapshots for their matches
 CREATE POLICY "ms: participant read"
   ON metric_snapshots FOR SELECT
-  USING (
-    match_id IN (
-      SELECT match_id FROM match_participants
-      WHERE user_id = (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-    )
-  );
+  USING (match_id IN (SELECT public.current_user_match_ids()));
 ```
 
 ### Policies — leaderboard and bests (public read)
@@ -747,6 +741,7 @@ From the repo root (`FitUp-App/`):
 
 ```bash
 supabase functions deploy matchmaking-pairing
+supabase functions deploy retry-matchmaking-search
 supabase functions deploy on-all-accepted
 ```
 
@@ -764,6 +759,30 @@ If you apply `supabase/sql/slice9-notifications.sql` **after** this script, run 
 
 - Two users submit Quick Match with the same metric, duration, and start mode → one `matches` row (`public_matchmaking`), both `match_search_requests` rows `matched`, two `match_participants` with `joined_via = matchmaking`.
 - When both have accepted (`accepted_at` set) → `matches.state = active`, `match_days` row count equals `duration_days`, each day has two `match_day_participants`.
+
+### 4. Stale search retries (recommended)
+
+Pairing runs on **INSERT** via `pg_net`. If that HTTP call fails, rows can stay `searching` until something retries. After Slice 8 (`pg_cron` enabled), run:
+
+`supabase/sql/slice4b-matchmaking-stale-retry.sql`
+
+This adds `public.matchmaking_retry_stale_searches` and schedules `matchmaking-retry-stale` every minute (re-invokes `matchmaking-pairing` for up to 30 queue rows older than 5 seconds).
+
+### 5. Deploy authenticated retry function (used by the iOS app)
+
+The app calls `retry-matchmaking-search` with the user’s session JWT (verifies `creator_id` before pairing).
+
+From the repo root (`FitUp-App/`):
+
+```bash
+supabase functions deploy retry-matchmaking-search
+```
+
+### 6. Operational checks
+
+- Read-only SQL checks: `supabase/sql/verify-matchmaking.sql`
+- Manual pairing test (service role, **never** embed in the app): `scripts/matchmaking-pair-test.sh`
+- One-time duplicate queue cleanup: `supabase/sql/cleanup-duplicate-match-search-requests.sql`
 
 ---
 

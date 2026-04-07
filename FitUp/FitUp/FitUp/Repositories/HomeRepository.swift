@@ -5,6 +5,7 @@
 //  Slice 3 data access for Home screen sections.
 //
 
+import Combine
 import Foundation
 import Supabase
 

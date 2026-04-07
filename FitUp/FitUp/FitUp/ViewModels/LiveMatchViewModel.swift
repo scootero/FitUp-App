@@ -224,7 +224,11 @@ final class LiveMatchViewModel: ObservableObject {
                     level: .warning,
                     message: "live match metric read failed",
                     userId: profile.id,
-                    metadata: ["error": error.localizedDescription]
+                    metadata: [
+                        "error": error.localizedDescription,
+                        "error_type": String(describing: type(of: error)),
+                        "pipeline": "LiveMatchViewModel.refreshMyMetric",
+                    ]
                 )
             }
         }

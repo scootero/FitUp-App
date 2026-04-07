@@ -240,10 +240,110 @@ Notes:
 - Daily cap of 10 push notifications per user enforced in `dispatch-notification`; `live_activity_update` events are exempt from the cap.
 - Verify build: `xcodebuild -project "FitUp/FitUp/FitUp.xcodeproj" -scheme "FitUp" -destination "generic/platform=iOS Simulator" build` → BUILD SUCCEEDED.
 
-## Slice [N] — [name]
-Date: [date]
+## Slice 11 — Leaderboard / Ranks screen
+Date: 2026-04-03
 Status: Complete
-Files created: [list]
-Files modified: [list]
-Supabase changes: [list any tables/functions touched]
-Notes: [anything notable or deferred]
+Files created:
+- `FitUp/FitUp/FitUp/Utilities/ProfileAccentColor.swift`
+- `FitUp/FitUp/FitUp/Models/LeaderboardDisplayRow.swift`
+- `FitUp/FitUp/FitUp/Repositories/LeaderboardRepository.swift`
+- `FitUp/FitUp/FitUp/ViewModels/LeaderboardViewModel.swift`
+- `FitUp/FitUp/FitUp/Views/Leaderboard/LeaderboardView.swift`, `PodiumView.swift`, `RankedRowView.swift`
+Files modified:
+- `FitUp/FitUp/FitUp/ContentView.swift` (Ranks tab → `LeaderboardView` + challenge prefill)
+- `FitUp/docs/slice-tracker.md` (this entry)
+Supabase changes:
+- None. Reads `leaderboard_entries` (by `week_start` UTC Monday aligned with `update-leaderboard` Edge Function), `profiles`, and `match_participants` for Friends (opponent user ids on shared matches). RLS unchanged.
+Notes:
+- **Friends** = users who share any `match_participants.match_id` with the current user (opponents); ranks recomputed client-side by points for that filtered set.
+- **Week start** uses UTC Monday to match backend `weekStartIsoDate`.
+- Pinned “You” bar shows when the current user’s list row scrolls out of the visible viewport (`LeaderboardUserRowVisibilityPreferenceKey` + global frame intersection).
+- New Swift files live under the synchronized `FitUp/` root; no manual `project.pbxproj` edits expected.
+
+## Slice 13 — Paywall and Dev Mode
+Date: 2026-04-03
+Status: Complete
+Files created:
+- `FitUp/FitUp/FitUp/Services/SubscriptionService.swift` (RevenueCat entitlement wrapper; `isPremium`, `canCreateMatch`, `canShowPaywall`, `markFirstMatchWon`, `refreshEntitlement`, `purchase`, `restorePurchases`; Dev Mode bypass in `#if DEBUG`)
+- `FitUp/FitUp/FitUp/Views/Paywall/PaywallView.swift` (annual plan gold-glass prominent + monthly plan base-glass, RevenueCat package fetch, purchase + restore flows, "Not now" dismiss)
+Files modified:
+- `FitUp/FitUp/FitUp/Services/MatchmakingService.swift` (removed `isPremiumUser`; `evaluateEntryGate` now delegates to `SubscriptionService.shared.isPremium` and `canShowPaywall` — paywall never blocks before first match is completed)
+- `FitUp/FitUp/FitUp/Views/Challenge/ChallengeFlowView.swift` (replaced inline `ChallengeEntryPaywallSheet` with `PaywallView`)
+- `FitUp/FitUp/FitUp/ViewModels/MatchDetailsViewModel.swift` (calls `markFirstMatchWon()` or `markFirstMatchCompleted()` when a completed match loads)
+- `FitUp/FitUp/FitUp/ContentView.swift` (`ProfilePlaceholderView` extended: upgrade banner shown for free users after first win `glassCard(.pending)`; `#if DEBUG` Dev Mode toggle with `@AppStorage("devMode")` + status indicator)
+- `FitUp/FitUp/FitUp/FitUpApp.swift` (`Task { await SubscriptionService.shared.refreshEntitlement() }` called on init)
+- `FitUp/docs/slice-tracker.md` (this entry)
+Supabase changes:
+- None. No schema changes, no new Edge Functions.
+Notes:
+- Paywall timing per spec: `canShowPaywall` returns false until `UserDefaults.bool("hasCompletedFirstMatch")` is true. This means free-tier users can complete their first match without ever hitting the paywall.
+- Soft upsell (upgrade banner) shows in Profile after `firstMatchWon` is set — not a hard block.
+- Dev Mode toggle is `#if DEBUG` only; toggling it ON makes `SubscriptionService.shared.isPremium` return `true` immediately without a RevenueCat call.
+- RevenueCat entitlement ID used: `"pro"`. Create products `fitup_pro_annual` and `fitup_pro_monthly` in App Store Connect + matching offering in RevenueCat dashboard before testing purchases on device.
+- `PaywallView` gracefully falls back to hardcoded price strings (`$29.99/year`, `$4.99/month`) when RevenueCat packages are unavailable.
+- Build verified: no linter errors. Run `xcodebuild -project "FitUp/FitUp/FitUp.xcodeproj" -scheme "FitUp" -destination "generic/platform=iOS Simulator" build` to verify.
+
+## Slice 14 — Profile screen and Dev Tools
+Date: 2026-04-03
+Status: Complete
+Files created:
+- `FitUp/FitUp/FitUp/ViewModels/ProfileViewModel.swift` (stats from ActivityRepository + LeaderboardRepository, log fetch with time/level filters, JSON export)
+- `FitUp/FitUp/FitUp/Views/Profile/ProfileView.swift` (hero card, upgrade banner, settings groups, dev tools section, sign out row)
+- `FitUp/FitUp/FitUp/Views/Profile/SettingsGroupView.swift` (reusable `SettingsGroupView<Content>` + `SettingsRowView` with chevron/toggle/badge actions)
+- `FitUp/FitUp/FitUp/Views/Profile/LogViewerView.swift` (monospace green log list, time-range + level filter chips, ShareLink JSON export)
+Files modified:
+- `FitUp/FitUp/FitUp/Models/Profile.swift` (added `notificationsEnabled: Bool?` / `notifications_enabled` CodingKey — column added in Slice 9)
+- `FitUp/FitUp/FitUp/Repositories/ProfileRepository.swift` (added `updateNotificationsEnabled()`, `fetchLogs(userId:since:levelFilter:)`, `AppLogEntry` Codable model)
+- `FitUp/FitUp/FitUp/ContentView.swift` (replaced `ProfilePlaceholderView` with `ProfileView`; added `showingPaywall` state + `.sheet`; removed dead `ProfilePlaceholderView` and `TabPlaceholderView`)
+- `FitUp/docs/slice-tracker.md` (this entry)
+Supabase changes:
+- None. No schema changes, no new Edge Functions. Reads `app_logs` (existing table) and `leaderboard_entries` (existing). Writes `profiles.notifications_enabled` (column added in Slice 9 migration).
+Notes:
+- Stats row (Matches / Wins / Streak) pulls from `ActivityRepository.loadCompletedMatches` + current-week `leaderboard_entries` streak.
+- Notifications toggle writes `profiles.notifications_enabled` via PATCH on `ProfileRepository.updateNotificationsEnabled()`. Make sure the Slice 9 `notifications_enabled` column exists on the `profiles` table before testing.
+- Log viewer fetches `app_logs` filtered by `user_id`, `created_at >= since`, and optional `level` filter. Entries show in monospace green; errors in red, warnings in yellow.
+- Dev Mode toggle and entire DEVELOPER group are `#if DEBUG` only — absent from release/production builds.
+- Sign Out sits in a standalone glassCard(.base) row at the bottom (always visible in all build configurations).
+- Build verified: `xcodebuild` → BUILD SUCCEEDED (no Swift compilation errors).
+
+## Slice 12 — Health screen
+Date: 2026-04-03
+Status: Complete
+Files created:
+- `FitUp/FitUp/FitUp/Services/ReadinessCalculator.swift`
+- `FitUp/FitUp/FitUp/Repositories/HealthRepository.swift`
+- `FitUp/FitUp/FitUp/ViewModels/HealthViewModel.swift`
+- `FitUp/FitUp/FitUp/Views/Health/HealthView.swift`
+- `FitUp/FitUp/FitUp/Views/Health/Cards/BattleReadinessCard.swift`, `ComponentBreakdownCard.swift`, `WeekChartCard.swift`, `SleepQualityCard.swift`, `HRZonesCard.swift`
+Files modified:
+- `FitUp/FitUp/FitUp/Services/HealthKitService.swift` (resting HR, sleep summary, HR zones from latest workout, 7-day step/cal arrays; read types: `heartRate`, `workout`)
+- `FitUp/FitUp/FitUp/Design/DesignTokens.swift` (`FitUpColors.HealthSleepStage` — sleep stage colors from mockup)
+- `FitUp/FitUp/FitUp/ContentView.swift` (Health tab → `HealthView`)
+- `FitUp/docs/slice-tracker.md` (this entry)
+Supabase changes:
+- None. Reads `all_time_bests` (existing public SELECT RLS). Reuses `HomeRepository.loadActiveMatches` + `ActivityRepository.loadCompletedMatches` for Competition Edge and win rate.
+Notes:
+- Battle Readiness from `ReadinessCalculator.compute` (docs §12); `ReadinessCalculatorSanityTests.run()` in DEBUG SwiftUI Preview (`ReadinessCalculator.swift`).
+- After pulling this slice: enable **Health** data permissions in Xcode scheme for simulator (HealthKit); add **Heart Rate** + **Workouts** read access — new `requestAuthorization` types. No new Edge Functions.
+- If `all_time_bests` row is missing for the user, all-time cells show placeholders until backend populates bests.
+
+## Matchmaking reliability — stuck `searching` fixes
+Date: 2026-04-03
+Status: Complete
+Files created:
+- `supabase/functions/_shared/matchmakingPairing.ts` (shared RPC + notifications)
+- `supabase/functions/retry-matchmaking-search/index.ts` (JWT + ownership check → same pairing path)
+- `supabase/sql/slice4b-matchmaking-stale-retry.sql` (`matchmaking_retry_stale_searches` + pg_cron `matchmaking-retry-stale`)
+- `supabase/sql/verify-matchmaking.sql`, `supabase/sql/cleanup-duplicate-match-search-requests.sql`
+- `scripts/matchmaking-pair-test.sh`
+Files modified:
+- `supabase/functions/matchmaking-pairing/index.ts` (uses shared module)
+- `FitUp/FitUp/FitUp/Repositories/MatchRepository.swift` (cancel prior searching rows before new Quick Match; `retryMatchmakingSearch`)
+- `FitUp/FitUp/FitUp/Repositories/MatchSearchRepository.swift` (cancel prior searching before onboarding insert)
+- `FitUp/FitUp/FitUp/Services/MatchmakingService.swift` (scheduled retries at +5s and +15s via Edge Function)
+- `FitUp/docs/supabase-setup-guide.md` (deploy `retry-matchmaking-search`, slice4b, verify/cleanup scripts)
+Supabase changes:
+- Deploy `retry-matchmaking-search` after pulling. Run `slice4b-matchmaking-stale-retry.sql` in SQL Editor (requires `slice4` + `slice8` pg_cron). Optional: run `cleanup-duplicate-match-search-requests.sql` once if duplicate queue rows exist.
+Notes:
+- Pairing still requires two **different** users with compatible `metric_type` / `duration_days` / `start_mode`; same user cannot match themselves.
+- Retries address failed `pg_net` delivery and partners joining shortly after; cron sweeps stale rows every minute.

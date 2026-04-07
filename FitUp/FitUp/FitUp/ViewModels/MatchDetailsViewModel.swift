@@ -65,9 +65,16 @@ final class MatchDetailsViewModel: ObservableObject {
         }
 
         do {
-            snapshot = try await detailsRepository.loadSnapshot(matchId: matchId, currentUser: profile)
+            let loaded = try await detailsRepository.loadSnapshot(matchId: matchId, currentUser: profile)
+            snapshot = loaded
             if errorMessage != nil {
                 errorMessage = nil
+            }
+            // Unlock paywall + soft-upsell eligibility when user sees their first completed win.
+            if loaded.state == .completed && loaded.myScore > loaded.theirScore {
+                SubscriptionService.shared.markFirstMatchWon()
+            } else if loaded.state == .completed {
+                SubscriptionService.shared.markFirstMatchCompleted()
             }
         } catch {
             errorMessage = "Could not load this match right now."

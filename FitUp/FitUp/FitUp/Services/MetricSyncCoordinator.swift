@@ -18,6 +18,14 @@ enum MetricSyncTrigger: String {
 actor MetricSyncCoordinator {
     static let shared = MetricSyncCoordinator()
 
+    private static let iso8601: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        return f
+    }()
+
+    /// `HKObserverQuery` + background delivery: steps + active energy only (`HealthKitService`).
+    private static let observerMetricLabels = "stepCount, activeEnergyBurned"
+
     private let snapshotRepository = MetricSnapshotRepository()
     private let matchDayRepository = MatchDayRepository()
 
@@ -26,6 +34,8 @@ actor MetricSyncCoordinator {
     private var isSyncing = false
     private var needsResync = false
     private var lastSyncAt: Date?
+    private var lastObserverWakeAt: Date?
+    private var lastSyncCompletedAt: Date?
 
     private let minimumLiveSyncInterval: TimeInterval = 8
 
@@ -76,6 +86,22 @@ actor MetricSyncCoordinator {
     }
 
     private func handleObserverWake() async {
+        lastObserverWakeAt = Date()
+        if let uid = activeProfile?.id, let wake = lastObserverWakeAt {
+            AppLogger.log(
+                category: "healthkit_sync",
+                level: .info,
+                message: "HealthKit observer fired (steps or active energy changed)",
+                userId: uid,
+                metadata: [
+                    "pipeline": "HKObserverQuery → MetricSyncCoordinator.handleObserverWake",
+                    "observer_wake_at": Self.iso8601.string(from: wake),
+                    "hk_observer_types": Self.observerMetricLabels,
+                    "hk_observer_count": "2",
+                ]
+            )
+        }
+
         let backgroundTaskId = await MainActor.run {
             UIApplication.shared.beginBackgroundTask(withName: "FitUpHealthObserverSync")
         }
@@ -91,6 +117,22 @@ actor MetricSyncCoordinator {
 
     private func performSync(trigger: MetricSyncTrigger) async {
         guard let profile = activeProfile else { return }
+
+        let syncStarted = Date()
+        AppLogger.log(
+            category: "healthkit_sync",
+            level: .info,
+            message: "metric sync started",
+            userId: profile.id,
+            metadata: [
+                "trigger": trigger.rawValue,
+                "pipeline": "MetricSyncCoordinator.performSync",
+                "hk_observer_types": Self.observerMetricLabels,
+                "hk_observer_count": "2",
+                "last_sync_completed_at": lastSyncCompletedAt.map { Self.iso8601.string(from: $0) } ?? "never",
+                "last_observer_wake_at": lastObserverWakeAt.map { Self.iso8601.string(from: $0) } ?? "never",
+            ]
+        )
 
         var stepsTotal: Int?
         var caloriesTotal: Int?
@@ -215,6 +257,23 @@ actor MetricSyncCoordinator {
         }
 
         lastSyncAt = Date()
+        lastSyncCompletedAt = lastSyncAt
+        let durationMs = Int(syncStarted.timeIntervalSinceNow * -1000)
+        AppLogger.log(
+            category: "healthkit_sync",
+            level: .info,
+            message: "metric sync finished",
+            userId: profile.id,
+            metadata: [
+                "trigger": trigger.rawValue,
+                "pipeline": "MetricSyncCoordinator.performSync",
+                "duration_ms": "\(durationMs)",
+                "steps_today": stepsTotal.map(String.init) ?? "nil",
+                "active_calories_today": caloriesTotal.map(String.init) ?? "nil",
+                "historical_targets": "\(historicalTargets.count)",
+                "snapshot_writes": "\(writes.count)",
+            ]
+        )
     }
 
     private func handleHealthReadError(
@@ -236,6 +295,7 @@ actor MetricSyncCoordinator {
             metadata: [
                 "metric_type": metricType.rawValue,
                 "error": error.localizedDescription,
+                "error_type": String(describing: type(of: error)),
             ]
         )
     }

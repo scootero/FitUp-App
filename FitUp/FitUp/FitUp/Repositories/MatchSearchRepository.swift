@@ -5,6 +5,7 @@
 //  Slice 2: onboarding quick-match search writes.
 //
 
+import Combine
 import Foundation
 import Supabase
 
@@ -22,6 +23,14 @@ struct MatchSearchRepository {
         creatorId: UUID,
         creatorBaseline: Double?
     ) async throws {
+        let client = try client
+        try await client
+            .from("match_search_requests")
+            .update(MatchSearchStatusUpdate(status: "cancelled"))
+            .eq("creator_id", value: creatorId.uuidString)
+            .eq("status", value: "searching")
+            .execute()
+
         let row = MatchSearchRequestInsert(
             creatorId: creatorId,
             metricType: "steps",
@@ -31,6 +40,10 @@ struct MatchSearchRepository {
         )
         try await client.from("match_search_requests").insert(row).execute()
     }
+}
+
+private struct MatchSearchStatusUpdate: Encodable {
+    let status: String
 }
 
 private struct MatchSearchRequestInsert: Encodable {

@@ -104,10 +104,7 @@ struct ChallengeFlowView: View {
                 onClose()
             }
         }) {
-            ChallengeEntryPaywallSheet(
-                usedSlots: entryGate?.usedSlots ?? 1,
-                slotLimit: entryGate?.slotLimit ?? 1
-            ) {
+            PaywallView {
                 showingPaywallSheet = false
             }
         }
@@ -452,61 +449,4 @@ struct ChallengeFlowView: View {
     }
 }
 
-private struct ChallengeEntryPaywallSheet: View {
-    let usedSlots: Int
-    let slotLimit: Int
-    var onClose: () -> Void
-
-    var body: some View {
-        ZStack {
-            BackgroundGradientView()
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Upgrade to FitUp Pro")
-                    .font(FitUpFont.display(24, weight: .black))
-                    .foregroundStyle(FitUpColors.Text.primary)
-
-                Text("Free tier supports \(slotLimit) open match slot. You currently have \(usedSlots).")
-                    .font(FitUpFont.body(13, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("$29.99/year")
-                            .font(FitUpFont.display(20, weight: .black))
-                            .foregroundStyle(FitUpColors.Neon.yellow)
-                        Text("Best value · Annual plan")
-                            .font(FitUpFont.body(12, weight: .semibold))
-                            .foregroundStyle(FitUpColors.Text.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .glassCard(.gold)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("$4.99/month")
-                            .font(FitUpFont.display(17, weight: .bold))
-                            .foregroundStyle(FitUpColors.Text.primary)
-                        Text("Monthly plan")
-                            .font(FitUpFont.body(12, weight: .medium))
-                            .foregroundStyle(FitUpColors.Text.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .glassCard(.base)
-                }
-
-                Button("Not now") {
-                    onClose()
-                }
-                .buttonStyle(.plain)
-                .ghostButton(color: FitUpColors.Neon.cyan)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 2)
-            }
-            .padding(20)
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-    }
-}
 

@@ -2,48 +2,35 @@
 //  FloatingTabBar.swift
 //  FitUp
 //
-//  Maps JSX `BottomNav` — floating card, 6 slots, center BATTLE elevated 14pt.
+//  Maps JSX `BottomNav` — floating card, five slots: Home, Health, Battle, Ranks, Profile.
+//  Center Battle opens the challenge flow; label lives inside the gradient card.
 //
 
 import SwiftUI
 
 enum MainTab: String, CaseIterable, Identifiable {
     case home
-    case activity
     case health
-    case profile
     case ranks
+    case profile
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .home: return "HOME"
-        case .activity: return "BATTLES"
         case .health: return "HEALTH"
-        case .profile: return "PROFILE"
         case .ranks: return "RANKS"
+        case .profile: return "PROFILE"
         }
     }
 
     var systemImage: String {
         switch self {
         case .home: return "house.fill"
-        case .activity: return "figure.run"
         case .health: return "heart.fill"
-        case .profile: return "person.fill"
         case .ranks: return "trophy.fill"
-        }
-    }
-
-    /// Visual column index in the bar (0…5), skipping center battle at 2.
-    var barIndex: Int {
-        switch self {
-        case .home: return 0
-        case .activity: return 1
-        case .health: return 3
-        case .profile: return 4
-        case .ranks: return 5
+        case .profile: return "person.fill"
         }
     }
 }
@@ -55,22 +42,17 @@ struct FloatingTabBar: View {
     private let barHeight: CGFloat = 68
     private let horizontalPadding: CGFloat = 12
     private let bottomPadding: CGFloat = 10
-    private let battleSize: CGFloat = 54
-    private let battleCorner: CGFloat = 18
-    private let battleLift: CGFloat = 14
+    private let battleCorner: CGFloat = 16
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(0..<6, id: \.self) { column in
-                if column == 2 {
-                    battleColumn
-                } else if let tab = tab(at: column) {
-                    tabButton(tab)
-                }
-            }
+            tabButton(.home)
+            tabButton(.health)
+            battleColumn
+            tabButton(.ranks)
+            tabButton(.profile)
         }
-        .padding(.top, 10)
-        .frame(height: barHeight, alignment: .top)
+        .frame(height: barHeight, alignment: .center)
         .frame(maxWidth: .infinity)
         .background { barBackground }
         .clipShape(RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous))
@@ -99,39 +81,35 @@ struct FloatingTabBar: View {
     }
 
     private var battleColumn: some View {
-        VStack(spacing: 3) {
-            ZStack {
-                Button(action: onBattle) {
-                    Text("⚔️")
-                        .font(.system(size: 22))
-                        .frame(width: battleSize, height: battleSize)
-                        .background {
-                            RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .shadow(color: FitUpColors.Neon.cyan.opacity(0.4), radius: 12, x: 0, y: 4)
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
-                                        .strokeBorder(Color(red: 5 / 255, green: 5 / 255, blue: 10 / 255, opacity: 0.92), lineWidth: 3)
-                                }
-                        }
-                }
-                .buttonStyle(.plain)
-                .offset(y: -battleLift)
+        Button(action: onBattle) {
+            VStack(spacing: 4) {
+                Text("⚔️")
+                    .font(.system(size: 17))
+                Text("BATTLE")
+                    .font(FitUpFont.body(9, weight: .bold))
+                    .tracking(0.5)
+                    .foregroundStyle(.white.opacity(0.95))
             }
-            .frame(height: 30)
-
-            Text("BATTLE")
-                .font(FitUpFont.body(9, weight: .bold))
-                .tracking(0.5)
-                .foregroundStyle(FitUpColors.Text.tertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            .background {
+                RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .shadow(color: FitUpColors.Neon.cyan.opacity(0.35), radius: 10, x: 0, y: 2)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
+                            .strokeBorder(Color(red: 5 / 255, green: 5 / 255, blue: 10 / 255, opacity: 0.92), lineWidth: 2)
+                    }
+            }
         }
-        .frame(maxWidth: .infinity)
+        .buttonStyle(.plain)
     }
 
     private func tabButton(_ tab: MainTab) -> some View {
@@ -156,10 +134,6 @@ struct FloatingTabBar: View {
             .padding(.top, 2)
         }
         .buttonStyle(.plain)
-    }
-
-    private func tab(at column: Int) -> MainTab? {
-        MainTab.allCases.first { $0.barIndex == column }
     }
 }
 

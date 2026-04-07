@@ -43,6 +43,7 @@
 		D2B71DAA2F72E373000CB580 /* Secrets.example.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.example.xcconfig; sourceTree = "<group>"; };
 		D2B71DAC2F72E373000CB580 /* Info-Additional.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-Additional.plist"; sourceTree = "<group>"; };
 		D2B71DAD2F72E373000CB580 /* FitUp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FitUp.entitlements; sourceTree = "<group>"; };
+		D2B71DAE2F72E373000CB580 /* FitUpWidgetExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "FitUpWidgetExtension-Info.plist"; sourceTree = "<group>"; };
 		E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FitUpWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E3C4B5A62F72E372000CB5A1 /* FitUpActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FitUpActivityAttributes.swift; path = FitUp/Views/LiveActivity/FitUpActivityAttributes.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -105,6 +106,7 @@
 				D2B71DA92F72E373000CB580 /* Debug.xcconfig */,
 				D2B71DAA2F72E373000CB580 /* Secrets.example.xcconfig */,
 				D2B71DAC2F72E373000CB580 /* Info-Additional.plist */,
+				D2B71DAE2F72E373000CB580 /* FitUpWidgetExtension-Info.plist */,
 				D2B71DAD2F72E373000CB580 /* FitUp.entitlements */,
 				E3C4B5A62F72E372000CB5A1 /* FitUpActivityAttributes.swift */,
 			);
@@ -463,7 +465,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				INFOPLIST_FILE = "Config/FitUpWidgetExtension-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -490,7 +492,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				INFOPLIST_FILE = "Config/FitUpWidgetExtension-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

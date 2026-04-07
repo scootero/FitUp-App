@@ -42,6 +42,7 @@ struct OnboardingView: View {
             ) {
                 Task {
                     await viewModel.requestHealthPermission()
+                    sessionStore.markHealthKitPromptCompleted()
                 }
             }
         case .notificationExplainer:

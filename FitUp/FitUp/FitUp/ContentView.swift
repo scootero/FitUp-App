@@ -31,20 +31,31 @@ struct ContentView: View {
             }
         }
         .screenTransition()
-        .task(id: sessionStore.currentProfile?.id) {
+        .task(id: metricSyncLifecycleIdentity) {
+            let eligible = sessionStore.isOnboardingComplete || sessionStore.healthKitPromptCompleted
+            guard eligible else {
+                await MetricSyncCoordinator.shared.updateProfile(nil)
+                return
+            }
             await MetricSyncCoordinator.shared.updateProfile(sessionStore.currentProfile)
             if sessionStore.currentProfile != nil {
                 await MetricSyncCoordinator.shared.requestSync(trigger: .manual, force: true)
-                // Register for APNs now that we have a valid session + profile.
                 notificationService.registerForRemoteNotifications()
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
+            guard sessionStore.isOnboardingComplete || sessionStore.healthKitPromptCompleted else { return }
             Task {
                 await MetricSyncCoordinator.shared.appDidBecomeActive()
             }
         }
+    }
+
+    /// Re-runs metric sync lifecycle when profile, Health onboarding prompt, or full onboarding completion changes.
+    private var metricSyncLifecycleIdentity: String {
+        let pid = sessionStore.currentProfile?.id.uuidString ?? "nil"
+        return "\(pid)-hk:\(sessionStore.healthKitPromptCompleted)-ob:\(sessionStore.isOnboardingComplete)"
     }
 }
 
@@ -58,6 +69,7 @@ private struct RootShellView: View {
     @State private var selectedTab: MainTab = .home
     @State private var challengeLaunchContext: ChallengeLaunchContext?
     @State private var matchDetailsContext: MatchDetailsContext?
+    @State private var showingPaywall = false
 
     var body: some View {
         ZStack {
@@ -90,6 +102,9 @@ private struct RootShellView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingPaywall) {
+            PaywallView { showingPaywall = false }
+        }
         .onChange(of: notificationService.pendingDeepLink) { _, deepLink in
             guard let deepLink else { return }
             _ = notificationService.consumeDeepLink()
@@ -104,7 +119,7 @@ private struct RootShellView: View {
         case .matchDetails(let matchId):
             matchDetailsContext = MatchDetailsContext(matchId: matchId)
         case .activity:
-            selectedTab = .activity
+            selectedTab = .home
         }
     }
 
@@ -126,82 +141,18 @@ private struct RootShellView: View {
                     matchDetailsContext = MatchDetailsContext(matchId: matchId)
                 }
             )
-        case .activity:
-            ActivityView(
-                profile: profile,
-                onOpenMatchDetails: { matchId, _ in
-                    matchDetailsContext = MatchDetailsContext(matchId: matchId)
-                }
-            )
         case .health:
-            TabPlaceholderView(
-                title: "Health",
-                subtitle: "Slice 12 will replace this placeholder."
-            )
+            HealthView(profile: profile)
         case .profile:
-            ProfilePlaceholderView(
+            ProfileView(
                 profile: profile,
-                onSignOut: {
-                    Task { await sessionStore.signOut() }
-                }
+                onSignOut: { Task { await sessionStore.signOut() } },
+                onOpenPaywall: { showingPaywall = true }
             )
         case .ranks:
-            TabPlaceholderView(
-                title: "Ranks",
-                subtitle: "Slice 11 will replace this placeholder."
-            )
-        }
-    }
-}
-
-private struct TabPlaceholderView: View {
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Text(title)
-                    .font(FitUpFont.display(28, weight: .black))
-                    .foregroundStyle(FitUpColors.Text.primary)
-                Text(subtitle)
-                    .font(FitUpFont.body(14, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.secondary)
+            LeaderboardView(profile: profile) { opponent in
+                challengeLaunchContext = .prefilled(opponent: opponent)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
-            .glassCard(.base)
-            .padding(.horizontal, 16)
-            .padding(.top, 20)
-        }
-    }
-}
-
-private struct ProfilePlaceholderView: View {
-    let profile: Profile?
-    var onSignOut: () -> Void
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                Text("Profile")
-                    .font(FitUpFont.display(28, weight: .black))
-                    .foregroundStyle(FitUpColors.Text.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Signed in as \(profile?.displayName ?? "Unknown user")")
-                    .font(FitUpFont.body(14, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button("Sign Out") {
-                    onSignOut()
-                }
-                .ghostButton(color: FitUpColors.Neon.pink)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(20)
-            .glassCard(.base)
-            .padding(.horizontal, 16)
-            .padding(.top, 20)
         }
     }
 }
