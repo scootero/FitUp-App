@@ -23,20 +23,20 @@ enum MatchDetailsRepositoryError: LocalizedError {
     }
 }
 
-enum MatchDetailsState: String {
+enum MatchDetailsState: String, Codable {
     case pending
     case active
     case completed
 }
 
-struct MatchDetailsCompetitor: Equatable {
+struct MatchDetailsCompetitor: Equatable, Codable {
     let id: UUID
     let displayName: String
     let initials: String
     let colorHex: String
 }
 
-struct MatchDetailsDayRow: Identifiable, Equatable {
+struct MatchDetailsDayRow: Identifiable, Equatable, Codable {
     let dayNumber: Int
     let dayLabel: String
     let calendarDate: Date?
@@ -44,13 +44,33 @@ struct MatchDetailsDayRow: Identifiable, Equatable {
     let theirValue: Int
     let isFinalized: Bool
     let isToday: Bool
+    /// True when this match day is after the viewer's local calendar today.
+    let isFuture: Bool
+    /// Opponent's `last_updated_at` on `match_day_participants` for this day (set when `isToday`).
+    let opponentLastUpdatedAt: Date?
     let myWon: Bool?
     let isTie: Bool
 
     var id: Int { dayNumber }
+
+    func withMyValue(_ value: Int) -> MatchDetailsDayRow {
+        MatchDetailsDayRow(
+            dayNumber: dayNumber,
+            dayLabel: dayLabel,
+            calendarDate: calendarDate,
+            myValue: value,
+            theirValue: theirValue,
+            isFinalized: isFinalized,
+            isToday: isToday,
+            isFuture: isFuture,
+            opponentLastUpdatedAt: opponentLastUpdatedAt,
+            myWon: myWon,
+            isTie: isTie
+        )
+    }
 }
 
-struct MatchDetailsSnapshot: Equatable {
+struct MatchDetailsSnapshot: Equatable, Codable {
     let matchId: UUID
     let state: MatchDetailsState
     let metricType: String
@@ -86,6 +106,15 @@ struct MatchDetailsSnapshot: Equatable {
     }
 }
 
+/// Extended load payload for Match Details v2 (meta + opponent sync time).
+struct MatchDetailBundle: Equatable {
+    let snapshot: MatchDetailsSnapshot
+    let opponentTodayLastSyncedAt: Date?
+    let startsAt: Date?
+    let endsAt: Date?
+    let matchTimezone: String
+}
+
 final class MatchDetailsRepository {
     private var realtimeChannel: RealtimeChannelV2?
     private var participantUpdateTask: Task<Void, Never>?
@@ -106,12 +135,19 @@ final class MatchDetailsRepository {
     }
 
     func loadSnapshot(matchId: UUID, currentUser: Profile) async throws -> MatchDetailsSnapshot {
+        try await loadMatchDetailBundle(matchId: matchId, currentUser: currentUser).snapshot
+    }
+
+    func loadMatchDetailBundle(matchId: UUID, currentUser: Profile) async throws -> MatchDetailBundle {
         guard let matchRow = try await fetchMatchRow(matchId: matchId) else {
             throw MatchDetailsRepositoryError.matchNotFound
         }
         let state = MatchDetailsState(rawValue: string(from: matchRow["state"]) ?? "pending") ?? .pending
         let metricType = string(from: matchRow["metric_type"]) ?? "steps"
         let durationDays = int(from: matchRow["duration_days"]) ?? 1
+        let startsAt = date(from: matchRow["starts_at"])
+        let endsAt = date(from: matchRow["ends_at"])
+        let matchTimezone = string(from: matchRow["match_timezone"]) ?? "America/New_York"
 
         let participantRows = try await fetchParticipantRows(matchId: matchId)
         let myAcceptedAt = participantRows
@@ -145,8 +181,9 @@ final class MatchDetailsRepository {
         let rowsForScoring = visibleDayRows.isEmpty ? derivedDayRows : visibleDayRows
         let scoreTuple = deriveScore(from: rowsForScoring)
         let todayTotals = deriveTodayTotals(from: rowsForScoring)
+        let opponentTodayLastSyncedAt = rowsForScoring.first(where: { $0.isToday })?.opponentLastUpdatedAt
 
-        return MatchDetailsSnapshot(
+        let snapshot = MatchDetailsSnapshot(
             matchId: matchId,
             state: state,
             metricType: metricType,
@@ -162,6 +199,14 @@ final class MatchDetailsRepository {
             theirToday: todayTotals.theirToday,
             isWinning: state == .completed ? scoreTuple.myScore >= scoreTuple.theirScore : todayTotals.myToday >= todayTotals.theirToday,
             dayRows: rowsForScoring
+        )
+
+        return MatchDetailBundle(
+            snapshot: snapshot,
+            opponentTodayLastSyncedAt: opponentTodayLastSyncedAt,
+            startsAt: startsAt,
+            endsAt: endsAt,
+            matchTimezone: matchTimezone
         )
     }
 
@@ -246,7 +291,7 @@ final class MatchDetailsRepository {
     private func fetchMatchRow(matchId: UUID) async throws -> [String: Any]? {
         let response = try await client
             .from("matches")
-            .select("id, state, metric_type, duration_days")
+            .select("id, state, metric_type, duration_days, starts_at, ends_at, match_timezone")
             .eq("id", value: matchId.uuidString)
             .limit(1)
             .execute()
@@ -325,9 +370,16 @@ final class MatchDetailsRepository {
             let theirLive = int(from: theirParticipant?["metric_total"]) ?? 0
             let myFinalized = int(from: myParticipant?["finalized_value"])
             let theirFinalized = int(from: theirParticipant?["finalized_value"])
+            let theirLastUpdated = date(from: theirParticipant?["last_updated_at"])
 
             let myValue = isFinalized ? (myFinalized ?? myLive) : myLive
             let theirValue = isFinalized ? (theirFinalized ?? theirLive) : theirLive
+
+            let todayStart = Calendar.current.startOfDay(for: Date())
+            let isFutureDay: Bool = {
+                guard let calendarDate else { return false }
+                return Calendar.current.startOfDay(for: calendarDate) > todayStart
+            }()
 
             let myWon: Bool?
             if isVoid {
@@ -340,6 +392,7 @@ final class MatchDetailsRepository {
                 myWon = nil
             }
 
+            let isTodayRow = isToday(calendarDate)
             rows.append(
                 MatchDetailsDayRow(
                     dayNumber: dayNumber,
@@ -348,7 +401,9 @@ final class MatchDetailsRepository {
                     myValue: myValue,
                     theirValue: theirValue,
                     isFinalized: isFinalized,
-                    isToday: isToday(calendarDate),
+                    isToday: isTodayRow,
+                    isFuture: isFutureDay,
+                    opponentLastUpdatedAt: isTodayRow ? theirLastUpdated : nil,
                     myWon: myWon,
                     isTie: isVoid || (isFinalized && winnerUserId == nil)
                 )
@@ -361,7 +416,7 @@ final class MatchDetailsRepository {
     private func fetchDayParticipantRows(dayId: UUID) async throws -> [[String: Any]] {
         let response = try await client
             .from("match_day_participants")
-            .select("user_id, metric_total, finalized_value")
+            .select("user_id, metric_total, finalized_value, last_updated_at")
             .eq("match_day_id", value: dayId.uuidString)
             .execute()
         return jsonRows(from: response.data)

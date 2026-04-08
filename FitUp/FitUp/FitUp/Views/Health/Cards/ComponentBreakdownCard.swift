@@ -60,7 +60,7 @@ struct ComponentBreakdownCard: View {
     }
 
     private var sleepMetricText: String {
-        guard let h = sleepHours else { return "— / \(Int(goals.sleepGoalHours)) hrs" }
+        let h = sleepHours ?? 0
         return String(format: "%.1f / %.1f hrs", h, goals.sleepGoalHours)
     }
 
@@ -78,7 +78,8 @@ struct ComponentBreakdownCard: View {
     }
 
     private var pctSleep: Double {
-        guard let h = sleepHours, goals.sleepGoalHours > 0 else { return 0 }
+        guard goals.sleepGoalHours > 0 else { return 0 }
+        let h = sleepHours ?? 0
         return min((h / goals.sleepGoalHours) * 100, 100)
     }
 

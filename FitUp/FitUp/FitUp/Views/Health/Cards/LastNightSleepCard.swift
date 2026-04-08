@@ -18,12 +18,21 @@ struct LastNightSleepCard: View {
                 .foregroundStyle(FitUpColors.Text.tertiary)
                 .padding(.bottom, 8)
 
-            Text(primaryHoursText)
-                .font(FitUpFont.display(22, weight: .bold))
-                .foregroundStyle(FitUpColors.Text.primary)
-                .minimumScaleFactor(0.8)
-                .lineLimit(2)
-                .padding(.bottom, 12)
+            Group {
+                if let h = summary?.lastNightAsleepHours, h > 0 {
+                    Text(Self.formatTimeAsleep(hours: h))
+                        .font(FitUpFont.display(22, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.primary)
+                } else {
+                    Text("No sleep data from last night")
+                        .font(FitUpFont.body(14, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .minimumScaleFactor(0.8)
+            .lineLimit(3)
+            .padding(.bottom, 12)
 
             hypnogram
         }
@@ -44,11 +53,6 @@ struct LastNightSleepCard: View {
                     .frame(height: 36)
             }
         }
-    }
-
-    private var primaryHoursText: String {
-        guard let h = summary?.lastNightAsleepHours, h > 0 else { return "—" }
-        return Self.formatTimeAsleep(hours: h)
     }
 
     /// Apple Health–style “11 hr 7 min” formatting.
@@ -105,7 +109,8 @@ private struct SleepHypnogramView: View {
             lastNightAsleepHours: 7.25,
             nightlyAsleepHoursOldestFirst: [6, 7, 6.5, 8, 7, 7.5, 7.25],
             lastNightStagePercentages: HealthSleepStagePercentages(deep: 22, core: 48, rem: 22, awake: 8),
-            lastNightTimeline: []
+            lastNightTimeline: [],
+            lastNightSleepRatio: nil
         )
     )
     .padding()

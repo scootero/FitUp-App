@@ -7,6 +7,7 @@
 
 import Combine
 import Foundation
+import SwiftUI
 
 @MainActor
 final class HomeViewModel: ObservableObject {
@@ -27,6 +28,8 @@ final class HomeViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published private(set) var activeActionSearchID: UUID?
     @Published private(set) var activeActionPendingMatchID: UUID?
+    /// Shown when a search (including onboarding placeholder) resolves into a new pending match while Home is loaded.
+    @Published private(set) var matchFoundCelebration: HomePendingMatch?
 
     var hasAnyContent: Bool {
         !searchingRequests.isEmpty || !activeMatches.isEmpty || !pendingMatches.isEmpty
@@ -40,6 +43,7 @@ final class HomeViewModel: ObservableObject {
     private var waitTimerCancellable: AnyCancellable?
     private var shouldShowOnboardingPlaceholder = false
     private var hasStartedRealtime = false
+    private var celebrationDismissTask: Task<Void, Never>?
 
     func start(profile: Profile?, showOnboardingSearching: Bool) {
         guard let profileId = profile?.id else { return }
@@ -69,6 +73,9 @@ final class HomeViewModel: ObservableObject {
     func stop() {
         waitTimerCancellable?.cancel()
         waitTimerCancellable = nil
+        celebrationDismissTask?.cancel()
+        celebrationDismissTask = nil
+        matchFoundCelebration = nil
         repository.stopRealtimeSubscriptions()
         hasStartedRealtime = false
     }
@@ -80,6 +87,9 @@ final class HomeViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
+        let hadSearchingUI = !searchingRequests.isEmpty
+        let oldPendingIds = Set(pendingMatches.map(\.id))
+
         async let snapshotTask = repository.loadSnapshot(
             for: userId,
             showOnboardingSearching: shouldShowOnboardingPlaceholder
@@ -90,6 +100,9 @@ final class HomeViewModel: ObservableObject {
         let completed = await completedTask
         shouldShowOnboardingPlaceholder = false
 
+        let newPendingIds = Set(snapshot.pendingMatches.map(\.id))
+        let newPendingMatchIds = newPendingIds.subtracting(oldPendingIds)
+
         searchingRequests = snapshot.searching
         activeMatches = snapshot.activeMatches
         pendingMatches = snapshot.pendingMatches
@@ -97,7 +110,32 @@ final class HomeViewModel: ObservableObject {
         completedMatches = completed
         stats = Self.makeStats(from: completed)
 
+        if hadSearchingUI, searchingRequests.isEmpty, !newPendingMatchIds.isEmpty,
+           let celebration = snapshot.pendingMatches.first(where: { newPendingMatchIds.contains($0.id) }) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
+                matchFoundCelebration = celebration
+            }
+            scheduleCelebrationDismiss()
+        }
+
         syncLiveActivity()
+    }
+
+    func dismissMatchFoundCelebration() {
+        celebrationDismissTask?.cancel()
+        celebrationDismissTask = nil
+        withAnimation(.easeOut(duration: 0.22)) {
+            matchFoundCelebration = nil
+        }
+    }
+
+    private func scheduleCelebrationDismiss() {
+        celebrationDismissTask?.cancel()
+        celebrationDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled else { return }
+            dismissMatchFoundCelebration()
+        }
     }
 
     private static func makeStats(from completedMatches: [ActivityCompletedMatch]) -> ActivityStats {
@@ -114,8 +152,7 @@ final class HomeViewModel: ObservableObject {
     // MARK: - Live Activity sync
 
     private func syncLiveActivity() {
-        guard let firstActive = activeMatches.first,
-              let userId else {
+        guard let firstActive = activeMatches.first else {
             LiveActivityCoordinator.shared.endActivity()
             return
         }

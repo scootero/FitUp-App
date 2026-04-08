@@ -1,34 +1,34 @@
 //
-//  SevenNightSleepOverviewCard.swift
+//  SevenNightSleepAverageCard.swift
 //  FitUp
 //
-//  7-night average + daily sleep hours as bars.
+//  Full-width 7-night average + daily bars (canonical nightly totals).
 //
 
 import SwiftUI
 
-struct SevenNightSleepOverviewCard: View {
+struct SevenNightSleepAverageCard: View {
     let summary: HealthSleepSummary?
 
     @State private var barAnim = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("7-NIGHT AVG")
+            Text("7-NIGHT AVERAGE")
                 .font(FitUpFont.mono(10))
                 .tracking(1)
                 .foregroundStyle(FitUpColors.Text.tertiary)
                 .padding(.bottom, 8)
 
             Text(avgText)
-                .font(FitUpFont.display(22, weight: .bold))
+                .font(FitUpFont.display(26, weight: .bold))
                 .foregroundStyle(FitUpColors.Text.primary)
                 .padding(.bottom, 4)
 
             Text("±\(varianceText)h variance")
                 .font(FitUpFont.body(11))
                 .foregroundStyle(FitUpColors.Text.tertiary)
-                .padding(.bottom, 12)
+                .padding(.bottom, 14)
 
             sleepBars
         }
@@ -53,7 +53,7 @@ struct SevenNightSleepOverviewCard: View {
 
     private var avgText: String {
         guard let s = summary else { return "—" }
-        return String(format: "%.1f hrs", s.averageHoursLastNights)
+        return LastNightSleepCard.formatTimeAsleep(hours: s.averageHoursLastNights)
     }
 
     private var varianceText: String {
@@ -62,34 +62,34 @@ struct SevenNightSleepOverviewCard: View {
     }
 
     private var sleepBars: some View {
-        HStack(alignment: .bottom, spacing: 3) {
+        HStack(alignment: .bottom, spacing: 4) {
             ForEach(0..<7, id: \.self) { i in
                 let h = i < hours.count ? hours[i] : 0
                 let pct = peakHours > 0 ? min(h / peakHours, 1) : 0
                 let isToday = i == 6
-                VStack(spacing: 3) {
+                VStack(spacing: 4) {
                     ZStack(alignment: .bottom) {
                         Color.clear
                             .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .frame(height: 64)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(barFill(hours: h, isToday: isToday))
                             .frame(maxWidth: .infinity)
-                            .frame(height: barAnim ? CGFloat(pct) * 56 : 0)
+                            .frame(height: barAnim ? CGFloat(pct) * 64 : 0)
                             .animation(.easeOut(duration: 0.55).delay(Double(i) * 0.04), value: barAnim)
-                            .shadow(color: isToday ? FitUpColors.Neon.cyan.opacity(0.3) : .clear, radius: 5, y: 0)
+                            .shadow(color: isToday ? FitUpColors.Neon.cyan.opacity(0.35) : .clear, radius: 6, y: 0)
                     }
                     Text(weekdayLetter(offset: i))
-                        .font(FitUpFont.body(9))
+                        .font(FitUpFont.body(10, weight: isToday ? .semibold : .regular))
                         .foregroundStyle(isToday ? FitUpColors.Neon.cyan : FitUpColors.Text.tertiary)
                 }
                 .frame(maxWidth: .infinity)
             }
         }
-        .frame(height: 56 + 18)
+        .frame(height: 64 + 20)
     }
 
-    /// Matches 7-day chart: index 0 = oldest, 6 = today.
+    /// Matches 7-day chart: index 0 = oldest, 6 = today (partial sleep may apply for today).
     private func weekdayLetter(offset: Int) -> String {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
@@ -110,14 +110,14 @@ struct SevenNightSleepOverviewCard: View {
             )
         }
         if hours > 0 {
-            return AnyShapeStyle(FitUpColors.Neon.cyan.opacity(0.22))
+            return AnyShapeStyle(FitUpColors.Neon.cyan.opacity(0.24))
         }
         return AnyShapeStyle(Color.white.opacity(0.07))
     }
 }
 
 #Preview {
-    SevenNightSleepOverviewCard(
+    SevenNightSleepAverageCard(
         summary: HealthSleepSummary(
             averageHoursLastNights: 7.2,
             varianceHours: 1.1,
@@ -125,7 +125,8 @@ struct SevenNightSleepOverviewCard: View {
             lastNightAsleepHours: 7.5,
             nightlyAsleepHoursOldestFirst: [6, 7.2, 6.8, 8, 7, 7.1, 7.5],
             lastNightStagePercentages: nil,
-            lastNightTimeline: []
+            lastNightTimeline: [],
+            lastNightSleepRatio: nil
         )
     )
     .padding()

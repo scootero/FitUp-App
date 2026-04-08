@@ -33,6 +33,16 @@ struct HealthSleepTimelineSegment: Equatable {
     var duration: TimeInterval { end.timeIntervalSince(start) }
 }
 
+/// Deep / Light (core + fallback asleep) / REM — percents are % of total sleep (awake excluded).
+struct SleepRatioBreakdown: Equatable {
+    var deepHours: Double
+    var lightHours: Double
+    var remHours: Double
+    var deepPercent: Double
+    var lightPercent: Double
+    var remPercent: Double
+}
+
 struct HealthSleepSummary: Equatable {
     /// Mean hours asleep across the last `nights` calendar days (0 if no data).
     var averageHoursLastNights: Double
@@ -40,7 +50,7 @@ struct HealthSleepSummary: Equatable {
     var varianceHours: Double
     /// Aggregate stage mix over the 7 wake days (percentages sum to ~100).
     var stagePercentagesSevenNight: HealthSleepStagePercentages
-    /// Total asleep hours for the most recent wake day that has data (readiness / chips).
+    /// Longest contiguous asleep hours for **today’s** wake day (primary sleep; aligns with Apple Health headline).
     var lastNightAsleepHours: Double?
     /// Hours asleep per wake day, **oldest first** (same order as 7-day charts).
     var nightlyAsleepHoursOldestFirst: [Double]
@@ -48,6 +58,8 @@ struct HealthSleepSummary: Equatable {
     var lastNightStagePercentages: HealthSleepStagePercentages?
     /// Chronological segments for the last wake night (for hypnogram); empty if none.
     var lastNightTimeline: [HealthSleepTimelineSegment]
+    /// Deep / Light / REM for the selected last night; nil when no data.
+    var lastNightSleepRatio: SleepRatioBreakdown?
 }
 
 struct HealthHRZoneRow: Identifiable, Equatable {
@@ -313,6 +325,40 @@ enum HealthKitService {
         try await fetchSevenDayDailyTotals(quantityIdentifier: .activeEnergyBurned, unit: .kilocalorie())
     }
 
+    /// Best single-day and best rolling 7-day totals from Apple Health (up to 10 years of daily sums).
+    static func fetchAllTimeBestsFromHealth() async throws -> HealthKitAllTimeBests {
+        guard isHealthDataAvailable else { throw HealthKitError.notAvailable }
+        let calendar = Calendar.current
+        let endDate = Date()
+        let todayStart = calendar.startOfDay(for: endDate)
+        guard let startDate = calendar.date(byAdding: .year, value: -10, to: todayStart) else {
+            throw HealthKitError.invalidDateRange
+        }
+
+        async let stepsDaily = fetchDailyTotalsInRange(
+            quantityIdentifier: .stepCount,
+            unit: .count(),
+            startDate: startDate,
+            endDate: endDate
+        )
+        async let calsDaily = fetchDailyTotalsInRange(
+            quantityIdentifier: .activeEnergyBurned,
+            unit: .kilocalorie(),
+            startDate: startDate,
+            endDate: endDate
+        )
+
+        let s = try await stepsDaily
+        let c = try await calsDaily
+
+        return HealthKitAllTimeBests(
+            stepsBestDay: bestSingleDay(from: s),
+            stepsBestWeek: bestRollingSevenDaySum(from: s),
+            calsBestDay: bestSingleDay(from: c),
+            calsBestWeek: bestRollingSevenDaySum(from: c)
+        )
+    }
+
     /// Sleep aggregates for the Health screen (last `nights` local calendar days).
     static func fetchSleepSummary(nights: Int = 7) async throws -> HealthSleepSummary {
         guard isHealthDataAvailable else { throw HealthKitError.notAvailable }
@@ -327,37 +373,23 @@ enum HealthKitService {
 
         let samples: [HKCategorySample] = try await fetchSleepCategorySamples(type: sleepType, start: startDate, end: endDate)
 
-        var secondsAsleepByDay: [Date: Double] = [:]
-        var stageSecondsSevenNight: [String: Double] = [
-            "deep": 0, "core": 0, "rem": 0, "awake": 0,
-        ]
-
         let dayStarts: [Date] = (0..<nights).compactMap { i in
             calendar.date(byAdding: .day, value: -(nights - 1 - i), to: calendar.startOfDay(for: endDate))
         }
-        let daySet = Set(dayStarts)
 
-        for sample in samples {
-            let duration = sample.endDate.timeIntervalSince(sample.startDate)
-            guard duration > 0 else { continue }
-            let dayKey = calendar.startOfDay(for: sample.endDate)
-            let value = sample.value
-
-            if let asleep = asleepSecondsContribution(for: value, duration: duration) {
-                secondsAsleepByDay[dayKey, default: 0] += asleep
-            }
-            if daySet.contains(dayKey) {
-                accumulateSleepStage(value: value, duration: duration, into: &stageSecondsSevenNight)
-            }
+        var breakdownByWakeDay: [Date: CanonicalNightMetrics] = [:]
+        for d in dayStarts {
+            breakdownByWakeDay[d] = canonicalMetricsForWakeDay(samples: samples, wakeDay: d, calendar: calendar)
         }
 
         var nightlyHours: [Double] = []
         for day in dayStarts {
-            let hrs = (secondsAsleepByDay[day] ?? 0) / 3600
+            let hrs = (breakdownByWakeDay[day]?.totalAsleepSeconds ?? 0) / 3600
             nightlyHours.append(hrs)
         }
 
         let sumH = nightlyHours.reduce(0, +)
+        // Average over exactly `nights` wake days (including zero-sleep days). Differs from Health averages that omit missing nights.
         let avg = nightlyHours.isEmpty ? 0 : sumH / Double(nightlyHours.count)
         let variance: Double = {
             guard nightlyHours.count >= 2 else { return 0 }
@@ -365,6 +397,17 @@ enum HealthKitService {
             let v = nightlyHours.map { pow($0 - mean, 2) }.reduce(0, +) / Double(nightlyHours.count - 1)
             return sqrt(v)
         }()
+
+        var stageSecondsSevenNight: [String: Double] = ["deep": 0, "core": 0, "rem": 0, "awake": 0]
+        for day in dayStarts {
+            guard let m = breakdownByWakeDay[day] else { continue }
+            stageSecondsSevenNight["deep", default: 0] += m.deepSeconds
+            stageSecondsSevenNight["core", default: 0] += m.coreSeconds
+            stageSecondsSevenNight["rem", default: 0] += m.remSeconds
+            stageSecondsSevenNight["awake", default: 0] += m.awakeSeconds
+            // Light (fallback asleep) rolls into "core" bucket for aggregate mix to match deep/core/rem/awake chart semantics.
+            stageSecondsSevenNight["core", default: 0] += m.lightSeconds
+        }
 
         let totalStage7 = stageSecondsSevenNight.values.reduce(0, +)
         let pct7: (Double) -> Double = { totalStage7 > 0 ? ($0 / totalStage7) * 100 : 0 }
@@ -375,32 +418,34 @@ enum HealthKitService {
             awake: pct7(stageSecondsSevenNight["awake"] ?? 0)
         )
 
-        let lastWakeDay: Date? = dayStarts.reversed().first { (secondsAsleepByDay[$0] ?? 0) > 0 }
-        let lastNightHours: Double? = lastWakeDay.map { (secondsAsleepByDay[$0] ?? 0) / 3600 }
+        // “Last night” = **today’s** wake day only (no fallback to prior days). Duration = longest contiguous asleep run
+        // (primary sleep), matching Apple Health’s headline figure; hypnogram/ratio use that same run.
+        let targetLastNightWakeDay = dayStarts.last
+        let todayMetrics = targetLastNightWakeDay.flatMap { breakdownByWakeDay[$0] }
+        let runTimeline = todayMetrics.map { longestAsleepRunTimeline(from: $0.timeline) } ?? []
+        let runMetrics = runTimeline.isEmpty ? nil : canonicalMetricsFromAsleepRunSegments(runTimeline)
 
-        var lastNightStageSeconds: [String: Double] = [
-            "deep": 0, "core": 0, "rem": 0, "awake": 0,
-        ]
+        let lastNightHours: Double? = {
+            guard let m = todayMetrics, m.totalAsleepSeconds > 0, let r = runMetrics, r.totalAsleepSeconds > 0 else { return nil }
+            return r.totalAsleepSeconds / 3600
+        }()
+
+        var lastNightStageSeconds: [String: Double] = ["deep": 0, "core": 0, "rem": 0, "awake": 0]
         var lastNightTimeline: [HealthSleepTimelineSegment] = []
-        if let wake = lastWakeDay {
-            let nightSamples = samples
-                .filter { calendar.startOfDay(for: $0.endDate) == wake }
-                .sorted { $0.startDate < $1.startDate }
-            for sample in nightSamples {
-                let duration = sample.endDate.timeIntervalSince(sample.startDate)
-                guard duration > 0 else { continue }
-                accumulateSleepStage(value: sample.value, duration: duration, into: &lastNightStageSeconds)
-                if let stage = timelineStage(for: sample.value) {
-                    lastNightTimeline.append(
-                        HealthSleepTimelineSegment(start: sample.startDate, end: sample.endDate, stage: stage)
-                    )
-                }
-            }
+        var lastNightRatio: SleepRatioBreakdown?
+
+        if let r = runMetrics {
+            lastNightTimeline = r.timeline
+            lastNightStageSeconds["deep"] = r.deepSeconds
+            lastNightStageSeconds["core"] = r.coreSeconds + r.lightSeconds
+            lastNightStageSeconds["rem"] = r.remSeconds
+            lastNightStageSeconds["awake"] = r.awakeSeconds
+            lastNightRatio = sleepRatioBreakdown(from: r)
         }
 
         let totalStageLN = lastNightStageSeconds.values.reduce(0, +)
         let pctLN: (Double) -> Double = { totalStageLN > 0 ? ($0 / totalStageLN) * 100 : 0 }
-        let lastNightStages: HealthSleepStagePercentages? = (lastWakeDay != nil && totalStageLN > 0)
+        let lastNightStages: HealthSleepStagePercentages? = (runMetrics != nil && totalStageLN > 0)
             ? HealthSleepStagePercentages(
                 deep: pctLN(lastNightStageSeconds["deep"] ?? 0),
                 core: pctLN(lastNightStageSeconds["core"] ?? 0),
@@ -409,6 +454,20 @@ enum HealthKitService {
             )
             : nil
 
+        #if DEBUG
+        logSleepAuditDebug(
+            queryStart: startDate,
+            queryEnd: endDate,
+            samples: samples,
+            dayStarts: dayStarts,
+            breakdownByWakeDay: breakdownByWakeDay,
+            lastWakeDay: targetLastNightWakeDay,
+            averageHours: avg,
+            nightlyHours: nightlyHours,
+            lastRatio: lastNightRatio
+        )
+        #endif
+
         return HealthSleepSummary(
             averageHoursLastNights: avg,
             varianceHours: variance,
@@ -416,9 +475,296 @@ enum HealthKitService {
             lastNightAsleepHours: lastNightHours,
             nightlyAsleepHoursOldestFirst: nightlyHours,
             lastNightStagePercentages: lastNightStages,
-            lastNightTimeline: lastNightTimeline
+            lastNightTimeline: lastNightTimeline,
+            lastNightSleepRatio: lastNightRatio
         )
     }
+
+    // MARK: - Canonical sleep (wake-day timeline)
+
+    private struct CanonicalNightMetrics {
+        var totalAsleepSeconds: Double
+        var deepSeconds: Double
+        var coreSeconds: Double
+        var lightSeconds: Double
+        var remSeconds: Double
+        var awakeSeconds: Double
+        var inBedSeconds: Double
+        var timeline: [HealthSleepTimelineSegment]
+        var longestAsleepContiguousSeconds: TimeInterval
+    }
+
+    private static func sleepRatioBreakdown(from m: CanonicalNightMetrics) -> SleepRatioBreakdown? {
+        let total = m.deepSeconds + m.lightSeconds + m.coreSeconds + m.remSeconds
+        guard total > 0 else { return nil }
+        let lightTotal = m.lightSeconds + m.coreSeconds
+        let pct: (Double) -> Double = { total > 0 ? ($0 / total) * 100 : 0 }
+        return SleepRatioBreakdown(
+            deepHours: m.deepSeconds / 3600,
+            lightHours: lightTotal / 3600,
+            remHours: m.remSeconds / 3600,
+            deepPercent: pct(m.deepSeconds),
+            lightPercent: pct(lightTotal),
+            remPercent: pct(m.remSeconds)
+        )
+    }
+
+    private static func canonicalMetricsForWakeDay(samples: [HKCategorySample], wakeDay: Date, calendar: Calendar) -> CanonicalNightMetrics {
+        let daySamples = samples.filter { calendar.startOfDay(for: $0.endDate) == wakeDay }
+        guard !daySamples.isEmpty else {
+            return CanonicalNightMetrics(
+                totalAsleepSeconds: 0, deepSeconds: 0, coreSeconds: 0, lightSeconds: 0, remSeconds: 0,
+                awakeSeconds: 0, inBedSeconds: 0, timeline: [], longestAsleepContiguousSeconds: 0
+            )
+        }
+
+        let hasStagedSleep = daySamples.contains { sample in
+            guard let v = HKCategoryValueSleepAnalysis(rawValue: sample.value) else { return false }
+            switch v {
+            case .asleepDeep, .asleepCore, .asleepREM: return true
+            default: return false
+            }
+        }
+
+        var boundaries = Set<Date>()
+        for s in daySamples {
+            boundaries.insert(s.startDate)
+            boundaries.insert(s.endDate)
+        }
+        let sortedBounds = boundaries.sorted()
+        guard sortedBounds.count >= 2 else {
+            return CanonicalNightMetrics(
+                totalAsleepSeconds: 0, deepSeconds: 0, coreSeconds: 0, lightSeconds: 0, remSeconds: 0,
+                awakeSeconds: 0, inBedSeconds: 0, timeline: [], longestAsleepContiguousSeconds: 0
+            )
+        }
+
+        var deepSec: Double = 0
+        var coreSec: Double = 0
+        var lightSec: Double = 0
+        var remSec: Double = 0
+        var awakeSec: Double = 0
+        var inBedSec: Double = 0
+        var timelinePieces: [HealthSleepTimelineSegment] = []
+
+        for i in 0..<(sortedBounds.count - 1) {
+            let a = sortedBounds[i]
+            let b = sortedBounds[i + 1]
+            let duration = b.timeIntervalSince(a)
+            guard duration > 1e-9 else { continue }
+            let mid = a.addingTimeInterval(duration / 2)
+            guard let winner = winningSleepCategory(at: mid, daySamples: daySamples, hasStagedSleep: hasStagedSleep) else { continue }
+
+            switch winner {
+            case .asleepDeep:
+                deepSec += duration
+                timelinePieces.append(HealthSleepTimelineSegment(start: a, end: b, stage: .deep))
+            case .asleepCore:
+                coreSec += duration
+                timelinePieces.append(HealthSleepTimelineSegment(start: a, end: b, stage: .core))
+            case .asleepREM:
+                remSec += duration
+                timelinePieces.append(HealthSleepTimelineSegment(start: a, end: b, stage: .rem))
+            case .asleepUnspecified:
+                lightSec += duration
+                timelinePieces.append(HealthSleepTimelineSegment(start: a, end: b, stage: .core))
+            case .awake:
+                awakeSec += duration
+                timelinePieces.append(HealthSleepTimelineSegment(start: a, end: b, stage: .awake))
+            case .inBed:
+                inBedSec += duration
+            @unknown default:
+                break
+            }
+        }
+
+        let mergedTimeline = mergeAdjacentTimelineSegments(timelinePieces)
+        let totalAsleep = deepSec + coreSec + lightSec + remSec
+        let longestAsleep = longestContiguousAsleepRun(in: mergedTimeline)
+
+        return CanonicalNightMetrics(
+            totalAsleepSeconds: totalAsleep,
+            deepSeconds: deepSec,
+            coreSeconds: coreSec,
+            lightSeconds: lightSec,
+            remSeconds: remSec,
+            awakeSeconds: awakeSec,
+            inBedSeconds: inBedSec,
+            timeline: mergedTimeline,
+            longestAsleepContiguousSeconds: longestAsleep
+        )
+    }
+
+    /// Higher wins when multiple samples cover the same instant (dedupes overlapping sources).
+    private static func sleepCategoryPriority(_ v: HKCategoryValueSleepAnalysis) -> Int {
+        switch v {
+        case .asleepDeep: return 60
+        case .asleepREM: return 50
+        case .asleepCore: return 40
+        case .awake: return 30
+        case .asleepUnspecified: return 20
+        case .inBed: return 10
+        @unknown default: return 0
+        }
+    }
+
+    /// When `hasStagedSleep` is true, generic asleep only applies where no staged deep/core/rem/awake covers `mid`.
+    private static func winningSleepCategory(at mid: Date, daySamples: [HKCategorySample], hasStagedSleep: Bool) -> HKCategoryValueSleepAnalysis? {
+        let covering = daySamples.filter { $0.startDate <= mid && mid < $0.endDate }
+        guard !covering.isEmpty else { return nil }
+        if !hasStagedSleep {
+            return covering.compactMap { s -> (HKCategorySample, HKCategoryValueSleepAnalysis)? in
+                guard let c = s.resolvedSleepCategory else { return nil }
+                return (s, c)
+            }.max(by: { sleepCategoryPriority($0.1) < sleepCategoryPriority($1.1) })?.1
+        }
+        let staged = covering.compactMap { s -> (HKCategorySample, HKCategoryValueSleepAnalysis)? in
+            guard let c = s.resolvedSleepCategory else { return nil }
+            switch c {
+            case .asleepDeep, .asleepCore, .asleepREM, .awake: return (s, c)
+            default: return nil
+            }
+        }
+        if let best = staged.max(by: { sleepCategoryPriority($0.1) < sleepCategoryPriority($1.1) }) {
+            return best.1
+        }
+        let genericOrBed = covering.compactMap { s -> (HKCategorySample, HKCategoryValueSleepAnalysis)? in
+            guard let c = s.resolvedSleepCategory else { return nil }
+            switch c {
+            case .asleepUnspecified, .inBed: return (s, c)
+            default: return nil
+            }
+        }
+        return genericOrBed.max(by: { sleepCategoryPriority($0.1) < sleepCategoryPriority($1.1) })?.1
+    }
+
+    private static func mergeAdjacentTimelineSegments(_ segments: [HealthSleepTimelineSegment]) -> [HealthSleepTimelineSegment] {
+        let sorted = segments.sorted { $0.start < $1.start }
+        var out: [HealthSleepTimelineSegment] = []
+        for seg in sorted {
+            guard let last = out.last else {
+                out.append(seg)
+                continue
+            }
+            if last.stage == seg.stage, abs(last.end.timeIntervalSince(seg.start)) < 1e-6 {
+                out[out.count - 1] = HealthSleepTimelineSegment(start: last.start, end: seg.end, stage: seg.stage)
+            } else {
+                out.append(seg)
+            }
+        }
+        return out
+    }
+
+    private static func longestContiguousAsleepRun(in timeline: [HealthSleepTimelineSegment]) -> TimeInterval {
+        longestAsleepRunTimeline(from: timeline).reduce(0) { $0 + $1.duration }
+    }
+
+    /// Contiguous asleep segments with maximum total duration (primary sleep window); empty if none.
+    private static func longestAsleepRunTimeline(from mergedTimeline: [HealthSleepTimelineSegment]) -> [HealthSleepTimelineSegment] {
+        let sorted = mergedTimeline.sorted { $0.start < $1.start }
+        var best: [HealthSleepTimelineSegment] = []
+        var current: [HealthSleepTimelineSegment] = []
+        var currentDur: TimeInterval = 0
+        var bestDur: TimeInterval = 0
+        for seg in sorted {
+            let asleep = seg.stage == .deep || seg.stage == .core || seg.stage == .rem
+            if asleep {
+                current.append(seg)
+                currentDur += seg.duration
+            } else {
+                if currentDur > bestDur {
+                    bestDur = currentDur
+                    best = current
+                }
+                current = []
+                currentDur = 0
+            }
+        }
+        if currentDur > bestDur {
+            best = current
+        }
+        return best
+    }
+
+    /// Stage totals and timeline for one contiguous asleep run (hypnogram + ratio match `lastNightAsleepHours`).
+    private static func canonicalMetricsFromAsleepRunSegments(_ segments: [HealthSleepTimelineSegment]) -> CanonicalNightMetrics {
+        var deepSec: Double = 0
+        var coreSec: Double = 0
+        var remSec: Double = 0
+        for seg in segments {
+            switch seg.stage {
+            case .deep: deepSec += seg.duration
+            case .core: coreSec += seg.duration
+            case .rem: remSec += seg.duration
+            case .awake: break
+            }
+        }
+        let total = deepSec + coreSec + remSec
+        return CanonicalNightMetrics(
+            totalAsleepSeconds: total,
+            deepSeconds: deepSec,
+            coreSeconds: coreSec,
+            lightSeconds: 0,
+            remSeconds: remSec,
+            awakeSeconds: 0,
+            inBedSeconds: 0,
+            timeline: segments,
+            longestAsleepContiguousSeconds: total
+        )
+    }
+
+    #if DEBUG
+    private static func logSleepAuditDebug(
+        queryStart: Date,
+        queryEnd: Date,
+        samples: [HKCategorySample],
+        dayStarts: [Date],
+        breakdownByWakeDay: [Date: CanonicalNightMetrics],
+        lastWakeDay: Date?,
+        averageHours: Double,
+        nightlyHours: [Double],
+        lastRatio: SleepRatioBreakdown?
+    ) {
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var lines: [String] = []
+        lines.append("=== Sleep audit (DEBUG) ===")
+        lines.append("query: \(fmt.string(from: queryStart)) .. \(fmt.string(from: queryEnd))")
+        lines.append("raw sample count: \(samples.count)")
+        for (idx, s) in samples.enumerated() {
+            let v = HKCategoryValueSleepAnalysis(rawValue: s.value)
+            let name = String(describing: v)
+            let src = s.sourceRevision.source.name
+            lines.append("  [\(idx)] \(fmt.string(from: s.startDate)) .. \(fmt.string(from: s.endDate)) dur=\(String(format: "%.1f", s.endDate.timeIntervalSince(s.startDate)))s \(name) source=\(src)")
+        }
+        let cal = Calendar.current
+        for d in dayStarts {
+            guard let m = breakdownByWakeDay[d] else { continue }
+            let key = ISO8601DateFormatter().string(from: d)
+            let rawOnDay = samples.filter { cal.startOfDay(for: $0.endDate) == d }
+            var stagedOnly: Double = 0
+            var genericOnly: Double = 0
+            for s in rawOnDay {
+                let dur = s.endDate.timeIntervalSince(s.startDate)
+                guard dur > 0, let v = HKCategoryValueSleepAnalysis(rawValue: s.value) else { continue }
+                switch v {
+                case .asleepDeep, .asleepCore, .asleepREM: stagedOnly += dur
+                case .asleepUnspecified: genericOnly += dur
+                default: break
+                }
+            }
+            lines.append("wakeDay \(key): canonical_total_h=\(String(format: "%.3f", m.totalAsleepSeconds / 3600)) staged_raw_sum_h=\(String(format: "%.3f", stagedOnly / 3600)) generic_raw_sum_h=\(String(format: "%.3f", genericOnly / 3600)) longest_asleep_h=\(String(format: "%.3f", m.longestAsleepContiguousSeconds / 3600))")
+        }
+        lines.append("7-night avg h=\(String(format: "%.3f", averageHours)) nightly_h=[\(nightlyHours.map { String(format: "%.3f", $0) }.joined(separator: ","))]")
+        if let w = lastWakeDay {
+            lines.append("selected lastWakeDay=\(ISO8601DateFormatter().string(from: w))")
+        }
+        if let r = lastRatio {
+            lines.append("Sleep Ratio: deep \(String(format: "%.1f%%", r.deepPercent)) \(String(format: "%.2f", r.deepHours))h | light \(String(format: "%.1f%%", r.lightPercent)) \(String(format: "%.2f", r.lightHours))h | rem \(String(format: "%.1f%%", r.remPercent)) \(String(format: "%.2f", r.remHours))h")
+        }
+        print(lines.joined(separator: "\n"))
+    }
+    #endif
 
     /// Heart-rate zone distribution from the most recent workout (percent of samples in each zone).
     static func fetchHRZoneRows(defaultMaxHeartRate: Double = 190) async throws -> [HealthHRZoneRow] {
@@ -615,6 +961,76 @@ enum HealthKitService {
         @unknown default:
             break
         }
+    }
+
+    /// One value per local calendar day from `startDate` through today (inclusive), **oldest first**.
+    private static func fetchDailyTotalsInRange(
+        quantityIdentifier: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        startDate: Date,
+        endDate: Date
+    ) async throws -> [Double] {
+        guard let quantityType = HKObjectType.quantityType(forIdentifier: quantityIdentifier) else {
+            throw typeError(for: quantityIdentifier)
+        }
+
+        let calendar = Calendar.current
+        let anchorDate = calendar.startOfDay(for: endDate)
+        let interval = DateComponents(day: 1)
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+
+        let byDayStart: [Date: Double] = try await withCheckedThrowingContinuation { continuation in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: quantityType,
+                quantitySamplePredicate: predicate,
+                options: [.cumulativeSum],
+                anchorDate: anchorDate,
+                intervalComponents: interval
+            )
+
+            query.initialResultsHandler = { _, collection, error in
+                if let error {
+                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchDailyTotalsInRange"))
+                    return
+                }
+
+                var map: [Date: Double] = [:]
+                collection?.enumerateStatistics(from: startDate, to: endDate) { statistics, _ in
+                    let dayStart = calendar.startOfDay(for: statistics.startDate)
+                    let value = statistics.sumQuantity()?.doubleValue(for: unit) ?? 0
+                    map[dayStart] = value
+                }
+                continuation.resume(returning: map)
+            }
+
+            store.execute(query)
+        }
+
+        let lastDay = calendar.startOfDay(for: endDate)
+        var daily: [Double] = []
+        var d = calendar.startOfDay(for: startDate)
+        while d <= lastDay {
+            daily.append(byDayStart[d] ?? 0)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: d) else { break }
+            d = next
+        }
+        return daily
+    }
+
+    private static func bestSingleDay(from daily: [Double]) -> Int? {
+        guard let maxV = daily.max(), maxV > 0 else { return nil }
+        return Int(maxV.rounded())
+    }
+
+    /// Maximum sum over any 7 consecutive calendar days (requires at least 7 days in range).
+    private static func bestRollingSevenDaySum(from daily: [Double]) -> Int? {
+        guard daily.count >= 7 else { return nil }
+        var best = 0
+        for i in 0...(daily.count - 7) {
+            let sum = daily[i..<(i + 7)].reduce(0, +)
+            best = max(best, Int(sum.rounded()))
+        }
+        return best > 0 ? best : nil
     }
 
     private static func fetchSevenDayDailyTotals(quantityIdentifier: HKQuantityTypeIdentifier, unit: HKUnit) async throws -> [Int] {
@@ -875,6 +1291,12 @@ enum HealthKitService {
         default:
             return .noStatisticsData
         }
+    }
+}
+
+private extension HKCategorySample {
+    var resolvedSleepCategory: HKCategoryValueSleepAnalysis? {
+        HKCategoryValueSleepAnalysis(rawValue: value)
     }
 }
 

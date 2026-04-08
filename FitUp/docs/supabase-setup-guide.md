@@ -786,6 +786,12 @@ supabase functions deploy retry-matchmaking-search
 - Manual pairing test (service role, **never** embed in the app): `scripts/matchmaking-pair-test.sh`
 - One-time duplicate queue cleanup: `supabase/sql/cleanup-duplicate-match-search-requests.sql`
 
+### 7. Decline pending match (iOS RPC)
+
+Run **`supabase/sql/slice4e-decline-pending-match.sql`** in the SQL Editor **after** `slice9-notifications.sql` so `private.invoke_dispatch_notification` exists.
+
+This adds `public.decline_pending_match(p_match_id uuid)` (authenticated participants only): sets `direct_challenges.status = 'declined'` when present, then `matches.state = 'cancelled'`, and notifies the other user for `public_matchmaking` via `tr_notify_public_matchmaking_declined`. The iOS app calls this RPC instead of updating `direct_challenges` alone.
+
 ---
 
 ## Slice 9 — Notifications and Live Activities

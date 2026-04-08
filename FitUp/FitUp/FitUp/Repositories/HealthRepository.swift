@@ -9,6 +9,21 @@ import Combine
 import Foundation
 import Supabase
 
+/// Raw all-time bests from HealthKit (best single day + best rolling 7-day window).
+struct HealthKitAllTimeBests: Equatable {
+    var stepsBestDay: Int?
+    var stepsBestWeek: Int?
+    var calsBestDay: Int?
+    var calsBestWeek: Int?
+
+    static let empty = HealthKitAllTimeBests(
+        stepsBestDay: nil,
+        stepsBestWeek: nil,
+        calsBestDay: nil,
+        calsBestWeek: nil
+    )
+}
+
 struct HealthAllTimeBests: Equatable {
     var stepsBestDay: String
     var stepsBestDaySub: String
@@ -31,6 +46,51 @@ struct HealthAllTimeBests: Equatable {
         calsBestWeekSub: "No data",
         bestWinStreakDays: nil
     )
+
+    /// Prefer Apple Health for steps/calorie records; keep win streak from Supabase.
+    static func merged(healthKit: HealthKitAllTimeBests, remote: HealthAllTimeBests) -> HealthAllTimeBests {
+        let stepsDay = Self.formatStepsPair(healthKit.stepsBestDay, sub: "steps · best day")
+            ?? (remote.stepsBestDay, remote.stepsBestDaySub)
+        let stepsWeek = Self.formatStepsPair(healthKit.stepsBestWeek, sub: "steps · best week")
+            ?? (remote.stepsBestWeek, remote.stepsBestWeekSub)
+        let calsDay = Self.formatCalsPair(healthKit.calsBestDay, sub: "cal · best day")
+            ?? (remote.calsBestDay, remote.calsBestDaySub)
+        let calsWeek = Self.formatCalsPair(healthKit.calsBestWeek, sub: "cal · best week")
+            ?? (remote.calsBestWeek, remote.calsBestWeekSub)
+        return HealthAllTimeBests(
+            stepsBestDay: stepsDay.0,
+            stepsBestDaySub: stepsDay.1,
+            stepsBestWeek: stepsWeek.0,
+            stepsBestWeekSub: stepsWeek.1,
+            calsBestDay: calsDay.0,
+            calsBestDaySub: calsDay.1,
+            calsBestWeek: calsWeek.0,
+            calsBestWeekSub: calsWeek.1,
+            bestWinStreakDays: remote.bestWinStreakDays
+        )
+    }
+
+    private static func formatStepsPair(_ v: Int?, sub: String) -> (String, String)? {
+        guard let v, v > 0 else { return nil }
+        let s: String
+        if v >= 1000 {
+            s = String(format: "%.1fk", Double(v) / 1000)
+        } else {
+            s = "\(v)"
+        }
+        return (s, sub)
+    }
+
+    private static func formatCalsPair(_ v: Int?, sub: String) -> (String, String)? {
+        guard let v, v > 0 else { return nil }
+        let s: String
+        if v >= 1000 {
+            s = String(format: "%.1fk", Double(v) / 1000)
+        } else {
+            s = "\(v)"
+        }
+        return (s, sub)
+    }
 }
 
 final class HealthRepository {

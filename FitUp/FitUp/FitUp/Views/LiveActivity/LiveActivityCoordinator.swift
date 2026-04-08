@@ -39,12 +39,34 @@ final class LiveActivityCoordinator {
     ) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
-        // Resume existing if same match.
+        // Resume existing if same match — still apply latest ContentState from Home (local update).
         if let existing = Activity<FitUpActivityAttributes>.activities.first(where: {
             $0.attributes.matchId == matchId
         }) {
             currentActivity = existing
             subscribeToPushTokenUpdates()
+            AppLogger.log(
+                category: "notifications",
+                level: .info,
+                message: "Live Activity resumed (same match)",
+                metadata: [
+                    "path": "resume_existing",
+                    "match_id": matchId.uuidString,
+                    "activity_id": existing.id,
+                    "my_total": "\(myTotal)",
+                    "opponent_total": "\(opponentTotal)",
+                    "my_score": "\(myScore)",
+                    "their_score": "\(theirScore)",
+                    "day_number": "\(dayNumber)"
+                ]
+            )
+            updateState(
+                myTotal: myTotal,
+                opponentTotal: opponentTotal,
+                myScore: myScore,
+                theirScore: theirScore,
+                dayNumber: dayNumber
+            )
             return
         }
 
@@ -74,7 +96,16 @@ final class LiveActivityCoordinator {
                 category: "notifications",
                 level: .info,
                 message: "Live Activity started",
-                metadata: ["match_id": matchId.uuidString, "activity_id": activity.id]
+                metadata: [
+                    "path": "new_request",
+                    "match_id": matchId.uuidString,
+                    "activity_id": activity.id,
+                    "my_total": "\(myTotal)",
+                    "opponent_total": "\(opponentTotal)",
+                    "my_score": "\(myScore)",
+                    "their_score": "\(theirScore)",
+                    "day_number": "\(dayNumber)"
+                ]
             )
             subscribeToPushTokenUpdates()
         } catch {
@@ -102,6 +133,19 @@ final class LiveActivityCoordinator {
             myScore: myScore,
             theirScore: theirScore,
             dayNumber: dayNumber
+        )
+        AppLogger.log(
+            category: "notifications",
+            level: .info,
+            message: "Live Activity local update",
+            metadata: [
+                "activity_id": activity.id,
+                "my_total": "\(myTotal)",
+                "opponent_total": "\(opponentTotal)",
+                "my_score": "\(myScore)",
+                "their_score": "\(theirScore)",
+                "day_number": "\(dayNumber)"
+            ]
         )
         Task {
             await activity.update(.init(state: newState, staleDate: nil))

@@ -13,87 +13,124 @@ struct HomeView: View {
     var onOpenChallenge: (ChallengePrefillOpponent?) -> Void
     var onOpenMatchDetails: (UUID, String) -> Void
 
+    @EnvironmentObject private var sessionStore: SessionStore
     @StateObject private var viewModel = HomeViewModel()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
+        ZStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
 
-                statsRow
+                    statsRow
 
-                if let errorMessage = viewModel.errorMessage, !errorMessage.isEmpty {
-                    Text(errorMessage)
-                        .font(FitUpFont.body(12, weight: .semibold))
-                        .foregroundStyle(FitUpColors.Neon.pink)
-                        .padding(.horizontal, 2)
-                }
-
-                // Stats -> Searching -> Pending -> Active Battles -> Past Matches -> Discover
-                if !viewModel.searchingRequests.isEmpty {
-                    SearchingSection(
-                        requests: viewModel.searchingRequests,
-                        isCancellingSearchId: viewModel.activeActionSearchID,
-                        waitTimeText: { viewModel.waitTimeLabel(for: $0) },
-                        onCancel: { searchId in
-                            Task { await viewModel.cancelSearch(searchId) }
-                        }
-                    )
-                }
-
-                if !viewModel.pendingMatches.isEmpty {
-                    PendingSection(
-                        matches: viewModel.pendingMatches,
-                        activeActionMatchID: viewModel.activeActionPendingMatchID,
-                        onOpenMatch: { pendingMatch in
-                            onOpenMatchDetails(pendingMatch.id, pendingMatch.opponent.displayName)
-                        },
-                        onAccept: { pendingMatch in
-                            Task { await viewModel.acceptPendingMatch(pendingMatch) }
-                        },
-                        onDecline: { pendingMatch in
-                            Task { await viewModel.declinePendingMatch(pendingMatch) }
-                        }
-                    )
-                }
-
-                ActiveSection(
-                    matches: viewModel.activeMatches,
-                    onOpenMatch: { match in
-                        onOpenMatchDetails(match.id, match.opponent.displayName)
+                    if let errorMessage = viewModel.errorMessage, !errorMessage.isEmpty {
+                        Text(errorMessage)
+                            .font(FitUpFont.body(12, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Neon.pink)
+                            .padding(.horizontal, 2)
                     }
-                )
 
-                PastMatchesSection(
-                    matches: viewModel.completedMatches,
-                    onOpenMatch: { match in
-                        onOpenMatchDetails(match.id, match.opponentName)
+                    // Stats -> Searching -> Pending -> Active Battles -> Past Matches -> Discover
+                    if !viewModel.searchingRequests.isEmpty {
+                        SearchingSection(
+                            requests: viewModel.searchingRequests,
+                            isCancellingSearchId: viewModel.activeActionSearchID,
+                            waitTimeText: { viewModel.waitTimeLabel(for: $0) },
+                            onCancel: { searchId in
+                                Task { await viewModel.cancelSearch(searchId) }
+                            }
+                        )
                     }
-                )
 
-                if !viewModel.discoverUsers.isEmpty {
-                    DiscoverSection(
-                        users: viewModel.discoverUsers,
-                        onChallenge: { user in
-                            onOpenChallenge(prefillOpponent(from: user))
+                    if !viewModel.pendingMatches.isEmpty {
+                        PendingSection(
+                            matches: viewModel.pendingMatches,
+                            activeActionMatchID: viewModel.activeActionPendingMatchID,
+                            onOpenMatch: { pendingMatch in
+                                onOpenMatchDetails(pendingMatch.id, pendingMatch.opponent.displayName)
+                            },
+                            onAccept: { pendingMatch in
+                                Task { await viewModel.acceptPendingMatch(pendingMatch) }
+                            },
+                            onDecline: { pendingMatch in
+                                Task { await viewModel.declinePendingMatch(pendingMatch) }
+                            }
+                        )
+                        .transition(
+                            .asymmetric(
+                                insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96)),
+                                removal: .opacity
+                            )
+                        )
+                    }
+
+                    ActiveSection(
+                        matches: viewModel.activeMatches,
+                        onOpenMatch: { match in
+                            onOpenMatchDetails(match.id, match.opponent.displayName)
                         }
                     )
-                }
 
-                if !viewModel.hasAnyContent, !viewModel.isLoading {
-                    zeroState
+                    PastMatchesSection(
+                        matches: viewModel.completedMatches,
+                        onOpenMatch: { match in
+                            onOpenMatchDetails(match.id, match.opponentName)
+                        }
+                    )
+
+                    if !viewModel.discoverUsers.isEmpty {
+                        DiscoverSection(
+                            users: viewModel.discoverUsers,
+                            onChallenge: { user in
+                                onOpenChallenge(prefillOpponent(from: user))
+                            }
+                        )
+                    }
+
+                    if !viewModel.hasAnyContent, !viewModel.isLoading {
+                        zeroState
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+                .animation(
+                    .spring(response: 0.52, dampingFraction: 0.78),
+                    value: viewModel.pendingMatches.map(\.id)
+                )
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
+            .scrollIndicators(.hidden)
+
+            if let celebration = viewModel.matchFoundCelebration {
+                MatchFoundCelebrationOverlay(
+                    opponentName: celebration.opponent.displayName,
+                    onDismiss: { viewModel.dismissMatchFoundCelebration() }
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                .zIndex(1)
+            }
         }
-        .scrollIndicators(.hidden)
         .task(id: profile?.id) {
             viewModel.start(profile: profile, showOnboardingSearching: showOnboardingSearching)
         }
+        .onAppear {
+            clearSearchingFlagIfHasMatch()
+        }
+        .onChange(of: viewModel.pendingMatches.count) { _, _ in
+            clearSearchingFlagIfHasMatch()
+        }
+        .onChange(of: viewModel.activeMatches.count) { _, _ in
+            clearSearchingFlagIfHasMatch()
+        }
         .onDisappear {
             viewModel.stop()
+        }
+    }
+
+    private func clearSearchingFlagIfHasMatch() {
+        if !viewModel.pendingMatches.isEmpty || !viewModel.activeMatches.isEmpty {
+            sessionStore.clearSearchingCardOnHomeFlag()
         }
     }
 
@@ -221,5 +258,93 @@ struct HomeView: View {
             initials: user.initials,
             colorHex: user.colorHex
         )
+    }
+}
+
+// MARK: - Match found celebration (retro)
+
+private struct MatchFoundCelebrationOverlay: View {
+    let opponentName: String
+    var onDismiss: () -> Void
+
+    @State private var cardAppeared = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.56)
+                .ignoresSafeArea()
+                .onTapGesture { onDismiss() }
+
+            scanlineField
+
+            VStack(spacing: 14) {
+                Text("YOU'VE BEEN MATCHED!")
+                    .font(FitUpFont.mono(17, weight: .heavy))
+                    .foregroundStyle(FitUpColors.Neon.green)
+                    .shadow(color: FitUpColors.Neon.green.opacity(0.5), radius: 10)
+                    .multilineTextAlignment(.center)
+
+                Text("VS \(opponentName.uppercased())")
+                    .font(FitUpFont.mono(13, weight: .semibold))
+                    .foregroundStyle(FitUpColors.Neon.yellow)
+                    .multilineTextAlignment(.center)
+
+                Text("TAP TO CONTINUE")
+                    .font(FitUpFont.mono(10, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .padding(.top, 6)
+            }
+            .padding(28)
+            .frame(maxWidth: 320)
+            .background(
+                RoundedRectangle(cornerRadius: FitUpRadius.lg)
+                    .fill(Color(rgb: 0x0A1020).opacity(0.95))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: FitUpRadius.lg)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        FitUpColors.Neon.cyan,
+                                        FitUpColors.Neon.purple,
+                                        FitUpColors.Neon.green,
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    )
+            )
+            .shadow(color: FitUpColors.Neon.cyan.opacity(0.25), radius: 22)
+            .scaleEffect(cardAppeared ? 1 : 0.9)
+            .opacity(cardAppeared ? 1 : 0)
+            .padding(.horizontal, 24)
+            .contentShape(Rectangle())
+            .onTapGesture { onDismiss() }
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.72)) {
+                cardAppeared = true
+            }
+        }
+    }
+
+    private var scanlineField: some View {
+        GeometryReader { geo in
+            Canvas { context, size in
+                let lineH: CGFloat = 1
+                let gap: CGFloat = 6
+                var y: CGFloat = 0
+                while y < size.height {
+                    let rect = CGRect(x: 0, y: y, width: size.width, height: lineH)
+                    context.fill(Path(rect), with: .color(Color.white.opacity(0.04)))
+                    y += gap + lineH
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .allowsHitTesting(false)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }

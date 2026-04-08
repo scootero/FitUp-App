@@ -347,3 +347,16 @@ Supabase changes:
 Notes:
 - Pairing still requires two **different** users with compatible `metric_type` / `duration_days` / `start_mode`; same user cannot match themselves.
 - Retries address failed `pg_net` delivery and partners joining shortly after; cron sweeps stale rows every minute.
+
+## Decline pending match (direct + random)
+Date: 2026-04-08
+Status: Complete
+Files created:
+- `supabase/sql/slice4e-decline-pending-match.sql` (`decline_pending_match` RPC + `tr_notify_public_matchmaking_declined`)
+Files modified:
+- `FitUp/FitUp/FitUp/Repositories/HomeRepository.swift` (`declinePendingMatch` → RPC)
+- `FitUp/docs/supabase-setup-guide.md` (Slice 4 §7 run order)
+Supabase changes:
+- Run `slice4e-decline-pending-match.sql` after `slice9-notifications.sql`.
+Notes:
+- Cancels pending matches for both `direct_challenge` and `public_matchmaking`; Home hides rows when `state = 'cancelled'`. Opponent push for random match uses `challenge_declined` like direct decline.

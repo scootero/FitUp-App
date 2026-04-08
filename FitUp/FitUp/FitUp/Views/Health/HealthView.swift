@@ -38,7 +38,7 @@ struct HealthView: View {
 
                 ComponentBreakdownCard(
                     goals: viewModel.goals,
-                    sleepHours: viewModel.sleepLastNightHours ?? viewModel.sleepSummary?.averageHoursLastNights,
+                    sleepHours: viewModel.sleepLastNightHours,
                     restingHR: viewModel.restingHRValue,
                     stepsToday: viewModel.stepsTodayValue,
                     calsToday: viewModel.caloriesTodayValue
@@ -64,9 +64,11 @@ struct HealthView: View {
                 healthSectionLabel("Sleep Quality")
                 HStack(alignment: .top, spacing: 10) {
                     LastNightSleepCard(summary: viewModel.sleepSummary)
-                    SevenNightSleepOverviewCard(summary: viewModel.sleepSummary)
+                    SleepRatioCard(summary: viewModel.sleepSummary)
                 }
-                .padding(.bottom, 14)
+                .padding(.bottom, 10)
+                SevenNightSleepAverageCard(summary: viewModel.sleepSummary)
+                    .padding(.bottom, 14)
 
                 healthSectionLabel("HR Zones")
                 HRZonesCard(

@@ -54,6 +54,8 @@ struct HomeActiveMatch: Identifiable, Equatable {
     let sportLabel: String
     let seriesLabel: String
     let daysLeft: Int
+    /// When `daysLeft == 1`, local time when the current match day finalizes (10:00 on the calendar day after `match_days.calendar_date`).
+    let finalDayCutoffAt: Date?
     let myToday: Int
     let theirToday: Int
     let myScore: Int
@@ -104,7 +106,7 @@ final class HomeRepository {
         let (activeRows, pendingRows) = await cards
         let discoverRows = await discover
 
-        if showOnboardingSearching && searchingRows.isEmpty {
+        if showOnboardingSearching && searchingRows.isEmpty && activeRows.isEmpty && pendingRows.isEmpty {
             searchingRows = [HomeSearchingRequest(
                 id: UUID(),
                 metricType: "steps",
@@ -153,22 +155,17 @@ final class HomeRepository {
             .execute()
     }
 
-    func declinePendingMatch(challengeId: UUID?, matchId: UUID) async throws {
+    func declinePendingMatch(challengeId _: UUID?, matchId: UUID) async throws {
         guard let client = SupabaseProvider.client else {
             throw ProfileRepositoryError.supabaseNotConfigured
         }
-        if let challengeId {
-            try await client
-                .from("direct_challenges")
-                .update(["status": "declined"])
-                .eq("id", value: challengeId.uuidString)
-                .execute()
-        } else {
-            try await client
-                .from("direct_challenges")
-                .update(["status": "declined"])
-                .eq("match_id", value: matchId.uuidString)
-                .execute()
+        let params = DeclinePendingMatchRPCParams(p_match_id: matchId)
+        let response: PostgrestResponse<DeclinePendingMatchRPCResult> = try await client.rpc(
+            "decline_pending_match",
+            params: params
+        ).execute()
+        guard response.value.ok else {
+            throw ProfileRepositoryError.updateFailed
         }
     }
 
@@ -357,6 +354,7 @@ final class HomeRepository {
                 let dayPips = deriveDayPips(dayRows: dayRows, durationDays: durationDays, currentUserId: currentUserId)
                 let finalizedCount = dayRows.filter { string(from: $0["status"]) == "finalized" }.count
                 let daysLeft = max(durationDays - finalizedCount, 0)
+                let finalCutoff = finalDayCutoff(from: dayRows, daysLeft: daysLeft)
 
                 if state == "active" {
                     active.append(
@@ -367,6 +365,7 @@ final class HomeRepository {
                             sportLabel: sportLabel(for: metricType),
                             seriesLabel: seriesLabel(for: durationDays),
                             daysLeft: daysLeft,
+                            finalDayCutoffAt: finalCutoff,
                             myToday: totals.myTotal,
                             theirToday: totals.theirTotal,
                             myScore: scores.myScore,
@@ -525,6 +524,21 @@ final class HomeRepository {
             }
             return HomeDayPip(dayNumber: dayNumber, state: .future)
         }
+    }
+
+    /// First non-finalized day’s cutoff: 10:00 local on the calendar day after `calendar_date` (matches `day_cutoff_check` in slice8).
+    private func finalDayCutoff(from dayRows: [[String: Any]], daysLeft: Int) -> Date? {
+        guard daysLeft == 1 else { return nil }
+        guard let pending = dayRows.first(where: { string(from: $0["status"]) != "finalized" }),
+              let calStr = string(from: pending["calendar_date"]) else { return nil }
+        return Self.cutoffDateAfterMatchDay(calendarDateString: calStr)
+    }
+
+    private static func cutoffDateAfterMatchDay(calendarDateString: String) -> Date? {
+        guard let dayStart = calendarFormatter.date(from: calendarDateString) else { return nil }
+        let cal = Calendar.current
+        guard let nextDayStart = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+        return cal.date(bySettingHour: 10, minute: 0, second: 0, of: nextDayStart)
     }
 
     // MARK: Load Discover
@@ -737,5 +751,40 @@ final class HomeRepository {
             return "\(first)\(second)".uppercased()
         }
         return String(displayName.prefix(2)).uppercased()
+    }
+}
+
+// MARK: - decline_pending_match RPC (see supabase/sql/slice4e-decline-pending-match.sql)
+
+private struct DeclinePendingMatchRPCParams: Sendable {
+    let p_match_id: UUID
+}
+
+extension DeclinePendingMatchRPCParams: Encodable {
+    nonisolated func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(p_match_id, forKey: .p_match_id)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case p_match_id
+    }
+}
+
+private struct DeclinePendingMatchRPCResult: Sendable {
+    let ok: Bool
+    let reason: String?
+}
+
+extension DeclinePendingMatchRPCResult: Decodable {
+    nonisolated init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try c.decode(Bool.self, forKey: .ok)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case reason
     }
 }

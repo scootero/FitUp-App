@@ -13,6 +13,7 @@ struct ProfileView: View {
     var onSignOut: () -> Void
     var onOpenPaywall: () -> Void
 
+    @EnvironmentObject private var sessionStore: SessionStore
     @StateObject private var viewModel = ProfileViewModel()
     @ObservedObject private var subscriptionService = SubscriptionService.shared
 
@@ -23,6 +24,10 @@ struct ProfileView: View {
 
     // Paywall sheet presented from "Manage Plan" / Upgrade rows.
     @State private var showPaywall = false
+
+    @State private var showEditDisplayName = false
+    @State private var editDisplayNameDraft = ""
+    @State private var isSavingDisplayName = false
 
 #if DEBUG
     @AppStorage("devMode") private var devMode = false
@@ -57,6 +62,9 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView { showPaywall = false }
+        }
+        .sheet(isPresented: $showEditDisplayName) {
+            editDisplayNameSheet
         }
     }
 
@@ -163,6 +171,16 @@ struct ProfileView: View {
     private var accountGroup: some View {
         SettingsGroupView(title: "ACCOUNT") {
             SettingsRowView(
+                sfSymbol: "person.text.rectangle",
+                label: "Display name",
+                showSeparator: true,
+                action: .chevron {
+                    sessionStore.authErrorMessage = nil
+                    editDisplayNameDraft = profile?.displayName ?? ""
+                    showEditDisplayName = true
+                }
+            )
+            SettingsRowView(
                 sfSymbol: "bell",
                 label: "Notifications",
                 showSeparator: true,
@@ -262,6 +280,66 @@ struct ProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: FitUpRadius.md))
     }
 
+    // MARK: - Edit display name
+
+    private var editDisplayNameSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("This is how other players see you. Sign in with Apple only shares your name the first time you authorize the app—if you see a placeholder like “FitUp …”, set your name here.")
+                    .font(FitUpFont.body(13))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+
+                TextField("Display name", text: $editDisplayNameDraft)
+                    .textInputAutocapitalization(.words)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .foregroundStyle(FitUpColors.Text.primary)
+                    .background(
+                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                            .fill(FitUpColors.Bg.base.opacity(0.55))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                            )
+                    )
+
+                if let err = sessionStore.authErrorMessage, !err.isEmpty {
+                    Text(err)
+                        .font(FitUpFont.body(13, weight: .medium))
+                        .foregroundStyle(FitUpColors.Neon.pink)
+                }
+
+                Spacer()
+            }
+            .padding(20)
+            .background(BackgroundGradientView())
+            .navigationTitle("Display name")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        sessionStore.authErrorMessage = nil
+                        showEditDisplayName = false
+                    }
+                    .disabled(isSavingDisplayName)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task {
+                            isSavingDisplayName = true
+                            defer { isSavingDisplayName = false }
+                            await sessionStore.updateDisplayName(editDisplayNameDraft)
+                            if sessionStore.authErrorMessage == nil {
+                                showEditDisplayName = false
+                            }
+                        }
+                    }
+                    .disabled(isSavingDisplayName || editDisplayNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private var usernameSlug: String {
@@ -284,5 +362,6 @@ struct ProfileView: View {
             onSignOut: {},
             onOpenPaywall: {}
         )
+        .environmentObject(SessionStore())
     }
 }

@@ -114,10 +114,10 @@ final class HealthViewModel: ObservableObject {
                 try await HealthKitService.fetchHRZoneRows()
             }
 
-            let sleepForReadiness = sleepAgg.lastNightAsleepHours ?? sleepAgg.averageHoursLastNights
+            let sleepForReadiness = sleepAgg.lastNightAsleepHours
 
             let score = ReadinessCalculator.compute(
-                sleepHrsLastNight: sleepForReadiness > 0 ? sleepForReadiness : nil,
+                sleepHrsLastNight: sleepForReadiness,
                 restingHR: resting,
                 stepsToday: stepsToday,
                 calsToday: calsToday,
@@ -145,7 +145,11 @@ final class HealthViewModel: ObservableObject {
             lastLoadFinishedAt = Date()
             showSyncedBadge = true
 
-            allTimeBests = await healthRepository.fetchAllTimeBests(userId: userId)
+            async let remoteBests = healthRepository.fetchAllTimeBests(userId: userId)
+            async let hkBestsTask = loadHealthKitAllTimeBests(userId: userId)
+            let remoteResolved = await remoteBests
+            let hkResolved = await hkBestsTask
+            allTimeBests = HealthAllTimeBests.merged(healthKit: hkResolved, remote: remoteResolved)
             activeMatchEdges = await homeRepository.loadActiveMatches(for: userId)
 
             let completed = await activityRepository.loadCompletedMatches(currentUserId: userId)
@@ -208,6 +212,25 @@ final class HealthViewModel: ObservableObject {
         }
     }
 
+    /// Best day / best 7-day totals from Apple Health; empty on failure (merge falls back to Supabase).
+    private func loadHealthKitAllTimeBests(userId: UUID) async -> HealthKitAllTimeBests {
+        do {
+            return try await HealthKitService.fetchAllTimeBestsFromHealth()
+        } catch {
+            AppLogger.log(
+                category: "healthkit_read",
+                level: .warning,
+                message: "all-time bests from HealthKit failed",
+                userId: userId,
+                metadata: [
+                    "error": error.localizedDescription,
+                    "error_type": String(describing: type(of: error)),
+                ]
+            )
+            return .empty
+        }
+    }
+
     private func healthKitStep<T>(
         _ step: String,
         userId: UUID,
@@ -255,6 +278,9 @@ final class HealthViewModel: ObservableObject {
             "sleep_last_night_hrs=\(sleepAgg.lastNightAsleepHours.map { String(format: "%.2f", $0) } ?? "nil")",
             "sleep_nightly_hrs_oldest_to_today=\(sleepAgg.nightlyAsleepHoursOldestFirst.map { String(format: "%.2f", $0) }.joined(separator: ","))",
             "sleep_last_night_timeline_segments=\(sleepAgg.lastNightTimeline.count)",
+            "sleep_ratio_deep_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.deepPercent) } ?? "nil")",
+            "sleep_ratio_light_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.lightPercent) } ?? "nil")",
+            "sleep_ratio_rem_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.remPercent) } ?? "nil")",
             "sleep_stages_7n_pct_deep=\(String(format: "%.1f", stages.deep)) core=\(String(format: "%.1f", stages.core)) rem=\(String(format: "%.1f", stages.rem)) awake=\(String(format: "%.1f", stages.awake))",
             "week_steps_oldest_to_today=\(weekSteps.map(String.init).joined(separator: ","))",
             "week_cal_oldest_to_today=\(weekCalories.map(String.init).joined(separator: ","))",
@@ -267,8 +293,8 @@ final class HealthViewModel: ObservableObject {
         ]
     }
 
-    private func formatSleepHours(_ h: Double) -> String {
-        guard h > 0 else { return "—" }
+    private func formatSleepHours(_ h: Double?) -> String {
+        guard let h, h > 0 else { return "—" }
         return String(format: "%.1fh", h)
     }
 

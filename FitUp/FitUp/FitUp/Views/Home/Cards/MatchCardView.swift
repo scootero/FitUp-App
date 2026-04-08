@@ -61,7 +61,7 @@ struct MatchCardView: View {
     }
 
     private var headerRow: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
             Image(systemName: match.metricType == "active_calories" ? "flame.fill" : "figure.walk")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(accentColor)
@@ -75,14 +75,87 @@ struct MatchCardView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 4) {
-                Image(systemName: "clock")
-                    .font(.system(size: 10, weight: .semibold))
-                Text("\(match.daysLeft)d left")
-                    .font(FitUpFont.body(10, weight: .medium))
-            }
-            .foregroundStyle(FitUpColors.Text.tertiary)
+            battleCountdownBlock
         }
+    }
+
+    private var battleCountdownBlock: some View {
+        Group {
+            if match.daysLeft > 1 {
+                retroDaysLeftNumber(match.daysLeft, plural: true)
+            } else if match.daysLeft == 1 {
+                if let cutoff = match.finalDayCutoffAt {
+                    finalDayCountdown(cutoff: cutoff)
+                } else {
+                    retroDaysLeftNumber(1, plural: false)
+                }
+            } else {
+                Text("—")
+                    .font(FitUpFont.mono(14, weight: .bold))
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(retroCountdownChrome)
+            }
+        }
+        .frame(minWidth: 76, alignment: .trailing)
+        .multilineTextAlignment(.trailing)
+    }
+
+    private func retroDaysLeftNumber(_ value: Int, plural: Bool) -> some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            Text("\(value)")
+                .font(FitUpFont.mono(22, weight: .bold))
+                .foregroundStyle(accentColor)
+                .shadow(color: accentColor.opacity(0.4), radius: 3, x: 0, y: 0)
+            Text(plural ? "DAYS" : "DAY")
+                .font(FitUpFont.mono(8, weight: .heavy))
+                .tracking(1.0)
+                .foregroundStyle(accentColor.opacity(0.92))
+            Text("LEFT")
+                .font(FitUpFont.mono(8, weight: .heavy))
+                .tracking(1.0)
+                .foregroundStyle(accentColor.opacity(0.78))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(retroCountdownChrome)
+    }
+
+    private func finalDayCountdown(cutoff: Date) -> some View {
+        TimelineView(.periodic(from: Date(), by: 60)) { context in
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("FINAL DAY")
+                    .font(FitUpFont.mono(9, weight: .heavy))
+                    .tracking(0.9)
+                    .foregroundStyle(accentColor)
+                Text(finalDayTimeLeft(from: context.date, deadline: cutoff))
+                    .font(FitUpFont.mono(11, weight: .bold))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(retroCountdownChrome)
+        }
+    }
+
+    private var retroCountdownChrome: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color.black.opacity(0.38))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(accentColor.opacity(0.42), lineWidth: 1)
+            )
+    }
+
+    private func finalDayTimeLeft(from now: Date, deadline: Date) -> String {
+        let seconds = max(0, deadline.timeIntervalSince(now))
+        let h = Int(seconds) / 3600
+        let m = (Int(seconds) % 3600) / 60
+        if h > 0 {
+            return "\(h)h \(m)m left"
+        }
+        return "\(m)m left"
     }
 
     private var playersRow: some View {

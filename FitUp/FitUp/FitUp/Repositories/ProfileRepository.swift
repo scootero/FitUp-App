@@ -14,6 +14,8 @@ enum ProfileRepositoryError: LocalizedError {
     case supabaseNotConfigured
     case invalidAuthUserId
     case createFailed
+    case invalidDisplayName
+    case updateFailed
 
     var errorDescription: String? {
         switch self {
@@ -23,6 +25,10 @@ enum ProfileRepositoryError: LocalizedError {
             return "Unable to read the authenticated user id."
         case .createFailed:
             return "Profile could not be created."
+        case .invalidDisplayName:
+            return "Display name cannot be empty."
+        case .updateFailed:
+            return "Profile could not be updated."
         }
     }
 }
@@ -91,6 +97,25 @@ struct ProfileRepository {
             throw ProfileRepositoryError.createFailed
         }
         return created
+    }
+
+    /// Updates `display_name` and `initials` for the caller's profile row.
+    func updateDisplayName(_ displayName: String, authUserId: UUID) async throws -> Profile {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ProfileRepositoryError.invalidDisplayName }
+
+        let client = try client
+        let initials = Self.initials(from: trimmed)
+        try await client
+            .from("profiles")
+            .update(["display_name": trimmed, "initials": initials])
+            .eq("auth_user_id", value: authUserId.uuidString)
+            .execute()
+
+        guard let updated = try await fetchProfile(authUserId: authUserId) else {
+            throw ProfileRepositoryError.updateFailed
+        }
+        return updated
     }
 
     // MARK: - Notifications toggle

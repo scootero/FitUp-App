@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#080810;display:flex;flex-direction:column;align-items:center;padding:32px 16px 60px;font-family:'DM Sans',sans-serif;}
+:root{
+  --bg:#04040A;--s1:#0E0E18;--s2:#16161F;--border:rgba(255,255,255,0.08);
+  --cyan:#00FFE0;--cdim:rgba(0,255,224,0.12);
+  --orange:#FF6200;--odim:rgba(255,98,0,0.12);
+  --white:#FFFFFF;--t2:rgba(255,255,255,0.52);--t3:rgba(255,255,255,0.27);
+  --yellow:#FFE000;--green:#39FF14;--red:#FF4040;
+}
+.outer{display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;}
+.tab-row{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:8px;}
+.tab-btn{padding:6px 14px;border-radius:999px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:rgba(255,255,255,0.4);font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;letter-spacing:.5px;}
+.tab-btn.active{background:rgba(0,255,224,0.12);border-color:rgba(0,255,224,0.4);color:#00FFE0;}
+.phones-row{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;align-items:flex-start;}
+.phone-wrap{display:flex;flex-direction:column;align-items:center;gap:8px;}
+.phone-tag{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:2px;color:rgba(255,255,255,0.2);text-transform:uppercase;}
+.phone{width:375px;height:812px;background:var(--bg);border-radius:48px;overflow:hidden;position:relative;
+  box-shadow:0 0 0 1px rgba(255,255,255,0.06),0 30px 80px rgba(0,0,0,0.8);
+  font-family:'DM Sans',sans-serif;color:var(--white);flex-shrink:0;}
+.scroll{height:calc(100% - 82px);overflow-y:auto;overflow-x:hidden;scrollbar-width:none;padding-bottom:20px;}
+.scroll::-webkit-scrollbar{display:none;}
+.sbar{display:flex;justify-content:space-between;align-items:center;padding:14px 28px 6px;font-family:'Space Mono',monospace;font-size:11px;color:var(--t3);}
+.back-row{display:flex;align-items:center;justify-content:space-between;padding:4px 20px 12px;}
+.back-btn{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:var(--t2);cursor:pointer;}
+.share-btn{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:15px;cursor:pointer;}
+
+/* META PILLS */
+.meta-row{display:flex;gap:6px;flex-wrap:wrap;padding:0 20px 14px;}
+.meta-pill{padding:4px 10px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.5px;border:1px solid;}
+.meta-pill.steps{background:rgba(0,255,224,0.08);border-color:rgba(0,255,224,0.25);color:#00FFE0;}
+.meta-pill.cal{background:rgba(255,224,0,0.08);border-color:rgba(255,224,0,0.25);color:#FFE000;}
+.meta-pill.days{background:rgba(255,255,255,0.05);border-color:var(--border);color:var(--t2);}
+.meta-pill.live{background:rgba(57,255,20,0.08);border-color:rgba(57,255,20,0.25);color:#39FF14;}
+
+/* HERO */
+.hero{margin:0 16px 14px;border-radius:22px;overflow:hidden;position:relative;}
+.hero.win{background:linear-gradient(145deg,rgba(0,255,224,0.07),rgba(0,255,224,0.02));border:1px solid rgba(0,255,224,0.22);}
+.hero.lose{background:linear-gradient(145deg,rgba(255,98,0,0.07),rgba(255,98,0,0.02));border:1px solid rgba(255,98,0,0.22);}
+.hero-accent{height:3px;}
+.hero-accent.win{background:linear-gradient(90deg,#00FFE0,#00AAFF);}
+.hero-accent.lose{background:linear-gradient(90deg,#FF6200,#FF2D9B);}
+.hero-top{padding:16px 20px 0;display:flex;justify-content:space-between;align-items:flex-start;}
+.status-label{font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;}
+.status-label.win{color:#00FFE0;}
+.status-label.lose{color:#FF6200;}
+.series-badge{background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;padding:4px 10px;font-family:'Space Mono',monospace;font-size:10px;color:var(--t2);}
+
+/* VERSUS BLOCK */
+.versus-block{display:flex;align-items:flex-start;padding:14px 16px 6px;gap:6px;}
+.player-side{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;}
+.avatar{width:54px;height:54px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:19px;letter-spacing:1px;position:relative;}
+.avatar.me{background:linear-gradient(135deg,rgba(0,255,224,0.2),rgba(0,255,224,0.06));border:2px solid rgba(0,255,224,0.4);color:#00FFE0;}
+.avatar.them{background:linear-gradient(135deg,rgba(255,98,0,0.2),rgba(255,98,0,0.06));border:2px solid rgba(255,98,0,0.4);color:#FF6200;}
+.pulse-ring{position:absolute;inset:-5px;border-radius:20px;border:2px solid #00FFE0;opacity:.5;animation:pulseR 2s ease-in-out infinite;}
+.pulse-ring.o{border-color:#FF6200;}
+@keyframes pulseR{0%,100%{opacity:.5}50%{opacity:.1}}
+.p-name{font-size:12px;font-weight:700;color:var(--white);}
+.p-score-big{font-family:'Bebas Neue',sans-serif;font-size:68px;line-height:1;letter-spacing:-1px;}
+/* Today count under score */
+.p-today-count{font-family:'Space Mono',monospace;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;letter-spacing:.3px;}
+.p-today-count.high{color:#00FFE0;background:rgba(0,255,224,0.1);border:1px solid rgba(0,255,224,0.2);}
+.p-today-count.low{color:#FF4040;background:rgba(255,64,64,0.1);border:1px solid rgba(255,64,64,0.2);}
+
+/* RECORD DOTS */
+.record-dots{display:flex;gap:5px;flex-wrap:wrap;padding:8px 16px 10px;}
+.rdot{min-width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;padding:0 5px;}
+.rdot.w{background:rgba(0,255,224,0.15);color:#00FFE0;}
+.rdot.l{background:rgba(255,98,0,0.15);color:#FF6200;}
+.rdot.f{background:rgba(255,255,255,0.04);color:var(--t3);}
+.rdot.now{background:rgba(255,255,255,0.08);color:var(--t2);border:1px solid rgba(255,255,255,0.15);}
+
+/* PROGRESS */
+.prog-wrap{margin:0 16px 16px;}
+.prog-track{height:5px;background:var(--s2);border-radius:3px;overflow:hidden;}
+.prog-fill{height:100%;border-radius:3px;}
+.prog-fill.win{background:linear-gradient(90deg,#00FFE0,#00AAFF);}
+.prog-fill.lose{background:#FF6200;}
+.prog-meta{display:flex;justify-content:space-between;margin-top:6px;font-family:'Space Mono',monospace;font-size:9px;color:var(--t3);}
+
+.vs-center{display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:34px;}
+.vs-text{font-family:'Bebas Neue',sans-serif;font-size:15px;color:var(--t3);letter-spacing:2px;}
+.vs-pipe{width:1px;height:24px;background:var(--border);}
+
+/* TODAY ROW */
+.today-row{margin:0 16px 12px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;}
+.today-left{display:flex;flex-direction:column;gap:2px;}
+.today-label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--t3);}
+.today-steps{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:1px;}
+.today-steps.win{color:#00FFE0;}
+.today-steps.lose{color:#FF6200;}
+.today-diff.up{color:#00FFE0;font-size:12px;font-weight:700;}
+.today-diff.down{color:#FF4040;font-size:12px;font-weight:700;}
+.live-dot{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#39FF14;}
+.live-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:#39FF14;box-shadow:0 0 6px #39FF14;animation:blink 1.4s ease-in-out infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ALERT BANNER */
+.alert-banner{margin:0 16px 12px;padding:10px 14px;border-radius:14px;display:flex;align-items:center;gap:10px;}
+.alert-banner.warn{background:rgba(255,98,0,0.08);border:1px solid rgba(255,98,0,0.2);}
+.alert-banner.good{background:rgba(0,255,224,0.06);border:1px solid rgba(0,255,224,0.18);}
+.ab-icon{font-size:16px;}
+.ab-text{font-size:12px;color:var(--t2);line-height:1.4;}
+.ab-text strong{color:var(--white);}
+
+/* ── BAR CHART CARD ── */
+.bar-chart-card{margin:0 16px 14px;background:#0C0C16;border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:16px 14px 12px;overflow:hidden;}
+.bcc-title{font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--t3);margin-bottom:14px;}
+.bcc-inner{display:flex;align-items:flex-end;gap:0;height:90px;position:relative;}
+.bcc-day-group{display:flex;align-items:flex-end;gap:3px;flex:1;justify-content:center;}
+.bcc-day-wrap{display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;}
+.bcc-bars{display:flex;align-items:flex-end;gap:3px;height:80px;}
+.bcc-bar{width:12px;border-radius:4px 4px 2px 2px;min-height:3px;transition:height .3s;}
+.bcc-bar.me{background:#00FFE0;}
+.bcc-bar.them{background:#FF6200;}
+.bcc-bar.future{background:rgba(255,255,255,0.06);border:1px dashed rgba(255,255,255,0.1);}
+.bcc-day-label{font-family:'Space Mono',monospace;font-size:9px;color:var(--t3);letter-spacing:.5px;}
+.bcc-spacer{width:8px;flex-shrink:0;}
+.bcc-legend{display:flex;gap:16px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);}
+.bcc-leg-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t2);font-weight:600;}
+.bcc-leg-dot{width:10px;height:10px;border-radius:3px;}
+
+/* SECTION HEADER */
+.sec-hd{padding:4px 20px 10px;display:flex;align-items:center;justify-content:space-between;}
+.sec-title{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--t3);}
+
+/* ── MIRRORED STAT COLUMNS ── */
+.stat-col-headers{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 16px 8px;}
+.stat-col-header{border-radius:10px;padding:8px 12px;text-align:center;font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;}
+.stat-col-header.you{background:rgba(0,255,224,0.08);border:1px solid rgba(0,255,224,0.2);color:#00FFE0;}
+.stat-col-header.them{background:rgba(255,98,0,0.08);border:1px solid rgba(255,98,0,0.2);color:#FF6200;}
+.stat-cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 16px 14px;}
+.stat-tile{background:var(--s1);border:1px solid var(--border);border-radius:14px;padding:11px 12px;}
+.stat-tile.you-tile{border-color:rgba(0,255,224,0.14);background:rgba(0,255,224,0.04);}
+.stat-tile.them-tile{border-color:rgba(255,98,0,0.14);background:rgba(255,98,0,0.04);}
+.stat-label{font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--t3);margin-bottom:4px;line-height:1.3;}
+.stat-val{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:.5px;line-height:1;}
+.stat-val.c{color:#00FFE0;}
+.stat-val.o{color:#FF6200;}
+.stat-sub{font-size:10px;color:var(--t2);margin-top:3px;}
+
+/* H2H CARD */
+.h2h-card{margin:0 16px 14px;background:var(--s1);border:1px solid var(--border);border-radius:18px;padding:16px;}
+.h2h-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+.h2h-item{text-align:center;}
+.h2h-num{font-family:'Bebas Neue',sans-serif;font-size:32px;line-height:1;}
+.h2h-num.you{color:#00FFE0;}
+.h2h-num.them{color:#FF6200;}
+.h2h-num.tie{color:var(--t3);}
+.h2h-sub{font-size:9px;color:var(--t3);font-weight:700;letter-spacing:.5px;margin-top:2px;}
+.h2h-divider{width:1px;height:32px;background:var(--border);}
+.h2h-bar-wrap{height:5px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden;margin-top:4px;position:relative;}
+.h2h-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#00FFE0,rgba(0,255,224,0.4));}
+
+/* ACTION BUTTONS */
+.action-block{display:flex;gap:10px;margin:0 16px 18px;}
+.btn-primary{flex:2;padding:14px;border-radius:14px;border:none;background:linear-gradient(135deg,rgba(0,255,224,0.9),rgba(0,170,255,0.8));color:#000;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 0 24px rgba(0,255,224,0.3);}
+.btn-primary.lose{background:linear-gradient(135deg,rgba(255,98,0,0.9),rgba(255,45,155,0.6));color:#fff;box-shadow:0 0 24px rgba(255,98,0,0.25);}
+.btn-ghost{flex:1;padding:14px;border-radius:14px;background:rgba(0,255,224,0.06);border:1px solid rgba(0,255,224,0.3);color:#00FFE0;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;}
+
+/* BOTTOM NAV */
+.bnav{position:absolute;bottom:0;left:0;right:0;height:82px;background:rgba(4,4,10,0.96);backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-around;padding-top:12px;}
+.nav-item{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;min-width:50px;}
+.nav-icon{font-size:20px;opacity:.3;}
+.nav-icon.on{opacity:1;}
+.nav-label{font-size:9px;font-weight:700;letter-spacing:.5px;color:rgba(255,255,255,.3);}
+.nav-label.on{color:#00FFE0;}
+.nav-center{width:52px;height:52px;border-radius:18px;background:linear-gradient(135deg,rgba(0,255,224,0.85),rgba(0,170,255,0.7));display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 0 20px rgba(0,255,224,0.35);margin-top:-10px;cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="outer">
+  <div class="tab-row" id="tabs"></div>
+  <div class="phones-row" id="phoneArea"></div>
+</div>
+
+<script>
+const MATCHES={
+  win:{
+    isWin:true,sport:"Steps",format:"Best of 7",totalDays:7,daysDone:5,unit:"steps",
+    meName:"You",meInitials:"MR",theirName:"Jake T.",theirInitials:"JT",
+    myScore:4,theirScore:2,myToday:11240,theirToday:8980,
+    myAvg:10868,theirAvg:9692,myBest:13100,theirBest:11200,
+    myTotal:54340,theirTotal:48460,
+    h2hYou:8,h2hThem:3,h2hTie:1,
+    days:[
+      {d:"M",me:12400,them:9800,r:"w"},{d:"T",me:8900,them:11200,r:"l"},
+      {d:"W",me:13100,them:8400,r:"w"},{d:"T",me:10200,them:9100,r:"w"},
+      {d:"S",me:9400,them:11800,r:"l"},{d:"S",me:11240,them:8980,r:"now"},
+      {d:"S",me:null,them:null,r:"f"}
+    ]
+  },
+  lose:{
+    isWin:false,sport:"Calories",format:"First to 3",totalDays:5,daysDone:4,unit:"kcal",
+    meName:"You",meInitials:"MR",theirName:"Sofia M.",theirInitials:"SM",
+    myScore:1,theirScore:3,myToday:1840,theirToday:2610,
+    myAvg:1924,theirAvg:2317,myBest:2180,theirBest:2610,
+    myTotal:7696,theirTotal:9268,
+    h2hYou:2,h2hThem:5,h2hTie:0,
+    days:[
+      {d:"M",me:2100,them:2410,r:"l"},{d:"T",me:2180,them:1980,r:"w"},
+      {d:"W",me:1620,them:2340,r:"l"},{d:"T",me:1840,them:2610,r:"now"},
+      {d:"F",me:null,them:null,r:"f"}
+    ]
+  }
+};
+
+let current="win";
+
+function fmt(n){if(n==null)return "—";return n>=1000?n.toLocaleString():String(n);}
+
+function buildBarChart(m){
+  const maxVal=Math.max(...m.days.filter(d=>d.me||d.them).flatMap(d=>[d.me||0,d.them||0]),1);
+  const H=72;
+  const groups=m.days.map((d,i)=>{
+    const isFut=d.r==="f";
+    const meH=isFut?0:Math.round(((d.me||0)/maxVal)*H);
+    const themH=isFut?0:Math.round(((d.them||0)/maxVal)*H);
+    return `<div class="bcc-day-wrap">
+      <div class="bcc-bars">
+        <div class="bcc-bar ${isFut?"future":"me"}" style="height:${isFut?H:Math.max(meH,3)}px;${isFut?"height:"+H+"px;opacity:.15":""}"></div>
+        <div class="bcc-bar ${isFut?"future":"them"}" style="height:${isFut?H:Math.max(themH,3)}px;${isFut?"opacity:.15":""}"></div>
+      </div>
+      <div class="bcc-day-label">${d.d}</div>
+    </div>${i<m.days.length-1?'<div class="bcc-spacer"></div>':""}`;
+  }).join("");
+  return `
+  <div class="bar-chart-card">
+    <div class="bcc-title">Day-by-Day Breakdown</div>
+    <div class="bcc-inner">${groups}</div>
+    <div class="bcc-legend">
+      <div class="bcc-leg-item"><div class="bcc-leg-dot" style="background:#00FFE0"></div>${m.meName}</div>
+      <div class="bcc-leg-item"><div class="bcc-leg-dot" style="background:#FF6200"></div>${m.theirName}</div>
+    </div>
+  </div>`;
+}
+
+function buildPhone(m){
+  const isWin=m.isWin;
+  const cls=isWin?"win":"lose";
+  const diff=m.myToday-m.theirToday;
+  const diffStr=diff>=0?"+"+Math.abs(diff).toLocaleString()+" ahead":"-"+Math.abs(diff).toLocaleString()+" behind";
+  const pct=Math.round((m.daysDone/m.totalDays)*100);
+  const h2hTotal=m.h2hYou+m.h2hThem+m.h2hTie;
+  const h2hYouPct=h2hTotal>0?Math.round((m.h2hYou/h2hTotal)*100):50;
+  const meDaysWon=m.myScore;
+  const themDaysWon=m.theirScore;
+  const meWinRate=Math.round((meDaysWon/m.daysDone)*100);
+  const themWinRate=Math.round((themDaysWon/m.daysDone)*100);
+  const meHigher=m.myToday>=m.theirToday;
+  const theirFirstName=m.theirName.split(" ")[0];
+
+  return `
+<div class="phone">
+  <div class="sbar"><span>9:41</span><span>●●● WiFi ▓▓</span></div>
+  <div class="back-row">
+    <div class="back-btn">‹ Back</div>
+    <div class="share-btn">↑</div>
+  </div>
+  <div class="scroll">
+
+    <!-- META PILLS -->
+    <div class="meta-row">
+      <span class="meta-pill ${m.sport==="Steps"?"steps":"cal"}">${m.sport.toUpperCase()}</span>
+      <span class="meta-pill days">${m.format} · ${m.totalDays}-Day</span>
+      <span class="meta-pill live">● Live</span>
+    </div>
+
+    <!-- HERO CARD -->
+    <div class="hero ${cls}">
+      <div class="hero-accent ${cls}"></div>
+      <div class="hero-top">
+        <span class="status-label ${cls}">${isWin?"⬆ YOU'RE UP":"⬇ YOU'RE DOWN"}</span>
+        <span class="series-badge">Day ${m.daysDone}/${m.totalDays}</span>
+      </div>
+      <div class="versus-block">
+        <div class="player-side">
+          ${isWin?`<div class="avatar me"><div class="pulse-ring"></div>${m.meInitials}</div>`:`<div class="avatar me">${m.meInitials}</div>`}
+          <span class="p-name">${m.meName}</span>
+          <div class="p-score-big" style="color:${isWin?"#00FFE0":"rgba(255,255,255,0.2)"}">${m.myScore}</div>
+          <span class="p-today-count ${meHigher?"high":"low"}">${fmt(m.myToday)} ${m.unit}</span>
+        </div>
+        <div class="vs-center">
+          <div class="vs-pipe"></div>
+          <span class="vs-text">VS</span>
+          <div class="vs-pipe"></div>
+        </div>
+        <div class="player-side">
+          ${!isWin?`<div class="avatar them"><div class="pulse-ring o"></div>${m.theirInitials}</div>`:`<div class="avatar them">${m.theirInitials}</div>`}
+          <span class="p-name">${m.theirName}</span>
+          <div class="p-score-big" style="color:${!isWin?"#FF6200":"rgba(255,255,255,0.2)"}">${m.theirScore}</div>
+          <span class="p-today-count ${!meHigher?"high":"low"}">${fmt(m.theirToday)} ${m.unit}</span>
+        </div>
+      </div>
+
+      <!-- RECORD DOTS -->
+      <div class="record-dots">
+        ${m.days.map(d=>{
+          if(d.r==="w") return `<div class="rdot w">W</div>`;
+          if(d.r==="l") return `<div class="rdot l">L</div>`;
+          if(d.r==="now") return `<div class="rdot now">NOW</div>`;
+          return `<div class="rdot f">·</div>`;
+        }).join("")}
+      </div>
+
+      <!-- PROGRESS -->
+      <div class="prog-wrap">
+        <div class="prog-track"><div class="prog-fill ${cls}" style="width:${pct}%"></div></div>
+        <div class="prog-meta"><span>${m.totalDays-m.daysDone} days left</span><span>${pct}% complete</span></div>
+      </div>
+    </div>
+
+    <!-- TODAY LIVE ROW -->
+    <div class="today-row">
+      <div class="today-left">
+        <span class="today-label">Today's Battle</span>
+        <span class="today-steps ${isWin?"win":"lose"}">${fmt(m.myToday)} <span style="font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;color:var(--t2)">${m.unit}</span></span>
+        <span class="today-diff ${diff>=0?"up":"down"}">${diffStr}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+        <div class="live-dot">LIVE</div>
+        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--t3);">Updated now</span>
+        <span style="font-family:'Space Mono',monospace;font-size:10px;color:#FF6200;">${fmt(m.theirToday)} ${m.unit} · ${theirFirstName}</span>
+      </div>
+    </div>
+
+    <!-- ALERT -->
+    ${isWin
+      ? `<div class="alert-banner good"><span class="ab-icon">⚡</span><div class="ab-text"><strong>You're leading today's point.</strong> ${theirFirstName} can still close the gap before the 10am cutoff.</div></div>`
+      : `<div class="alert-banner warn"><span class="ab-icon">⚠</span><div class="ab-text"><strong>${theirFirstName} is on a winning streak.</strong> You need today's point to stay alive. A 30-min walk can flip this.</div></div>`
+    }
+
+    <!-- BAR CHART -->
+    ${buildBarChart(m)}
+
+    <!-- MIRRORED STAT COLUMNS -->
+    <div class="sec-hd"><span class="sec-title">Match Stats</span></div>
+
+    <!-- COLUMN HEADERS -->
+    <div class="stat-col-headers">
+      <div class="stat-col-header you">You</div>
+      <div class="stat-col-header them">${theirFirstName}'s</div>
+    </div>
+
+    <!-- MIRRORED GRID -->
+    <div class="stat-cols">
+      <!-- Daily Avg -->
+      <div class="stat-tile you-tile">
+        <div class="stat-label">Daily Avg</div>
+        <div class="stat-val c">${fmt(m.myAvg)}</div>
+        <div class="stat-sub">${m.unit}/day</div>
+      </div>
+      <div class="stat-tile them-tile">
+        <div class="stat-label">Daily Avg</div>
+        <div class="stat-val o">${fmt(m.theirAvg)}</div>
+        <div class="stat-sub">${m.unit}/day</div>
+      </div>
+      <!-- Best Day -->
+      <div class="stat-tile you-tile">
+        <div class="stat-label">Best Day</div>
+        <div class="stat-val c" style="font-size:20px;">${fmt(m.myBest)}</div>
+        <div class="stat-sub">highest ${m.unit}</div>
+      </div>
+      <div class="stat-tile them-tile">
+        <div class="stat-label">Best Day</div>
+        <div class="stat-val o" style="font-size:20px;">${fmt(m.theirBest)}</div>
+        <div class="stat-sub">highest ${m.unit}</div>
+      </div>
+      <!-- Total -->
+      <div class="stat-tile you-tile">
+        <div class="stat-label">Total ${m.sport}</div>
+        <div class="stat-val c" style="font-size:19px;">${fmt(m.myTotal)}</div>
+        <div class="stat-sub">this match</div>
+      </div>
+      <div class="stat-tile them-tile">
+        <div class="stat-label">Total ${m.sport}</div>
+        <div class="stat-val o" style="font-size:19px;">${fmt(m.theirTotal)}</div>
+        <div class="stat-sub">this match</div>
+      </div>
+      <!-- Days Won -->
+      <div class="stat-tile you-tile">
+        <div class="stat-label">Days Won</div>
+        <div class="stat-val c">${meDaysWon}<span style="font-size:16px;color:var(--t2)">/${m.daysDone}</span></div>
+        <div class="stat-sub">${meWinRate}% win rate</div>
+      </div>
+      <div class="stat-tile them-tile">
+        <div class="stat-label">Days Won</div>
+        <div class="stat-val o">${themDaysWon}<span style="font-size:16px;color:var(--t2)">/${m.daysDone}</span></div>
+        <div class="stat-sub">${themWinRate}% win rate</div>
+      </div>
+    </div>
+
+    <!-- H2H -->
+    <div class="sec-hd"><span class="sec-title">All-Time Head to Head</span></div>
+    <div class="h2h-card">
+      <div class="h2h-row">
+        <div class="h2h-item"><div class="h2h-num you">${m.h2hYou}</div><div class="h2h-sub">YOUR WINS</div></div>
+        <div class="h2h-divider"></div>
+        <div class="h2h-item"><div class="h2h-num tie">${m.h2hTie}</div><div class="h2h-sub">TIES</div></div>
+        <div class="h2h-divider"></div>
+        <div class="h2h-item"><div class="h2h-num them">${m.h2hThem}</div><div class="h2h-sub">${theirFirstName.toUpperCase()}'S WINS</div></div>
+      </div>
+      <div class="h2h-bar-wrap"><div class="h2h-bar-fill" style="width:${h2hYouPct}%"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px;">
+        <span style="font-family:'Space Mono',monospace;font-size:9px;color:#00FFE0;">${h2hYouPct}% you</span>
+        <span style="font-family:'Space Mono',monospace;font-size:9px;color:var(--t3);">${h2hTotal} matches total</span>
+      </div>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="action-block">
+      <button class="btn-primary ${isWin?"":"lose"}">${isWin?"💪 Hold the Lead":"⚡ Fight Back Now"}</button>
+      <button class="btn-ghost">Rematch →</button>
+    </div>
+  </div>
+
+  <!-- BOTTOM NAV -->
+  <div class="bnav">
+    <div class="nav-item"><span class="nav-icon">⚡</span><span class="nav-label">HOME</span></div>
+    <div class="nav-item"><span class="nav-icon on">📋</span><span class="nav-label on">ACTIVITY</span></div>
+    <div class="nav-item"><div class="nav-center">⚔️</div></div>
+    <div class="nav-item"><span class="nav-icon">❤️</span><span class="nav-label">HEALTH</span></div>
+    <div class="nav-item"><span class="nav-icon">🏆</span><span class="nav-label">RANKS</span></div>
+  </div>
+</div>`;
+}
+
+function render(){
+  document.getElementById("tabs").innerHTML=`
+    <button class="tab-btn ${current==="win"?"active":""}" onclick="switchTab('win')">Winning · Steps</button>
+    <button class="tab-btn ${current==="lose"?"active":""}" onclick="switchTab('lose')">Losing · Calories</button>`;
+  document.getElementById("phoneArea").innerHTML=`
+    <div class="phone-wrap">${buildPhone(MATCHES[current])}<div class="phone-tag">${current==="win"?"Match Detail · Winning":"Match Detail · Losing"}</div></div>`;
+}
+function switchTab(t){current=t;render();}
+render();
+</script>
+</body>
+</html>

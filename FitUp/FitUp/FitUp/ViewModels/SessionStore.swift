@@ -194,6 +194,34 @@ final class SessionStore: ObservableObject {
         AppLogger.log(category: "onboarding", level: .info, message: "home searching card flagged visible")
     }
 
+    func clearSearchingCardOnHomeFlag() {
+        guard showSearchingCardOnHome else { return }
+        showSearchingCardOnHome = false
+        AppLogger.log(category: "onboarding", level: .info, message: "home searching card flag cleared")
+    }
+
+    func updateDisplayName(_ name: String) async {
+        guard let authUserId = currentProfile?.authUserId else { return }
+        authErrorMessage = nil
+        do {
+            currentProfile = try await profileRepository.updateDisplayName(name, authUserId: authUserId)
+            AppLogger.log(
+                category: "auth",
+                level: .info,
+                message: "display name updated",
+                userId: currentProfile?.id
+            )
+        } catch {
+            authErrorMessage = error.localizedDescription
+            AppLogger.log(
+                category: "auth",
+                level: .warning,
+                message: "display name update failed",
+                metadata: ["error": error.localizedDescription]
+            )
+        }
+    }
+
     private func requireClient() throws -> SupabaseClient {
         guard let client = SupabaseProvider.client else {
             throw ProfileRepositoryError.supabaseNotConfigured

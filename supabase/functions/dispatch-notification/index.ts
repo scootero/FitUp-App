@@ -52,6 +52,8 @@ serve(async (request) => {
 
     let sent = 0;
     let failed = 0;
+    let liveActivityThrottled = 0;
+    let liveActivityProcessed = 0;
 
     for (const row of insertedRows ?? []) {
       const eventId = String(row.id);
@@ -77,10 +79,22 @@ serve(async (request) => {
         }
 
         if (eventType === "live_activity_update") {
+          liveActivityProcessed += 1;
           if (!recipient.liveActivityPushToken) {
             failed += 1;
             await markFailed(eventId, rowPayload, "missing_live_activity_token");
             continue;
+          }
+          const matchId = stringFromPayload(rowPayload, "match_id", "");
+          const throttleSec = liveActivityThrottleSeconds();
+          if (matchId.length > 0 && throttleSec > 0) {
+            const recentlySent = await wasLiveActivityRecentlySent(userId, matchId, throttleSec);
+            if (recentlySent) {
+              failed += 1;
+              liveActivityThrottled += 1;
+              await markFailed(eventId, rowPayload, "live_activity_throttled");
+              continue;
+            }
           }
           const enrichedPayload = await enrichLiveActivityPayload(userId, rowPayload);
           const liveActivityResult = await sendLiveActivityPush({
@@ -135,12 +149,23 @@ serve(async (request) => {
       }
     }
 
-    return jsonResponse(200, {
+    const summary = {
       inserted: rows.length,
       sent,
       failed,
-      status: "processed",
-    });
+      status: "processed" as const,
+      live_activity_processed: liveActivityProcessed,
+      live_activity_throttled: liveActivityThrottled,
+    };
+    if (liveActivityProcessed > 0) {
+      console.log(
+        JSON.stringify({
+          dispatch_notification: "live_activity_batch",
+          ...summary,
+        }),
+      );
+    }
+    return jsonResponse(200, summary);
   } catch (error) {
     return jsonResponse(500, {
       error: error instanceof Error ? error.message : "dispatch-notification failed.",
@@ -463,4 +488,43 @@ function toNumber(value: unknown): number {
     if (Number.isFinite(parsed)) return parsed;
   }
   return 0;
+}
+
+/** Default 30s; set LIVE_ACTIVITY_THROTTLE_SECONDS=0 to disable coalescing. */
+function liveActivityThrottleSeconds(): number {
+  const raw = Deno.env.get("LIVE_ACTIVITY_THROTTLE_SECONDS");
+  if (raw === undefined || raw.trim() === "") return 30;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 30;
+}
+
+/** True if we already sent a live_activity_update for this user+match within the window. */
+async function wasLiveActivityRecentlySent(
+  userId: string,
+  matchId: string,
+  windowSec: number,
+): Promise<boolean> {
+  const cutoff = new Date(Date.now() - windowSec * 1000).toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("notification_events")
+    .select("payload")
+    .eq("user_id", userId)
+    .eq("event_type", "live_activity_update")
+    .eq("status", "sent")
+    .gte("sent_at", cutoff)
+    .order("sent_at", { ascending: false })
+    .limit(25);
+
+  if (error) {
+    console.warn(JSON.stringify({ wasLiveActivityRecentlySent_error: error.message }));
+    return false;
+  }
+  for (const row of data ?? []) {
+    const p = row.payload as Record<string, unknown> | null | undefined;
+    if (!p || typeof p !== "object") continue;
+    if (stringFromPayload(p, "match_id", "") === matchId) {
+      return true;
+    }
+  }
+  return false;
 }
