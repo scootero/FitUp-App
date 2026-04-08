@@ -1,5 +1,5 @@
 // Defaults (empty). Optional Secrets.xcconfig in this folder overrides (gitignored).
-SUPABASE_URL =
-SUPABASE_ANON_KEY =
+SUPABASE_URL = https://uushejbizmlxzxonkuki.supabase.co
+SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV1c2hlamJpem1seHp4b25rdWtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NTQxMjEsImV4cCI6MjA5MDEzMDEyMX0.Ofoo1Kb8NaAaH2sECFen3U6aQ2QREoB_U2lqf3OKnWQ
 REVENUECAT_API_KEY =
 #include? "Secrets.xcconfig"

@@ -455,6 +455,8 @@ CREATE POLICY "mp: own update"
   );
 ```
 
+**Direct challenge client inserts (required for Discover → challenge):** the iOS app inserts into `matches` and `match_participants` using the user session. After applying the policies above, run the idempotent script **`supabase/sql/slice4c-direct-challenge-rls.sql`** in the SQL Editor so `INSERT` is allowed for `match_type = 'direct_challenge'` (challenger row first, then opponent row). Public matchmaking still uses the service-role RPC path only.
+
 ### Policies — direct_challenges
 
 ```sql

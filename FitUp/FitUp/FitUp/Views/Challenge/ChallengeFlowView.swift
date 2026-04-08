@@ -368,7 +368,7 @@ struct ChallengeFlowView: View {
                 level: .warning,
                 message: "challenge send failed",
                 userId: profileId,
-                metadata: ["error": error.localizedDescription]
+                metadata: AppLogger.supabaseErrorMetadata(error)
             )
         }
     }

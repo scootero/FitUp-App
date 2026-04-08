@@ -111,11 +111,15 @@ final class MatchRepository {
     }
 
     /// Authenticated retry: same pairing logic as the DB trigger (useful if pg_net delivery failed).
+    /// Passes the session access token explicitly so the Edge Function always receives a user JWT
+    /// (avoids 401 if `FunctionsClient` auth was not yet synced from auth state).
     func retryMatchmakingSearch(requestId: UUID) async throws {
         let client = try client
+        let session = try await client.auth.session
         try await client.functions.invoke(
             "retry-matchmaking-search",
             options: FunctionInvokeOptions(
+                headers: ["Authorization": "Bearer \(session.accessToken)"],
                 body: RetryMatchmakingBody(match_search_request_id: requestId.uuidString)
             )
         )
@@ -159,70 +163,30 @@ final class MatchRepository {
         durationDays: Int,
         startMode: ChallengeStartMode
     ) async throws -> MatchRepositoryDirectChallengeResult {
+        let client = try client
         let timezone = TimeZone.current.identifier
         let startsAt = Self.isoFormatter.string(from: Date())
 
-        let matchPayload = MatchInsert(
-            matchType: "direct_challenge",
-            metricType: metricType.rawValue,
-            durationDays: durationDays,
-            startMode: startMode.rawValue,
-            state: "pending",
-            matchTimezone: timezone,
-            startsAt: startsAt
+        // Server-side RPC (SECURITY DEFINER) so inserts are not subject to client RLS on `matches`.
+        // Challenger is derived from the JWT in Postgres only; `challengerId` is unused for writes.
+        _ = challengerId
+
+        let params = CreateDirectChallengeRPCParams(
+            p_recipient_id: recipientId,
+            p_metric_type: metricType.rawValue,
+            p_duration_days: durationDays,
+            p_start_mode: startMode.rawValue,
+            p_match_timezone: timezone,
+            p_starts_at: startsAt
         )
 
-        let matchResponse = try await client
-            .from("matches")
-            .insert(matchPayload)
-            .select("id")
-            .execute()
+        let response: PostgrestResponse<CreateDirectChallengeRPCResult> = try await client.rpc(
+            "create_direct_challenge",
+            params: params
+        ).execute()
 
-        guard let matchId = jsonRows(from: matchResponse.data).first.flatMap({ uuid(from: $0["id"]) }) else {
-            throw MatchRepositoryError.insertFailed
-        }
-
-        let acceptedAt = Self.isoFormatter.string(from: Date())
-        let participants: [MatchParticipantInsert] = [
-            .init(
-                matchId: matchId,
-                userId: challengerId,
-                acceptedAt: acceptedAt,
-                role: "challenger",
-                joinedVia: "direct_challenge"
-            ),
-            .init(
-                matchId: matchId,
-                userId: recipientId,
-                acceptedAt: nil,
-                role: "opponent",
-                joinedVia: "direct_challenge"
-            ),
-        ]
-
-        try await client
-            .from("match_participants")
-            .insert(participants)
-            .execute()
-
-        let challengeResponse = try await client
-            .from("direct_challenges")
-            .insert(
-                DirectChallengeInsert(
-                    challengerId: challengerId,
-                    recipientId: recipientId,
-                    matchId: matchId,
-                    status: "pending"
-                )
-            )
-            .select("id")
-            .execute()
-
-        guard let challengeId = jsonRows(from: challengeResponse.data).first.flatMap({ uuid(from: $0["id"]) }) else {
-            throw MatchRepositoryError.insertFailed
-        }
-
-        return MatchRepositoryDirectChallengeResult(matchId: matchId, challengeId: challengeId)
+        let row = response.value
+        return MatchRepositoryDirectChallengeResult(matchId: row.match_id, challengeId: row.challenge_id)
     }
 
     // MARK: - Internal reads
@@ -437,6 +401,57 @@ private struct MatchSearchStatusUpdate: Encodable {
     let status: String
 }
 
+/// Params for `public.create_direct_challenge` (see `supabase/sql/slice4d-create-direct-challenge-rpc.sql`).
+/// Explicit `nonisolated` Codable: Swift 6 otherwise treats synthesized `Encodable` as main-actor-isolated,
+/// which breaks `SupabaseClient.rpc(..., params:)` (`Encodable & Sendable`).
+private struct CreateDirectChallengeRPCParams: Sendable {
+    let p_recipient_id: UUID
+    let p_metric_type: String
+    let p_duration_days: Int
+    let p_start_mode: String
+    let p_match_timezone: String
+    let p_starts_at: String
+}
+
+extension CreateDirectChallengeRPCParams: Encodable {
+    nonisolated func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(p_recipient_id, forKey: .p_recipient_id)
+        try c.encode(p_metric_type, forKey: .p_metric_type)
+        try c.encode(p_duration_days, forKey: .p_duration_days)
+        try c.encode(p_start_mode, forKey: .p_start_mode)
+        try c.encode(p_match_timezone, forKey: .p_match_timezone)
+        try c.encode(p_starts_at, forKey: .p_starts_at)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case p_recipient_id
+        case p_metric_type
+        case p_duration_days
+        case p_start_mode
+        case p_match_timezone
+        case p_starts_at
+    }
+}
+
+private struct CreateDirectChallengeRPCResult: Sendable {
+    let match_id: UUID
+    let challenge_id: UUID
+}
+
+extension CreateDirectChallengeRPCResult: Decodable {
+    nonisolated init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        match_id = try c.decode(UUID.self, forKey: .match_id)
+        challenge_id = try c.decode(UUID.self, forKey: .challenge_id)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case match_id
+        case challenge_id
+    }
+}
+
 private struct RetryMatchmakingBody: Encodable {
     let match_search_request_id: String
 }
@@ -459,52 +474,3 @@ private struct MatchSearchInsert: Encodable {
     }
 }
 
-private struct MatchInsert: Encodable {
-    let matchType: String
-    let metricType: String
-    let durationDays: Int
-    let startMode: String
-    let state: String
-    let matchTimezone: String
-    let startsAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case matchType = "match_type"
-        case metricType = "metric_type"
-        case durationDays = "duration_days"
-        case startMode = "start_mode"
-        case state
-        case matchTimezone = "match_timezone"
-        case startsAt = "starts_at"
-    }
-}
-
-private struct MatchParticipantInsert: Encodable {
-    let matchId: UUID
-    let userId: UUID
-    let acceptedAt: String?
-    let role: String
-    let joinedVia: String
-
-    enum CodingKeys: String, CodingKey {
-        case matchId = "match_id"
-        case userId = "user_id"
-        case acceptedAt = "accepted_at"
-        case role
-        case joinedVia = "joined_via"
-    }
-}
-
-private struct DirectChallengeInsert: Encodable {
-    let challengerId: UUID
-    let recipientId: UUID
-    let matchId: UUID
-    let status: String
-
-    enum CodingKeys: String, CodingKey {
-        case challengerId = "challenger_id"
-        case recipientId = "recipient_id"
-        case matchId = "match_id"
-        case status
-    }
-}

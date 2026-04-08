@@ -17,6 +17,20 @@ enum LogLevel: String {
 enum AppLogger {
     private static let osLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FitUp", category: "app")
 
+    /// Supabase PostgREST errors often omit `code`/`detail` from `localizedDescription` (it is only `message`).
+    /// Use this for `metadata` so Dashboard `app_logs` and Xcode match what Postgres returned.
+    static func supabaseErrorMetadata(_ error: Error) -> [String: String] {
+        var result: [String: String] = ["error": error.localizedDescription]
+        let pg = error as? PostgrestError
+        if let pg {
+            result["pg_message"] = pg.message
+            if let code = pg.code { result["pg_code"] = code }
+            if let detail = pg.detail { result["pg_detail"] = detail }
+            if let hint = pg.hint { result["pg_hint"] = hint }
+        }
+        return result
+    }
+
     /// Per-value cap so huge fields (e.g. `hk_snapshot`) don’t flood the Xcode console.
     private static let maxConsoleMetadataValueLength = 800
 
