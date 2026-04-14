@@ -55,6 +55,7 @@ struct HomeActiveMatch: Identifiable, Equatable {
     let seriesLabel: String
     let daysLeft: Int
     /// When `daysLeft == 1`, local time when the current match day finalizes (10:00 on the calendar day after `match_days.calendar_date`).
+    /// Uses the signed-in user’s `profiles.timezone` when available so this matches server cutoff rules.
     let finalDayCutoffAt: Date?
     let myToday: Int
     let theirToday: Int
@@ -97,9 +98,9 @@ final class HomeRepository {
         stopRealtimeSubscriptions()
     }
 
-    func loadSnapshot(for currentUserId: UUID, showOnboardingSearching: Bool) async -> HomeSnapshot {
+    func loadSnapshot(for currentUserId: UUID, showOnboardingSearching: Bool, profileTimeZoneIdentifier: String? = nil) async -> HomeSnapshot {
         async let searching = fetchSearchingRequests(currentUserId: currentUserId)
-        async let cards = fetchActiveAndPendingCards(currentUserId: currentUserId)
+        async let cards = fetchActiveAndPendingCards(currentUserId: currentUserId, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
         async let discover = fetchDiscoverUsers(currentUserId: currentUserId)
 
         var searchingRows = await searching
@@ -125,8 +126,8 @@ final class HomeRepository {
         )
     }
 
-    func loadActiveMatches(for currentUserId: UUID) async -> [HomeActiveMatch] {
-        let (activeMatches, _) = await fetchActiveAndPendingCards(currentUserId: currentUserId)
+    func loadActiveMatches(for currentUserId: UUID, profileTimeZoneIdentifier: String? = nil) async -> [HomeActiveMatch] {
+        let (activeMatches, _) = await fetchActiveAndPendingCards(currentUserId: currentUserId, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
         return activeMatches
     }
 
@@ -317,7 +318,7 @@ final class HomeRepository {
 
     // MARK: Load Active + Pending
 
-    private func fetchActiveAndPendingCards(currentUserId: UUID) async -> ([HomeActiveMatch], [HomePendingMatch]) {
+    private func fetchActiveAndPendingCards(currentUserId: UUID, profileTimeZoneIdentifier: String? = nil) async -> ([HomeActiveMatch], [HomePendingMatch]) {
         guard let client = SupabaseProvider.client else { return ([], []) }
         do {
             let participantResponse = try await client
@@ -327,6 +328,8 @@ final class HomeRepository {
                 .execute()
             let matchIds = Set(jsonRows(from: participantResponse.data).compactMap { uuid(from: $0["match_id"]) })
             guard !matchIds.isEmpty else { return ([], []) }
+
+            let profileTimeZone = profileTimeZoneIdentifier.flatMap { TimeZone(identifier: $0) }
 
             var active: [HomeActiveMatch] = []
             var pending: [HomePendingMatch] = []
@@ -354,7 +357,24 @@ final class HomeRepository {
                 let dayPips = deriveDayPips(dayRows: dayRows, durationDays: durationDays, currentUserId: currentUserId)
                 let finalizedCount = dayRows.filter { string(from: $0["status"]) == "finalized" }.count
                 let daysLeft = max(durationDays - finalizedCount, 0)
-                let finalCutoff = finalDayCutoff(from: dayRows, daysLeft: daysLeft)
+                let finalCutoff = finalDayCutoff(from: dayRows, daysLeft: daysLeft, timeZone: profileTimeZone)
+
+                #if DEBUG
+                if daysLeft == 1, let cutoff = finalCutoff, Date() > cutoff,
+                   let pendingDay = dayRows.first(where: { string(from: $0["status"]) != "finalized" }),
+                   let pendingDayId = uuid(from: pendingDay["id"]) {
+                    AppLogger.log(
+                        category: "matchmaking",
+                        level: .warning,
+                        message: "final day cutoff passed but match_day not finalized (client view)",
+                        userId: currentUserId,
+                        metadata: [
+                            "match_id": matchId.uuidString,
+                            "match_day_id": pendingDayId.uuidString,
+                        ]
+                    )
+                }
+                #endif
 
                 if state == "active" {
                     active.append(
@@ -527,16 +547,24 @@ final class HomeRepository {
     }
 
     /// First non-finalized day’s cutoff: 10:00 local on the calendar day after `calendar_date` (matches `day_cutoff_check` in slice8).
-    private func finalDayCutoff(from dayRows: [[String: Any]], daysLeft: Int) -> Date? {
+    /// Uses `profiles.timezone` when provided so the countdown aligns with server rules; otherwise device calendar.
+    private func finalDayCutoff(from dayRows: [[String: Any]], daysLeft: Int, timeZone: TimeZone?) -> Date? {
         guard daysLeft == 1 else { return nil }
         guard let pending = dayRows.first(where: { string(from: $0["status"]) != "finalized" }),
               let calStr = string(from: pending["calendar_date"]) else { return nil }
-        return Self.cutoffDateAfterMatchDay(calendarDateString: calStr)
+        return Self.cutoffDateAfterMatchDay(calendarDateString: calStr, timeZone: timeZone)
     }
 
-    private static func cutoffDateAfterMatchDay(calendarDateString: String) -> Date? {
-        guard let dayStart = calendarFormatter.date(from: calendarDateString) else { return nil }
-        let cal = Calendar.current
+    private static func cutoffDateAfterMatchDay(calendarDateString: String, timeZone: TimeZone?) -> Date? {
+        let tz = timeZone ?? .current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+        let formatter = DateFormatter()
+        formatter.calendar = cal
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = tz
+        guard let dayStart = formatter.date(from: calendarDateString) else { return nil }
         guard let nextDayStart = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
         return cal.date(bySettingHour: 10, minute: 0, second: 0, of: nextDayStart)
     }

@@ -2,6 +2,8 @@
 *Implementation guide. Reference fitup-docs-pack.md and FitUp_Final_Mockup.jsx for all decisions.*
 *Build in order. Do not begin a slice until I ask you to, and only build the slice I ask you to*
 
+**# As-built notes:** Sections and lines prefixed with **`#`** (heading or bullet) are *rebuild metadata* added April 2026 — they record what was actually implemented so you can recreate the project without losing auth, Supabase, widgets, or reliability work. They do **not** change the original slice order for greenfield execution. The running log with file lists is `FitUp/docs/slice-tracker.md`.
+
 ---
 
 ## How to use this file
@@ -9,7 +11,7 @@
 1. Work through slices **in exact order** — each depends on the previous
 2. For every slice, use the **Cursor Execution Template** at the bottom
 3. Commit after each slice passes all acceptance criteria
-4. The JSX file at `FitUp-App/FitUp/docs/mockups/FitUp_Final_Mockup.jsx` is the visual source of truth — read the relevant components **before** implementing any UI
+4. The JSX file at `FitUp/docs/mockups/FitUp_Final_Mockup.jsx` is the visual source of truth — read the relevant components **before** implementing any UI
 5. All `[MOCK DATA]` sections in the JSX must be replaced with real HealthKit or backend data
 6. Every slice must wire real data — do not stop at working mock UI
 
@@ -19,7 +21,7 @@
 
 **Goal:** Existing Xcode project extended with all dependencies, the complete design token system implemented in Swift, folder structure established, and Supabase connection verified.
 
-**Important:** The Xcode project already exists. Do NOT create a new project. Work inside `FitUp-App/FitUp/FitUp/`.
+**Important:** The Xcode project already exists. Do NOT create a new project. Work inside `FitUp/FitUp/` (Xcode app sources under the `FitUp/` project folder).
 
 ---
 
@@ -67,7 +69,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 
 **Do not create a new Xcode project.** Work inside the existing project.
 
-- **Folder structure:** Add Xcode groups inside `FitUp/FitUp/` for: `Design/`, `Views/Shared/`, `Views/Auth/`, `Views/Onboarding/`, `Views/Home/`, `Views/Challenge/`, `Views/MatchDetails/`, `Views/LiveMatch/`, `Views/Activity/`, `Views/Leaderboard/`, `Views/Health/`, `Views/Profile/`, `ViewModels/`, `Services/`, `Repositories/`, `Models/`, `Utilities/`
+- **Folder structure:** Add Xcode groups inside `FitUp/FitUp/` (under the `FitUp` Xcode project) for: `Design/`, `Views/Shared/`, `Views/Auth/`, `Views/Onboarding/`, `Views/Home/`, `Views/Challenge/`, `Views/MatchDetails/`, `Views/LiveMatch/`, `Views/Activity/`, `Views/Leaderboard/`, `Views/Health/`, `Views/Profile/`, `ViewModels/`, `Services/`, `Repositories/`, `Models/`, `Utilities/`
 - **`DesignTokens.swift`** (in `Design/` group) — created FIRST before any other new Swift file:
   - All `T.neon.*`, `T.text.*`, `T.bg.*` colors as `static let Color` constants
   - All `T.radius.*` as `static let CGFloat` constants
@@ -87,7 +89,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - **RevenueCat SDK** — installed, `Purchases.configure(withAPIKey:)` called in `FitUpApp.swift`
 - **`HealthKitService.swift`** stub in `Services/` — authorization method wired, no reads yet
 - **`AppLogger.swift`** in `Utilities/` — writes structured entries to `app_logs` Supabase table
-- **`.cursor/rules.md`** at `FitUp-App/.cursor/rules.md` — copy from Section 19 of docs pack
+- **`.cursor/rules.md`** at repository root (e.g. `FitUp-App/.cursor/rules.md` if the repo folder is named `FitUp-App`) — copy from Section 19 of docs pack
 - **Supabase tables** — run all CREATE TABLE scripts from Section 7 of docs pack in Supabase dashboard
 - **Git** — initial commit with foundation pushed to remote
 
@@ -107,7 +109,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] Supabase test query returns without error
 - [ ] HealthKit authorization dialog triggers when called manually
 - [ ] All 13 tables exist in Supabase with correct columns
-- [ ] `.cursor/rules.md` present at `FitUp-App/.cursor/rules.md`
+- [ ] `.cursor/rules.md` present at repository root
 - [ ] Git remote exists, initial commit pushed
 
 ---
@@ -773,16 +775,16 @@ Context:
   Current app state: [What's working — e.g. "Auth and onboarding complete, Home shell renders"]
 
   Reference docs:
-    Primary: FitUp-App/docs/fitup-docs-pack.md
-    UI source: FitUp-App/FitUp/docs/mockups/FitUp_Final_Mockup.jsx
+    Primary: FitUp/docs/fitup-docs-pack.md
+    UI source: FitUp/docs/mockups/FitUp_Final_Mockup.jsx
     Key sections: [e.g. "Section 6 State Machine, Section 10 Interaction Map"]
 
 Goal:
   [Copy the slice Goal line verbatim]
 
 Project structure rule:
-  The Xcode project already exists at FitUp-App/FitUp/FitUp.xcodeproj.
-  Do NOT create a new project. Add new files inside FitUp-App/FitUp/FitUp/.
+  The Xcode project already exists at FitUp/FitUp/FitUp.xcodeproj (inside the `FitUp/` directory at repo root).
+  Do NOT create a new project. Add new files inside FitUp/FitUp/FitUp/.
   All new files must be added to the FitUp app target.
 
 Design rule:
@@ -819,6 +821,46 @@ Verification:
   Acceptance criteria:
     [Paste checkbox list from this slice verbatim]
 ```
+
+---
+
+## # Appendix — Rebuild snapshot (as implemented)
+
+Use this with **`FitUp/docs/slice-tracker.md`** (detailed file lists) and **`FitUp/docs/supabase-setup-guide.md`** (full SQL + Edge Function instructions; the **`## # Master run order (rebuild checklist)`** section is the phased overview). UI source: **`FitUp/docs/mockups/`** (paths are relative to the repository root).
+
+### # Numbered slices — status
+
+| Slice | Theme | As-built status |
+|------|--------|-----------------|
+| 0 | Foundation, design system | Complete (see tracker — xcconfig, SPM, `SupabaseProvider`, synced groups) |
+| 1 | Auth and session | Complete — `AuthView`, `SessionStore`, `ProfileRepository`; not duplicated in early tracker entries |
+| 2 | Onboarding | Complete |
+| 3 | Home shell + tabs | Complete |
+| 4 | Challenge flow | Complete |
+| 4 (backend) | Matchmaking + activation | Complete — `matchmaking-pairing`, `on-all-accepted`, `supabase/sql/slice4-matchmaking.sql` |
+| 5 | Match Details | Complete (includes early `LiveMatchView` stub) |
+| 6 | Live Match | Complete |
+| 7 | HealthKit sync | Complete — `MetricSyncCoordinator`, Realtime vs polling |
+| 8 | Finalization + scoring | Complete — Edge Functions + `slice8-finalization.sql`, minimal Activity until Slice 10 |
+| 9 | Notifications + Live Activities | Complete — widget extension target, APNs, `profiles` columns, cron jobs |
+| 10 | Activity | Complete |
+| 11 | Leaderboard | Complete — Friends = past opponents |
+| 12 | Health | Complete — `ReadinessCalculator`, extra HK types (workouts, heart rate) |
+| 13 | Paywall + Dev Mode | Complete — RevenueCat entitlement id **`pro`**, products `fitup_pro_annual` / `fitup_pro_monthly` |
+| 14 | Profile + Dev Tools | Complete |
+
+### # Extra work not in the original slice list (required for parity)
+
+- **# Slice 4 backend (Supabase):** RPCs + triggers → `matchmaking-pairing` and `on-all-accepted`; `MatchRepository` direct-challenge rows include `role`, `joined_via`. See `supabase/sql/slice4-matchmaking.sql`.
+- **# Matchmaking reliability (Slice 4b):** Shared `matchmakingPairing.ts`, `retry-matchmaking-search` Edge Function, `slice4b-matchmaking-stale-retry.sql` (cron), client retries + cancel-duplicate-search behavior. See tracker + `supabase-setup-guide.md`.
+- **# RLS / SQL fixes:** e.g. `slice4c-direct-challenge-rls.sql`, `slice4d-create-direct-challenge-rpc.sql`, `fix-match-participants-rls-recursion.sql` — follow setup guide run order.
+- **# Decline pending match (Slice 4e):** `supabase/sql/slice4e-decline-pending-match.sql` — `decline_pending_match` RPC + notification trigger; `HomeRepository.declinePendingMatch` calls RPC for direct + public matchmaking pending rows.
+- **# iOS config (not all in original Slice 0 bullet list):** `FitUp/FitUp/Config/` — `Debug.xcconfig`, `Secrets.example.xcconfig` → copy to **`Secrets.xcconfig`** (gitignored), `Info-Additional.plist`, `FitUp.entitlements`; deployment target **18.6**; HealthKit + Push capabilities; widget extension **`FitUpWidgetExtension`** for Live Activities (`FitUpActivityAttributes.swift` shared into extension).
+- **# Authentication / “portal” work:** There is **no separate admin web app** in this repo. “Portal” in practice means **Apple Developer Portal** (App ID, Push Notifications, Sign in with Apple, Widget Extension ID) and **Supabase Dashboard** (Auth providers, SQL, Edge Functions, secrets, Vault for service role / `pg_net`). See **`FitUp/docs/supabase-setup-guide.md`** Step 8+ and Slice 9 notes in **`slice-tracker.md`**.
+
+### # Git history (high level)
+
+Initial foundation through large batch commits; detailed per-slice work is reflected in **`slice-tracker.md`** (authoritative for files). Use `git log` on `FitUp/` and `supabase/` for forensic diffs.
 
 ---
 

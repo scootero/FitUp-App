@@ -18,6 +18,16 @@ type MatchParticipant = {
   user_id: string;
 };
 
+/**
+ * Finalizes one match day: copies metric_total → finalized_value, sets winner/void,
+ * updates leaderboard, notifies participants, may complete the match.
+ *
+ * Partial-failure note: `match_days` / `match_day_participants` are updated before
+ * downstream HTTP calls. If `update-leaderboard`, `dispatch-notification`, or
+ * `complete-match` fails, the day stays finalized; a retry returns `already_finalized`
+ * and does not re-run side effects — recover by manually invoking those functions.
+ */
+
 serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -121,8 +131,8 @@ serve(async (request) => {
     if (matchParticipantError) {
       throw matchParticipantError;
     }
-    const participantRows = (matchParticipants ?? []) as MatchParticipant[];
-    const participantUserIds = Array.from(new Set(participantRows.map((row) => String(row.user_id))));
+    const matchParticipantRows = (matchParticipants ?? []) as MatchParticipant[];
+    const participantUserIds = Array.from(new Set(matchParticipantRows.map((row) => String(row.user_id))));
 
     const { data: matchRow, error: matchError } = await supabaseAdmin
       .from("matches")

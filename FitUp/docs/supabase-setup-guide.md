@@ -1,6 +1,25 @@
 # FitUp — Supabase Setup Guide
 *Complete reference. Run steps in order. All SQL is copy-pasteable into the Supabase SQL Editor.*
-*Last updated: March 2026*
+*Last updated: April 2026*
+
+**# Rebuild metadata:** Headings and bullets prefixed with **`#`** summarize the *full* path to parity with the current iOS app and repo — without replacing the detailed sections below. Use this as a checklist when standing up a fresh Supabase project.
+
+---
+
+## # Master run order (rebuild checklist)
+
+Follow **Step 1 → Step 9** in this file for dashboard setup (schema, RLS, Realtime, app keys, Auth). Then apply **backend slices** in this order — dependencies matter.
+
+| # Phase | What to run | Notes |
+|--------|-------------|--------|
+| **# A — Core schema + policies** | **Step 3** (all embedded SQL blocks) → **Step 4** (RLS policies) | If you hit recursive RLS on `match_participants`, run `supabase/sql/fix-match-participants-rls-recursion.sql`. For direct challenges from the app, run `supabase/sql/slice4c-direct-challenge-rls.sql`. Optional: `supabase/sql/slice4d-create-direct-challenge-rpc.sql` if you use the `create_direct_challenge` RPC (see file header). |
+| **# B — Realtime + client** | **Step 5** → **Step 6** → **Step 7** → **Step 8** | Enables app ↔ Supabase + Apple / email auth. |
+| **# C — Finalization (prereq for triggers)** | **Slice 8** (below): Vault secrets `fitup_project_url` + `fitup_service_role_key` → deploy `finalize-match-day`, `complete-match`, `update-leaderboard`, `dispatch-notification` → run `supabase/sql/slice8-finalization.sql` | `pg_net` / `pg_cron` must exist before matchmaking + notification SQL. |
+| **# D — Matchmaking** | **Slice 4** (below): deploy `matchmaking-pairing`, `retry-matchmaking-search`, `on-all-accepted` → run `supabase/sql/slice4-matchmaking.sql` → run `supabase/sql/slice4b-matchmaking-stale-retry.sql` (recommended) | If you later run **Slice 9** SQL, **re-run** `slice4-matchmaking.sql` so Slice 4 triggers supersede older Slice 9 pairing/activation triggers (see Slice 4 §2). |
+| **# E — Notifications + Live Activities** | **Slice 9** (below): set `APNS_*` Edge Function secrets → deploy `dispatch-notification`, `send-pending-reminders`, `send-morning-checkins` → run `supabase/sql/slice9-notifications.sql` | Re-deploy `dispatch-notification` after `supabase/functions/_shared/apns.ts` is present. |
+| **# F — Decline pending match** | Run `supabase/sql/slice4e-decline-pending-match.sql` **after** `slice9-notifications.sql` | Requires `private.invoke_dispatch_notification` from Slice 9. |
+
+**# Optional ops:** `supabase/sql/verify-matchmaking.sql`, `supabase/sql/cleanup-duplicate-match-search-requests.sql`, `scripts/matchmaking-pair-test.sh` (Slice 4, §6 *Operational checks*).
 
 ---
 
@@ -723,6 +742,16 @@ In the **SQL Editor**, run the full script:
 This enables `pg_net` and `pg_cron`, defines `private.invoke_finalize_match_day`, the trigger `tr_finalize_when_all_confirmed` on `match_day_participants`, and schedules `day-cutoff-check` hourly (cron expression `5 * * * *`).
 
 **Requirements:** `profiles.timezone` should be set for each user (Slice 1 onboarding already writes it) so the 10:00 cutoff logic aligns with local time.
+
+### 3b. Slice 8c — finalize timeout + stuck retry (recommended)
+
+After Slice 8 is applied, run:
+
+`supabase/sql/slice8c-finalize-stuck-retry.sql`
+
+This updates `private.invoke_finalize_match_day` to pass **`timeout_milliseconds := 60000`** to `net.http_post` (the default worker timeout was too low for `finalize-match-day`, which chains other Edge Functions). It also extends **`day_cutoff_check`** with a **second phase**: if a `match_day` is still not `finalized` but **every** participant is already `data_status = 'confirmed'` and **every** participant’s local time is past the 10:00 cutoff, it calls `finalize-match-day` again. That covers stuck rows where the first finalize attempt timed out or failed after confirmations were committed.
+
+**One-time recovery for rows already stuck before 8c:** invoke `finalize-match-day` with `{ "match_day_id": "<uuid>" }` (service role), then `complete-match` with `{ "match_id": "<uuid>" }` if the match is still `active` after all days show `finalized`. Alternatively wait for the next hourly `day-cutoff-check` after deploying 8c.
 
 ### 4. Verify
 

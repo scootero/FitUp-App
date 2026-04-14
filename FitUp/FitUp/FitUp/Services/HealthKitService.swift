@@ -50,7 +50,7 @@ struct HealthSleepSummary: Equatable {
     var varianceHours: Double
     /// Aggregate stage mix over the 7 wake days (percentages sum to ~100).
     var stagePercentagesSevenNight: HealthSleepStagePercentages
-    /// Longest contiguous asleep hours for **today’s** wake day (primary sleep; aligns with Apple Health headline).
+    /// Total hours asleep for **today’s** wake day (same basis as `nightlyAsleepHoursOldestFirst` last bar; aligns with Apple Health “Time Asleep”).
     var lastNightAsleepHours: Double?
     /// Hours asleep per wake day, **oldest first** (same order as 7-day charts).
     var nightlyAsleepHoursOldestFirst: [Double]
@@ -359,19 +359,59 @@ enum HealthKitService {
         )
     }
 
-    /// Sleep aggregates for the Health screen (last `nights` local calendar days).
-    static func fetchSleepSummary(nights: Int = 7) async throws -> HealthSleepSummary {
-        guard isHealthDataAvailable else { throw HealthKitError.notAvailable }
+    private static func emptySleepSummary(nights: Int) -> HealthSleepSummary {
+        let zeroStages = HealthSleepStagePercentages(deep: 0, core: 0, rem: 0, awake: 0)
+        return HealthSleepSummary(
+            averageHoursLastNights: 0,
+            varianceHours: 0,
+            stagePercentagesSevenNight: zeroStages,
+            lastNightAsleepHours: nil,
+            nightlyAsleepHoursOldestFirst: Array(repeating: 0, count: nights),
+            lastNightStagePercentages: nil,
+            lastNightTimeline: [],
+            lastNightSleepRatio: nil
+        )
+    }
+
+    /// Sleep aggregates for the Health screen (last `nights` local calendar days). Never throws; returns `emptySleepSummary` on failure.
+    static func fetchSleepSummary(nights: Int = 7) async -> HealthSleepSummary {
+        guard isHealthDataAvailable else {
+            AppLogger.log(
+                category: "healthkit_read",
+                level: .warning,
+                message: "fetchSleepSummary: Health data not available",
+                metadata: ["pipeline": "HealthKitService.fetchSleepSummary"]
+            )
+            return emptySleepSummary(nights: nights)
+        }
         guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
-            throw HealthKitError.noStatisticsData
+            AppLogger.log(
+                category: "healthkit_read",
+                level: .warning,
+                message: "fetchSleepSummary: sleep analysis type unavailable",
+                metadata: ["pipeline": "HealthKitService.fetchSleepSummary"]
+            )
+            return emptySleepSummary(nights: nights)
         }
         let calendar = Calendar.current
         let endDate = Date()
         guard let startDate = calendar.date(byAdding: .day, value: -(nights + 2), to: calendar.startOfDay(for: endDate)) else {
-            throw HealthKitError.invalidDateRange
+            AppLogger.log(
+                category: "healthkit_read",
+                level: .warning,
+                message: "fetchSleepSummary: invalid date range",
+                metadata: ["pipeline": "HealthKitService.fetchSleepSummary"]
+            )
+            return emptySleepSummary(nights: nights)
         }
 
-        let samples: [HKCategorySample] = try await fetchSleepCategorySamples(type: sleepType, start: startDate, end: endDate)
+        let samples: [HKCategorySample]
+        do {
+            samples = try await fetchSleepCategorySamples(type: sleepType, start: startDate, end: endDate)
+        } catch {
+            logHealthKitQueryFailure(error, context: "fetchSleepSummary.fetchSleepCategorySamples")
+            return emptySleepSummary(nights: nights)
+        }
 
         let dayStarts: [Date] = (0..<nights).compactMap { i in
             calendar.date(byAdding: .day, value: -(nights - 1 - i), to: calendar.startOfDay(for: endDate))
@@ -418,34 +458,33 @@ enum HealthKitService {
             awake: pct7(stageSecondsSevenNight["awake"] ?? 0)
         )
 
-        // “Last night” = **today’s** wake day only (no fallback to prior days). Duration = longest contiguous asleep run
-        // (primary sleep), matching Apple Health’s headline figure; hypnogram/ratio use that same run.
+        // “Last night” = **today’s** wake day only (no fallback to prior days). Duration = total time asleep for that
+        // wake day (sum of all asleep segments), matching Apple Health “Time Asleep” rather than a single longest
+        // contiguous block — the latter can severely under-count when the watch inserts awake segments mid-night.
         let targetLastNightWakeDay = dayStarts.last
         let todayMetrics = targetLastNightWakeDay.flatMap { breakdownByWakeDay[$0] }
-        let runTimeline = todayMetrics.map { longestAsleepRunTimeline(from: $0.timeline) } ?? []
-        let runMetrics = runTimeline.isEmpty ? nil : canonicalMetricsFromAsleepRunSegments(runTimeline)
 
         let lastNightHours: Double? = {
-            guard let m = todayMetrics, m.totalAsleepSeconds > 0, let r = runMetrics, r.totalAsleepSeconds > 0 else { return nil }
-            return r.totalAsleepSeconds / 3600
+            guard let m = todayMetrics, m.totalAsleepSeconds > 0 else { return nil }
+            return m.totalAsleepSeconds / 3600
         }()
 
         var lastNightStageSeconds: [String: Double] = ["deep": 0, "core": 0, "rem": 0, "awake": 0]
         var lastNightTimeline: [HealthSleepTimelineSegment] = []
         var lastNightRatio: SleepRatioBreakdown?
 
-        if let r = runMetrics {
-            lastNightTimeline = r.timeline
-            lastNightStageSeconds["deep"] = r.deepSeconds
-            lastNightStageSeconds["core"] = r.coreSeconds + r.lightSeconds
-            lastNightStageSeconds["rem"] = r.remSeconds
-            lastNightStageSeconds["awake"] = r.awakeSeconds
-            lastNightRatio = sleepRatioBreakdown(from: r)
+        if let m = todayMetrics, m.totalAsleepSeconds > 0 {
+            lastNightTimeline = m.timeline
+            lastNightStageSeconds["deep"] = m.deepSeconds
+            lastNightStageSeconds["core"] = m.coreSeconds + m.lightSeconds
+            lastNightStageSeconds["rem"] = m.remSeconds
+            lastNightStageSeconds["awake"] = m.awakeSeconds
+            lastNightRatio = sleepRatioBreakdown(from: m)
         }
 
         let totalStageLN = lastNightStageSeconds.values.reduce(0, +)
         let pctLN: (Double) -> Double = { totalStageLN > 0 ? ($0 / totalStageLN) * 100 : 0 }
-        let lastNightStages: HealthSleepStagePercentages? = (runMetrics != nil && totalStageLN > 0)
+        let lastNightStages: HealthSleepStagePercentages? = (lastNightHours != nil && totalStageLN > 0)
             ? HealthSleepStagePercentages(
                 deep: pctLN(lastNightStageSeconds["deep"] ?? 0),
                 core: pctLN(lastNightStageSeconds["core"] ?? 0),
@@ -686,33 +725,6 @@ enum HealthKitService {
         return best
     }
 
-    /// Stage totals and timeline for one contiguous asleep run (hypnogram + ratio match `lastNightAsleepHours`).
-    private static func canonicalMetricsFromAsleepRunSegments(_ segments: [HealthSleepTimelineSegment]) -> CanonicalNightMetrics {
-        var deepSec: Double = 0
-        var coreSec: Double = 0
-        var remSec: Double = 0
-        for seg in segments {
-            switch seg.stage {
-            case .deep: deepSec += seg.duration
-            case .core: coreSec += seg.duration
-            case .rem: remSec += seg.duration
-            case .awake: break
-            }
-        }
-        let total = deepSec + coreSec + remSec
-        return CanonicalNightMetrics(
-            totalAsleepSeconds: total,
-            deepSeconds: deepSec,
-            coreSeconds: coreSec,
-            lightSeconds: 0,
-            remSeconds: remSec,
-            awakeSeconds: 0,
-            inBedSeconds: 0,
-            timeline: segments,
-            longestAsleepContiguousSeconds: total
-        )
-    }
-
     #if DEBUG
     private static func logSleepAuditDebug(
         queryStart: Date,
@@ -766,21 +778,49 @@ enum HealthKitService {
     }
     #endif
 
-    /// Heart-rate zone distribution from the most recent workout (percent of samples in each zone).
-    static func fetchHRZoneRows(defaultMaxHeartRate: Double = 190) async throws -> [HealthHRZoneRow] {
-        guard isHealthDataAvailable else { throw HealthKitError.notAvailable }
-        guard let hrType = HKObjectType.quantityType(forIdentifier: .heartRate) else {
-            throw HealthKitError.noStatisticsData
+    /// Heart-rate zone distribution from the most recent workout (percent of samples in each zone). Never throws; returns `emptyHRZoneRows` on failure or no data.
+    static func fetchHRZoneRows(defaultMaxHeartRate: Double = 190) async -> [HealthHRZoneRow] {
+        guard isHealthDataAvailable else {
+            AppLogger.log(
+                category: "healthkit_read",
+                level: .warning,
+                message: "fetchHRZoneRows: Health data not available",
+                metadata: ["pipeline": "HealthKitService.fetchHRZoneRows"]
+            )
+            return Self.emptyHRZoneRows
         }
-        guard let workout = try await fetchMostRecentWorkout() else {
+        guard let hrType = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+            AppLogger.log(
+                category: "healthkit_read",
+                level: .warning,
+                message: "fetchHRZoneRows: heart rate type unavailable",
+                metadata: ["pipeline": "HealthKitService.fetchHRZoneRows"]
+            )
             return Self.emptyHRZoneRows
         }
 
-        let samples: [HKQuantitySample] = try await fetchQuantitySamples(
-            type: hrType,
-            start: workout.startDate,
-            end: workout.endDate
-        )
+        let workout: HKWorkout?
+        do {
+            workout = try await fetchMostRecentWorkout()
+        } catch {
+            logHealthKitQueryFailure(error, context: "fetchHRZoneRows.fetchMostRecentWorkout")
+            return Self.emptyHRZoneRows
+        }
+        guard let workout else {
+            return Self.emptyHRZoneRows
+        }
+
+        let samples: [HKQuantitySample]
+        do {
+            samples = try await fetchQuantitySamples(
+                type: hrType,
+                start: workout.startDate,
+                end: workout.endDate
+            )
+        } catch {
+            logHealthKitQueryFailure(error, context: "fetchHRZoneRows.fetchQuantitySamples")
+            return Self.emptyHRZoneRows
+        }
 
         guard !samples.isEmpty else {
             return Self.emptyHRZoneRows
@@ -813,7 +853,8 @@ enum HealthKitService {
         }
     }
 
-    private static let emptyHRZoneRows: [HealthHRZoneRow] = [
+    /// Placeholder rows when no workout / samples or when the Health screen uses a non-throwing fallback.
+    static let emptyHRZoneRows: [HealthHRZoneRow] = [
         HealthHRZoneRow(id: 0, label: "Zone 1 · Rest", valueLabel: "0%", percent: 0),
         HealthHRZoneRow(id: 1, label: "Zone 2 · Fat burn", valueLabel: "0%", percent: 0),
         HealthHRZoneRow(id: 2, label: "Zone 3 · Cardio", valueLabel: "0%", percent: 0),

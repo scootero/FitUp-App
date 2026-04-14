@@ -39,6 +39,7 @@ final class HomeViewModel: ObservableObject {
     private let repository = HomeRepository()
     private let activityRepository = ActivityRepository()
     private var userId: UUID?
+    private var profileTimeZoneIdentifier: String?
     private var myDisplayName: String = "You"
     private var waitTimerCancellable: AnyCancellable?
     private var shouldShowOnboardingPlaceholder = false
@@ -48,6 +49,7 @@ final class HomeViewModel: ObservableObject {
     func start(profile: Profile?, showOnboardingSearching: Bool) {
         guard let profileId = profile?.id else { return }
         myDisplayName = profile?.displayName ?? "You"
+        profileTimeZoneIdentifier = profile?.timezone
 
         if userId != profileId {
             stop()
@@ -92,7 +94,8 @@ final class HomeViewModel: ObservableObject {
 
         async let snapshotTask = repository.loadSnapshot(
             for: userId,
-            showOnboardingSearching: shouldShowOnboardingPlaceholder
+            showOnboardingSearching: shouldShowOnboardingPlaceholder,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
         )
         async let completedTask = activityRepository.loadCompletedMatches(currentUserId: userId)
 

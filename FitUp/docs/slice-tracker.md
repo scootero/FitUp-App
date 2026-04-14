@@ -22,6 +22,22 @@ Notes:
 - Do not use `.gitkeep` inside the synced `FitUp/` folder — Xcode copies them all to `.gitkeep` in the app bundle and fails the build.
 - Copy `Config/Secrets.example.xcconfig` → `Config/Secrets.xcconfig` for local keys.
 
+## Slice 1 — Auth and session
+Date: 2026-03-24 (with Slice 0 / early session)
+Status: Complete
+Files created:
+- `FitUp/FitUp/FitUp/Views/Auth/AuthView.swift`
+- `FitUp/FitUp/FitUp/ViewModels/SessionStore.swift`
+- `FitUp/FitUp/FitUp/Repositories/ProfileRepository.swift`
+Files modified:
+- `FitUp/FitUp/FitUp/FitUpApp.swift`, `ContentView.swift`
+- `FitUp/FitUp/FitUp.xcodeproj/project.pbxproj` (as needed for new files)
+Supabase changes:
+- Auth providers: Apple + email (dashboard). `profiles` row created on sign-up via `ProfileRepository.createProfileIfNeeded`.
+Notes:
+- Session restore uses `supabase.auth.session` on launch; sign-in with Apple uses `idToken` + optional display name from `ASAuthorizationAppleIDCredential`.
+- Root routing: unauthenticated → `AuthView`; authenticated → onboarding vs Home per `onboardingComplete` and session flags.
+
 ## Slice 2 — Onboarding
 Date: 2026-03-26
 Status: Complete

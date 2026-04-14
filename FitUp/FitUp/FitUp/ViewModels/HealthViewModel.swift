@@ -7,6 +7,7 @@
 
 import Combine
 import Foundation
+import HealthKit
 
 @MainActor
 final class HealthViewModel: ObservableObject {
@@ -61,9 +62,11 @@ final class HealthViewModel: ObservableObject {
     private let activityRepository = ActivityRepository()
 
     private var profileId: UUID?
+    private var profileTimeZoneIdentifier: String?
 
     func start(profile: Profile?) {
         profileId = profile?.id
+        profileTimeZoneIdentifier = profile?.timezone
         Task { await reload(source: "profile_task") }
     }
 
@@ -89,106 +92,15 @@ final class HealthViewModel: ObservableObject {
 
         await HealthKitService.requestAuthorizationIfNeeded()
 
+        let stepsToday: Int
+        let calsToday: Int
         do {
-            showHealthAccessBanner = false
-
-            let stepsToday = try await healthKitStep("today_steps", userId: userId) {
+            stepsToday = try await healthKitStep("today_steps", userId: userId) {
                 try await HealthKitService.fetchTodayStepCount()
             }
-            let calsToday = try await healthKitStep("today_active_calories", userId: userId) {
+            calsToday = try await healthKitStep("today_active_calories", userId: userId) {
                 try await HealthKitService.fetchTodayActiveCalories()
             }
-            let resting = try await healthKitStep("resting_heart_rate", userId: userId) {
-                try await HealthKitService.fetchRestingHeartRate()
-            }
-            let sleepAgg = try await healthKitStep("sleep_summary_7n", userId: userId) {
-                try await HealthKitService.fetchSleepSummary(nights: 7)
-            }
-            let wSteps = try await healthKitStep("week_steps_array", userId: userId) {
-                try await HealthKitService.fetchSevenDayStepsArray()
-            }
-            let wCals = try await healthKitStep("week_calories_array", userId: userId) {
-                try await HealthKitService.fetchSevenDayCaloriesArray()
-            }
-            let zones = try await healthKitStep("hr_zones", userId: userId) {
-                try await HealthKitService.fetchHRZoneRows()
-            }
-
-            let sleepForReadiness = sleepAgg.lastNightAsleepHours
-
-            let score = ReadinessCalculator.compute(
-                sleepHrsLastNight: sleepForReadiness,
-                restingHR: resting,
-                stepsToday: stepsToday,
-                calsToday: calsToday,
-                goals: goals
-            )
-
-            battleReadinessScore = score
-            battleReadinessLabel = ReadinessCalculator.label(for: score)
-            battleReadinessSubtitle = ReadinessCalculator.subtitle(for: score)
-
-            sleepLastNightHours = sleepAgg.lastNightAsleepHours
-            sleepHoursDisplay = formatSleepHours(sleepForReadiness)
-            restingHRDisplay = resting.map { "\(Int($0.rounded()))" } ?? "—"
-            restingHRValue = resting
-            stepsTodayValue = stepsToday
-            caloriesTodayValue = calsToday
-            stepsTodayDisplay = formatStepsShort(stepsToday)
-            caloriesTodayDisplay = "\(calsToday)"
-
-            weekSteps = wSteps
-            weekCalories = wCals
-            sleepSummary = sleepAgg
-            hrZoneRows = zones
-
-            lastLoadFinishedAt = Date()
-            showSyncedBadge = true
-
-            async let remoteBests = healthRepository.fetchAllTimeBests(userId: userId)
-            async let hkBestsTask = loadHealthKitAllTimeBests(userId: userId)
-            let remoteResolved = await remoteBests
-            let hkResolved = await hkBestsTask
-            allTimeBests = HealthAllTimeBests.merged(healthKit: hkResolved, remote: remoteResolved)
-            activeMatchEdges = await homeRepository.loadActiveMatches(for: userId)
-
-            let completed = await activityRepository.loadCompletedMatches(currentUserId: userId)
-            matchCount = completed.count
-            winCount = completed.filter(\.myWon).count
-            if matchCount > 0 {
-                winRateText = "\(Int((Double(winCount) / Double(matchCount) * 100).rounded()))%"
-            } else {
-                winRateText = "0%"
-            }
-
-            let durationMs = Int(loadStarted.timeIntervalSinceNow * -1000)
-            let hkSnapshot = Self.formatHealthDataSnapshot(
-                source: source,
-                stepsToday: stepsToday,
-                calsToday: calsToday,
-                restingBPM: resting,
-                sleepAgg: sleepAgg,
-                weekSteps: wSteps,
-                weekCalories: wCals,
-                zones: zones,
-                readinessScore: score
-            )
-            var meta = hkSnapshot
-            meta["source"] = source
-            meta["pipeline"] = "HealthViewModel.reload"
-            meta["duration_ms"] = "\(durationMs)"
-            meta["load_finished_at"] = ISO8601DateFormatter().string(from: Date())
-            meta["active_matches_count"] = "\(activeMatchEdges.count)"
-            meta["completed_matches"] = "\(matchCount)"
-            meta["wins"] = "\(winCount)"
-            AppLogger.log(
-                category: "healthkit_read",
-                level: .info,
-                message: "health screen load ok (HK + home data)",
-                userId: userId,
-                metadata: meta
-            )
-
         } catch {
             showSyncedBadge = false
             if let hk = error as? HealthKitError, case .authorizationDenied = hk {
@@ -197,6 +109,7 @@ final class HealthViewModel: ObservableObject {
                 showHealthAccessBanner = false
             }
             errorMessage = error.localizedDescription
+            resetHealthDisplayToEmpty()
             AppLogger.log(
                 category: "healthkit_read",
                 level: .warning,
@@ -209,7 +122,159 @@ final class HealthViewModel: ObservableObject {
                     "error_type": String(describing: type(of: error)),
                 ]
             )
+            return
         }
+
+        showHealthAccessBanner = false
+        errorMessage = nil
+
+        stepsTodayValue = stepsToday
+        caloriesTodayValue = calsToday
+        stepsTodayDisplay = formatStepsShort(stepsToday)
+        caloriesTodayDisplay = "\(calsToday)"
+        showSyncedBadge = true
+
+        let coreDurationMs = Int(loadStarted.timeIntervalSinceNow * -1000)
+        AppLogger.log(
+            category: "healthkit_read",
+            level: .info,
+            message: "health screen core ok",
+            userId: userId,
+            metadata: [
+                "source": source,
+                "pipeline": "HealthViewModel.reload",
+                "steps_today": "\(stepsToday)",
+                "active_calories_today": "\(calsToday)",
+                "duration_ms": "\(coreDurationMs)",
+            ]
+        )
+
+        async let restingOutcome = loadOptionalHK("resting_heart_rate", userId: userId, fallback: nil as Double?) {
+            try await HealthKitService.fetchRestingHeartRate()
+        }
+        async let sleepOutcome = loadOptionalHK("sleep_summary_7n", userId: userId, fallback: nil as HealthSleepSummary?) {
+            await HealthKitService.fetchSleepSummary(nights: 7)
+        }
+        async let weekStepsOutcome = loadOptionalHK("week_steps_array", userId: userId, fallback: Array(repeating: 0, count: 7)) {
+            try await HealthKitService.fetchSevenDayStepsArray()
+        }
+        async let weekCalsOutcome = loadOptionalHK("week_calories_array", userId: userId, fallback: Array(repeating: 0, count: 7)) {
+            try await HealthKitService.fetchSevenDayCaloriesArray()
+        }
+        async let zonesOutcome = loadOptionalHK("hr_zones", userId: userId, fallback: HealthKitService.emptyHRZoneRows) {
+            await HealthKitService.fetchHRZoneRows()
+        }
+
+        let restingResult = await restingOutcome
+        let sleepResult = await sleepOutcome
+        let wStepsResult = await weekStepsOutcome
+        let wCalsResult = await weekCalsOutcome
+        let zonesResult = await zonesOutcome
+
+        let resting = restingResult.value
+        let sleepAgg = sleepResult.value
+        let wSteps = wStepsResult.value
+        let wCals = wCalsResult.value
+        let zones = zonesResult.value
+
+        let sleepForReadiness = sleepAgg?.lastNightAsleepHours
+
+        let score = ReadinessCalculator.compute(
+            sleepHrsLastNight: sleepForReadiness,
+            restingHR: resting,
+            stepsToday: stepsToday,
+            calsToday: calsToday,
+            goals: goals
+        )
+
+        battleReadinessScore = score
+        battleReadinessLabel = ReadinessCalculator.label(for: score)
+        battleReadinessSubtitle = ReadinessCalculator.subtitle(for: score)
+
+        sleepLastNightHours = sleepAgg?.lastNightAsleepHours
+        sleepHoursDisplay = formatSleepHours(sleepForReadiness)
+        restingHRDisplay = resting.map { "\(Int($0.rounded()))" } ?? "—"
+        restingHRValue = resting
+
+        weekSteps = wSteps
+        weekCalories = wCals
+        sleepSummary = sleepAgg
+        hrZoneRows = zones
+
+        async let remoteBests = healthRepository.fetchAllTimeBests(userId: userId)
+        async let hkBestsTask = loadHealthKitAllTimeBests(userId: userId)
+        let remoteResolved = await remoteBests
+        let hkResolved = await hkBestsTask
+        allTimeBests = HealthAllTimeBests.merged(healthKit: hkResolved, remote: remoteResolved)
+        activeMatchEdges = await homeRepository.loadActiveMatches(for: userId, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
+
+        let completed = await activityRepository.loadCompletedMatches(currentUserId: userId)
+        matchCount = completed.count
+        winCount = completed.filter(\.myWon).count
+        if matchCount > 0 {
+            winRateText = "\(Int((Double(winCount) / Double(matchCount) * 100).rounded()))%"
+        } else {
+            winRateText = "0%"
+        }
+
+        lastLoadFinishedAt = Date()
+
+        let durationMs = Int(loadStarted.timeIntervalSinceNow * -1000)
+        let hkSnapshot = Self.formatHealthDataSnapshot(
+            source: source,
+            stepsToday: stepsToday,
+            calsToday: calsToday,
+            restingBPM: resting,
+            sleepAgg: sleepAgg,
+            weekSteps: wSteps,
+            weekCalories: wCals,
+            zones: zones,
+            readinessScore: score
+        )
+        var meta = hkSnapshot
+        meta["source"] = source
+        meta["pipeline"] = "HealthViewModel.reload"
+        meta["duration_ms"] = "\(durationMs)"
+        meta["load_finished_at"] = ISO8601DateFormatter().string(from: Date())
+        meta["active_matches_count"] = "\(activeMatchEdges.count)"
+        meta["completed_matches"] = "\(matchCount)"
+        meta["wins"] = "\(winCount)"
+        meta["optional_resting_ok"] = "\(restingResult.ok)"
+        meta["optional_sleep_ok"] = "\(sleepResult.ok)"
+        meta["optional_week_steps_ok"] = "\(wStepsResult.ok)"
+        meta["optional_week_cals_ok"] = "\(wCalsResult.ok)"
+        meta["optional_zones_ok"] = "\(zonesResult.ok)"
+        AppLogger.log(
+            category: "healthkit_read",
+            level: .info,
+            message: "health screen load ok (HK + home data)",
+            userId: userId,
+            metadata: meta
+        )
+    }
+
+    private func resetHealthDisplayToEmpty() {
+        battleReadinessScore = 0
+        battleReadinessLabel = ""
+        battleReadinessSubtitle = ""
+        sleepHoursDisplay = "—"
+        restingHRDisplay = "—"
+        stepsTodayDisplay = "—"
+        caloriesTodayDisplay = "—"
+        weekSteps = Array(repeating: 0, count: 7)
+        weekCalories = Array(repeating: 0, count: 7)
+        sleepSummary = nil
+        hrZoneRows = []
+        sleepLastNightHours = nil
+        stepsTodayValue = 0
+        caloriesTodayValue = 0
+        restingHRValue = nil
+        lastLoadFinishedAt = nil
+        allTimeBests = .empty
+        winRateText = "0%"
+        winCount = 0
+        matchCount = 0
+        activeMatchEdges = []
     }
 
     /// Best day / best 7-day totals from Apple Health; empty on failure (merge falls back to Supabase).
@@ -254,38 +319,82 @@ final class HealthViewModel: ObservableObject {
         }
     }
 
+    private func loadOptionalHK<T>(
+        _ step: String,
+        userId: UUID,
+        fallback: T,
+        operation: () async throws -> T
+    ) async -> (value: T, ok: Bool) {
+        do {
+            let v = try await operation()
+            return (v, true)
+        } catch {
+            var metadata: [String: String] = [
+                "step": step,
+                "error": error.localizedDescription,
+                "error_type": String(describing: type(of: error)),
+            ]
+            if let hk = error as? HKError {
+                metadata["hk_error_code"] = "\(hk.code.rawValue)"
+            }
+            AppLogger.log(
+                category: "healthkit_read",
+                level: .warning,
+                message: "health screen HK step failed [\(step)]",
+                userId: userId,
+                metadata: metadata
+            )
+            return (fallback, false)
+        }
+    }
+
     private static func formatHealthDataSnapshot(
         source: String,
         stepsToday: Int,
         calsToday: Int,
         restingBPM: Double?,
-        sleepAgg: HealthSleepSummary,
+        sleepAgg: HealthSleepSummary?,
         weekSteps: [Int],
         weekCalories: [Int],
         zones: [HealthHRZoneRow],
         readinessScore: Int
     ) -> [String: String] {
-        let stages = sleepAgg.stagePercentagesSevenNight
         let zonesSummary = zones.map { "\($0.label)=\($0.valueLabel) (\(String(format: "%.0f", $0.percent))%)" }.joined(separator: " | ")
-        let snapshot = [
-            "source=\(source)",
-            "readiness_score=\(readinessScore)",
-            "today_steps=\(stepsToday)",
-            "today_active_kcal=\(calsToday)",
-            "resting_hr_bpm=\(restingBPM.map { String(format: "%.1f", $0) } ?? "nil")",
-            "sleep_avg_hrs_7n=\(String(format: "%.2f", sleepAgg.averageHoursLastNights))",
-            "sleep_variance_hrs=\(String(format: "%.2f", sleepAgg.varianceHours))",
-            "sleep_last_night_hrs=\(sleepAgg.lastNightAsleepHours.map { String(format: "%.2f", $0) } ?? "nil")",
-            "sleep_nightly_hrs_oldest_to_today=\(sleepAgg.nightlyAsleepHoursOldestFirst.map { String(format: "%.2f", $0) }.joined(separator: ","))",
-            "sleep_last_night_timeline_segments=\(sleepAgg.lastNightTimeline.count)",
-            "sleep_ratio_deep_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.deepPercent) } ?? "nil")",
-            "sleep_ratio_light_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.lightPercent) } ?? "nil")",
-            "sleep_ratio_rem_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.remPercent) } ?? "nil")",
-            "sleep_stages_7n_pct_deep=\(String(format: "%.1f", stages.deep)) core=\(String(format: "%.1f", stages.core)) rem=\(String(format: "%.1f", stages.rem)) awake=\(String(format: "%.1f", stages.awake))",
-            "week_steps_oldest_to_today=\(weekSteps.map(String.init).joined(separator: ","))",
-            "week_cal_oldest_to_today=\(weekCalories.map(String.init).joined(separator: ","))",
-            "hr_zones=\(zonesSummary.isEmpty ? "—" : zonesSummary)",
-        ].joined(separator: "\n")
+        let snapshot: String
+        if let sleepAgg {
+            let stages = sleepAgg.stagePercentagesSevenNight
+            snapshot = [
+                "source=\(source)",
+                "readiness_score=\(readinessScore)",
+                "today_steps=\(stepsToday)",
+                "today_active_kcal=\(calsToday)",
+                "resting_hr_bpm=\(restingBPM.map { String(format: "%.1f", $0) } ?? "nil")",
+                "sleep_avg_hrs_7n=\(String(format: "%.2f", sleepAgg.averageHoursLastNights))",
+                "sleep_variance_hrs=\(String(format: "%.2f", sleepAgg.varianceHours))",
+                "sleep_last_night_hrs=\(sleepAgg.lastNightAsleepHours.map { String(format: "%.2f", $0) } ?? "nil")",
+                "sleep_nightly_hrs_oldest_to_today=\(sleepAgg.nightlyAsleepHoursOldestFirst.map { String(format: "%.2f", $0) }.joined(separator: ","))",
+                "sleep_last_night_timeline_segments=\(sleepAgg.lastNightTimeline.count)",
+                "sleep_ratio_deep_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.deepPercent) } ?? "nil")",
+                "sleep_ratio_light_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.lightPercent) } ?? "nil")",
+                "sleep_ratio_rem_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.remPercent) } ?? "nil")",
+                "sleep_stages_7n_pct_deep=\(String(format: "%.1f", stages.deep)) core=\(String(format: "%.1f", stages.core)) rem=\(String(format: "%.1f", stages.rem)) awake=\(String(format: "%.1f", stages.awake))",
+                "week_steps_oldest_to_today=\(weekSteps.map(String.init).joined(separator: ","))",
+                "week_cal_oldest_to_today=\(weekCalories.map(String.init).joined(separator: ","))",
+                "hr_zones=\(zonesSummary.isEmpty ? "—" : zonesSummary)",
+            ].joined(separator: "\n")
+        } else {
+            snapshot = [
+                "source=\(source)",
+                "readiness_score=\(readinessScore)",
+                "today_steps=\(stepsToday)",
+                "today_active_kcal=\(calsToday)",
+                "resting_hr_bpm=\(restingBPM.map { String(format: "%.1f", $0) } ?? "nil")",
+                "sleep_summary=—",
+                "week_steps_oldest_to_today=\(weekSteps.map(String.init).joined(separator: ","))",
+                "week_cal_oldest_to_today=\(weekCalories.map(String.init).joined(separator: ","))",
+                "hr_zones=\(zonesSummary.isEmpty ? "—" : zonesSummary)",
+            ].joined(separator: "\n")
+        }
         return [
             "hk_snapshot": snapshot,
             "week_steps_csv": weekSteps.map(String.init).joined(separator: ","),

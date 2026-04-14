@@ -1,6 +1,8 @@
 # FitUp — Docs Pack
 *Single source of truth. Update the Decisions Log after every session.*
-*Last updated: March 2026*
+*Last updated: April 2026*
+
+**# As-built rebuild:** Headings and table rows prefixed with **`#`** were added April 2026 to capture implementation reality (paths, backend slices, portals, config) for cloning the repo to the current app state. They supplement — not replace — the original spec.
 
 ---
 
@@ -10,7 +12,9 @@ Two files make up the complete spec:
 - **fitup-docs-pack.md** (this file) — what the system IS
 - **fitup-build-slices.md** — how to BUILD it, slice by slice
 
-**UI reference file:** `FitUp-App/FitUp/docs/mockups/FitUp_Final_Mockup.jsx`
+**# Path note:** From the repository root, docs live under **`FitUp/docs/`** (e.g. `FitUp/docs/fitup-docs-pack.md`). Older text may say `FitUp-App/docs/` — treat that as the same files inside the `FitUp` folder.
+
+**UI reference file:** `FitUp/docs/mockups/FitUp_Final_Mockup.jsx`
 This JSX file is the single source of truth for all visual design. Every screen, component, animation, color, spacing, and layout must be implemented to match it as closely as practical in SwiftUI. Cursor must read the relevant components before implementing any UI. Sections marked `[MOCK DATA]` must be replaced with real data from HealthKit or the backend.
 
 For Cursor: highest-priority sections are **6 (State Machine)**, **7 (Data Model)**, **8 (Scoring)**, **9 (Design System)**, **10 (Interaction Map)**, and **16 (Cursor Rules)**.
@@ -32,7 +36,7 @@ FitUp is a challenge-first iOS fitness app. Users compete in 1v1 matches using r
 | Health data | Apple HealthKit — on-device authorized reads only |
 | Subscriptions | RevenueCat — configured day one |
 | Notifications | APNs + ActivityKit (Live Activities) |
-| UI reference | `FitUp-App/FitUp/docs/mockups/FitUp_Final_Mockup.jsx` |
+| UI reference | `FitUp/docs/mockups/FitUp_Final_Mockup.jsx` (repo root → `FitUp/` folder) |
 
 ---
 
@@ -82,23 +86,28 @@ Repo root: `FitUp-App/`
 Open in Cursor: `FitUp-App/` (not a subdirectory)
 Xcode project: `FitUp-App/FitUp/FitUp.xcodeproj`
 
-Current layout (preserve this exactly):
+Current layout (preserve this exactly — **#** reconciled to actual repo roots):
 ```
-FitUp-App/
+<repo root>/
 ├── .cursor/
-│   └── rules.md
-├── docs/
-│   ├── fitup-docs-pack.md
-│   ├── fitup-build-slices.md
-│   └── mockups/
-│       └── FitUp_Final_Mockup.jsx
+│   └── rules.md                 ← Cursor rules (repo root)
 └── FitUp/
+    ├── docs/
+    │   ├── fitup-docs-pack.md
+    │   ├── fitup-build-slices.md
+    │   ├── slice-tracker.md       ← # per-slice implementation log
+    │   ├── supabase-setup-guide.md
+    │   └── mockups/
+    │       └── FitUp_Final_Mockup.jsx
     ├── FitUp.xcodeproj
     └── FitUp/
-        ├── FitUpApp.swift          ← entry point, already exists
-        ├── ContentView.swift       ← replace/extend, do not delete
+        ├── Config/                ← # xcconfig, Secrets.xcconfig (gitignored), entitlements, Info plists
+        ├── FitUpApp.swift
+        ├── ContentView.swift
         ├── Assets.xcassets
-        └── [new Swift files added here as slices progress]
+        ├── FitUpWidgetExtension/  ← # ActivityKit widget (Slice 9)
+        └── [Swift sources — synchronized group]
+supabase/                          ← # Edge Functions + SQL migrations (deployed separately)
 ```
 
 **Adding new files:** All new Swift files are added inside `FitUp-App/FitUp/FitUp/`. Organize using Xcode groups (which map to folders). The target membership of every new Swift file must be the FitUp app target.
@@ -594,7 +603,7 @@ Match completion: all match_days finalized → match.state = 'completed'
 
 ## 9. Design System
 
-**Source of truth:** `FitUp-App/FitUp/docs/mockups/FitUp_Final_Mockup.jsx` — the `T` object at the top.
+**Source of truth:** `FitUp/docs/mockups/FitUp_Final_Mockup.jsx` — the `T` object at the top.
 
 In Swift: all values live in `DesignTokens.swift` inside `Design/` group. **No hardcoded hex, sizes, or radii anywhere else.**
 
@@ -1128,6 +1137,32 @@ or the design system — stop and ask. Do not guess.
 |---|---|
 | Stale indicator exact threshold (currently ~2 hours) | Health sync UI copy |
 | Leaderboard points formula — use as documented or adjust? | Slice 11 |
+
+### # As-built implementation notes (April 2026)
+
+| # Topic | What shipped |
+|---|---|
+| # iOS deployment | Minimum **iOS 18.6**; Swift 5; Xcode current stable per `.cursor/rules` |
+| # Secrets | `FitUp/FitUp/Config/Secrets.example.xcconfig` → copy to **`Secrets.xcconfig`**; supplies `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `REVENUECAT_API_KEY` |
+| # Auth | Supabase Auth: **Sign in with Apple** + **email/password**; `SessionStore` restores session on launch; `ProfileRepository` creates `profiles` row on sign-up; extended session state for onboarding (e.g. HealthKit prompt per profile) — see `SessionStore.swift` |
+| # Subscriptions | RevenueCat; entitlement identifier **`pro`** (not only abstract “premium”); products **`fitup_pro_annual`**, **`fitup_pro_monthly`**; paywall gated until after first match completed (`UserDefaults` / `SubscriptionService`) |
+| # Push + Live Activities | `AppDelegate` adaptor for APNs; `profiles.apns_token`, `profiles.live_activity_push_token`, `profiles.notifications_enabled`; widget extension target **`FitUpWidgetExtension`**; live activity updates exempt from daily notification cap in `dispatch-notification` |
+| # Supabase backend (beyond Section 15 table) | **`matchmaking-pairing`**, **`on-all-accepted`**, **`retry-matchmaking-search`**; SQL: **`slice4-matchmaking.sql`**, **`slice8-finalization.sql`**, **`slice9-notifications.sql`**, **`slice4b-matchmaking-stale-retry.sql`**, **`slice4e-decline-pending-match.sql`**, plus RLS/RPC helper files in `supabase/sql/` — run order in **`FitUp/docs/supabase-setup-guide.md`** |
+| # “Portal” | **No in-repo admin web UI.** Configure **Apple Developer Portal** (identifiers, Push, Sign in with Apple, widget App ID) and **Supabase Dashboard** (Auth, SQL, Edge Functions, secrets, Vault for service role / `pg_net` triggers). |
+| # Decline behavior | Pending decline for **direct and public matchmaking** uses RPC + triggers (`slice4e-decline-pending-match.sql`); challenger may receive `challenge_declined`-style notification for random match decline |
+
+---
+
+## 21. # Rebuild-from-scratch checklist (operations)
+
+Use this order to approximate the current production-ready system:
+
+1. **# Apple Developer:** Create App ID `com.ScottOliver.FitUp` (or your bundle ID); enable HealthKit, Push Notifications, Sign in with Apple; create widget extension identifier if using Live Activities (`com.ScottOliver.FitUp.FitUpWidgetExtension` was used in tracker notes).
+2. **# Supabase project:** Run **`FitUp/docs/supabase-setup-guide.md`** — start with **`## # Master run order (rebuild checklist)`** for the phased overview, then follow Steps 1–9 and each Slice section; apply supplemental `supabase/sql/*.sql` files in that order (finalization → matchmaking → notifications → retries → decline RPC).
+3. **# Edge Functions:** Deploy all functions under `supabase/functions/` with required secrets (`APNS_*`, service role, etc.) per setup guide.
+4. **# iOS project:** Open `FitUp/FitUp/FitUp.xcodeproj`; configure signing; copy **`Secrets.xcconfig`**; enable capabilities matching entitlements.
+5. **# RevenueCat & App Store Connect:** Create subscription products matching RevenueCat offering and entitlement **`pro`**.
+6. **# Verification:** Cross-check **`FitUp/docs/slice-tracker.md`** for acceptance-style notes and `xcodebuild` commands used during development.
 
 ---
 

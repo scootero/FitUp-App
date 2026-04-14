@@ -13,7 +13,13 @@ struct MatchDetailsView: View {
 
     @StateObject private var viewModel: MatchDetailsViewModel
     @State private var showingLiveMatch = false
+    @State private var hoveredDayBreakdownDayNumber: Int?
+    @State private var tappedDayBreakdownDayNumber: Int?
     private let profile: Profile?
+
+    private var activeBreakdownDayNumber: Int? {
+        hoveredDayBreakdownDayNumber ?? tappedDayBreakdownDayNumber
+    }
 
     init(
         matchId: UUID,
@@ -626,6 +632,65 @@ struct MatchDetailsView: View {
         )
     }
 
+    private func formatBreakdownMetricValue(_ value: Int, calories: Bool) -> String {
+        if calories {
+            return "\(value.formatted()) kcal"
+        }
+        return value.formatted()
+    }
+
+    @ViewBuilder
+    private func dayBreakdownCallout(day: MatchDetailsDayRow, dm: MatchDetailDisplayModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Day \(day.dayLabel)")
+                .font(FitUpFont.body(10, weight: .heavy))
+                .foregroundStyle(FitUpColors.Text.tertiary)
+            if day.isFuture {
+                Text("Not started yet.")
+                    .font(FitUpFont.body(12, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+            } else {
+                HStack {
+                    Text("You")
+                        .font(FitUpFont.body(12, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Neon.cyan)
+                    Spacer()
+                    Text(formatBreakdownMetricValue(dm.myValue(for: day), calories: dm.metricIsCalories))
+                        .font(FitUpFont.mono(12, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.primary)
+                }
+                HStack {
+                    Text(dm.opponentFirstName)
+                        .font(FitUpFont.body(12, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Neon.orange)
+                    Spacer()
+                    Text(formatBreakdownMetricValue(day.theirValue, calories: dm.metricIsCalories))
+                        .font(FitUpFont.mono(12, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.primary)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+
+    private func dayBreakdownAccessibilityLabel(day: MatchDetailsDayRow, dm: MatchDetailDisplayModel) -> String {
+        if day.isFuture {
+            return "Day \(day.dayLabel), not started yet"
+        }
+        let mine = formatBreakdownMetricValue(dm.myValue(for: day), calories: dm.metricIsCalories)
+        let theirs = formatBreakdownMetricValue(day.theirValue, calories: dm.metricIsCalories)
+        return "Day \(day.dayLabel), you \(mine), \(dm.opponentFirstName) \(theirs)"
+    }
+
     private func dayByDayChart(dm: MatchDetailDisplayModel) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("DAY-BY-DAY BREAKDOWN")
@@ -633,56 +698,98 @@ struct MatchDetailsView: View {
                 .tracking(2)
                 .foregroundStyle(FitUpColors.Text.tertiary)
 
+            if let dayNum = activeBreakdownDayNumber,
+               let row = dm.mergedDayRows.first(where: { $0.dayNumber == dayNum }) {
+                dayBreakdownCallout(day: row, dm: dm)
+            }
+
             GeometryReader { outer in
                 let maxH: CGFloat = 80
                 HStack(alignment: .bottom, spacing: 0) {
                     ForEach(Array(dm.mergedDayRows.enumerated()), id: \.element.id) { idx, day in
-                        HStack(alignment: .bottom, spacing: 3) {
-                            if day.isFuture {
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(Color.white.opacity(0.06))
-                                    .frame(width: 12, height: maxH)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .strokeBorder(Color.white.opacity(0.1), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                                    )
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(Color.white.opacity(0.06))
-                                    .frame(width: 12, height: maxH)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .strokeBorder(Color.white.opacity(0.1), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                                    )
-                            } else {
-                                let h = max(3, CGFloat(Double(dm.myValue(for: day)) / dm.chartMaxValue) * maxH)
-                                let th = max(3, CGFloat(Double(day.theirValue) / dm.chartMaxValue) * maxH)
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(FitUpColors.Neon.cyan.opacity(0.85))
-                                    .frame(width: 12, height: h)
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(FitUpColors.Neon.orange.opacity(0.85))
-                                    .frame(width: 12, height: th)
+                        let isColumnHighlighted =
+                            hoveredDayBreakdownDayNumber == day.dayNumber
+                            || tappedDayBreakdownDayNumber == day.dayNumber
+                        VStack(spacing: 6) {
+                            HStack(alignment: .bottom, spacing: 3) {
+                                if day.isFuture {
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(Color.white.opacity(0.06))
+                                        .frame(width: 12, height: maxH)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                                .strokeBorder(Color.white.opacity(0.1), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                                        )
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(Color.white.opacity(0.06))
+                                        .frame(width: 12, height: maxH)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                                .strokeBorder(Color.white.opacity(0.1), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                                        )
+                                } else {
+                                    let h = max(3, CGFloat(Double(dm.myValue(for: day)) / dm.chartMaxValue) * maxH)
+                                    let th = max(3, CGFloat(Double(day.theirValue) / dm.chartMaxValue) * maxH)
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(FitUpColors.Neon.cyan.opacity(0.85))
+                                        .frame(width: 12, height: h)
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(FitUpColors.Neon.orange.opacity(0.85))
+                                        .frame(width: 12, height: th)
+                                }
                             }
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(isColumnHighlighted ? Color.white.opacity(0.06) : Color.clear)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .strokeBorder(
+                                        Color.white.opacity(isColumnHighlighted ? 0.22 : 0),
+                                        lineWidth: 1
+                                    )
+                            )
+                            .frame(height: maxH, alignment: .bottom)
+
+                            Text(day.dayLabel)
+                                .font(FitUpFont.mono(9, weight: .medium))
+                                .foregroundStyle(FitUpColors.Text.tertiary)
                         }
                         .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if tappedDayBreakdownDayNumber == day.dayNumber {
+                                tappedDayBreakdownDayNumber = nil
+                            } else {
+                                tappedDayBreakdownDayNumber = day.dayNumber
+                            }
+                        }
+                        .onHover { inside in
+                            if inside {
+                                hoveredDayBreakdownDayNumber = day.dayNumber
+                            } else if hoveredDayBreakdownDayNumber == day.dayNumber {
+                                hoveredDayBreakdownDayNumber = nil
+                            }
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(dayBreakdownAccessibilityLabel(day: day, dm: dm))
+                        .accessibilityHint(
+                            dm.metricIsCalories
+                                ? "Tap to show or hide active calorie totals for this day."
+                                : "Tap to show or hide step totals for this day."
+                        )
+                        .accessibilityAddTraits(.isButton)
 
                         if idx < dm.mergedDayRows.count - 1 {
                             Spacer().frame(width: 8)
                         }
                     }
                 }
-                .frame(width: outer.size.width, height: maxH + 24, alignment: .bottom)
+                .frame(width: outer.size.width, height: maxH + 28, alignment: .bottom)
             }
-            .frame(height: 104)
-
-            HStack {
-                ForEach(dm.mergedDayRows) { day in
-                    Text(day.dayLabel)
-                        .font(FitUpFont.mono(9, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
-                        .frame(maxWidth: .infinity)
-                }
-            }
+            .frame(height: 108)
 
             HStack(spacing: 16) {
                 HStack(spacing: 6) {
