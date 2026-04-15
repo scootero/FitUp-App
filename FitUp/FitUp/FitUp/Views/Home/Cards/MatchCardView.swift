@@ -32,6 +32,15 @@ struct MatchCardView: View {
 
                 VStack(spacing: 12) {
                     headerRow
+                    if match.daysLeft == 1, match.finalDayScoreEndsAt != nil {
+                        Text("Results are posted once we have updated stats for the day from both players.")
+                            .font(FitUpFont.body(10, weight: .regular))
+                            .italic()
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     playersRow
                     dayPipsRow
                 }
@@ -84,8 +93,8 @@ struct MatchCardView: View {
             if match.daysLeft > 1 {
                 retroDaysLeftNumber(match.daysLeft, plural: true)
             } else if match.daysLeft == 1 {
-                if let cutoff = match.finalDayCutoffAt {
-                    finalDayCountdown(cutoff: cutoff)
+                if let endsAt = match.finalDayScoreEndsAt {
+                    finalDayCountdown(scoreEndsAt: endsAt)
                 } else {
                     retroDaysLeftNumber(1, plural: false)
                 }
@@ -122,14 +131,14 @@ struct MatchCardView: View {
         .background(retroCountdownChrome)
     }
 
-    private func finalDayCountdown(cutoff: Date) -> some View {
+    private func finalDayCountdown(scoreEndsAt: Date) -> some View {
         TimelineView(.periodic(from: Date(), by: 60)) { context in
             VStack(alignment: .trailing, spacing: 2) {
                 Text("FINAL DAY")
                     .font(FitUpFont.mono(9, weight: .heavy))
                     .tracking(0.9)
                     .foregroundStyle(accentColor)
-                Text(finalDayTimeLeft(from: context.date, deadline: cutoff))
+                Text(finalDayTimeLeft(from: context.date, deadline: scoreEndsAt))
                     .font(FitUpFont.mono(11, weight: .bold))
                     .foregroundStyle(FitUpColors.Text.secondary)
             }

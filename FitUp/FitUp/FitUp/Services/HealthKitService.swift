@@ -78,6 +78,7 @@ enum HealthMetricType: String {
 enum HealthKitService {
 #if DEBUG
     private static let sleepPipelineLogger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FitUp", category: "healthkit_sleep")
+    private static let bestStatsAuditLogger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FitUp", category: "healthkit_best_stats")
 #endif
     private static let store = HKHealthStore()
     private static var observerQueries: [HKQuantityTypeIdentifier: HKObserverQuery] = [:]
@@ -355,12 +356,32 @@ enum HealthKitService {
         let s = try await stepsDaily
         let c = try await calsDaily
 
-        return HealthKitAllTimeBests(
+        let result = HealthKitAllTimeBests(
             stepsBestDay: bestSingleDay(from: s),
             stepsBestWeek: bestRollingSevenDaySum(from: s),
             calsBestDay: bestSingleDay(from: c),
             calsBestWeek: bestRollingSevenDaySum(from: c)
         )
+#if DEBUG
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        let stepsDayStr = result.stepsBestDay.map { "\($0)" } ?? "nil"
+        let stepsWeekStr = result.stepsBestWeek.map { "\($0)" } ?? "nil"
+        let calsDayStr = result.calsBestDay.map { "\($0)" } ?? "nil"
+        let calsWeekStr = result.calsBestWeek.map { "\($0)" } ?? "nil"
+        let auditLine = [
+            "[BEST_STATS_AUDIT]",
+            "steps_best_day=\(stepsDayStr)",
+            "steps_best_week=\(stepsWeekStr)",
+            "cals_best_day=\(calsDayStr)",
+            "cals_best_week=\(calsWeekStr)",
+            "data_points_count=\(s.count)",
+            "date_range_start=\(iso.string(from: startDate))",
+            "date_range_end=\(iso.string(from: endDate))",
+        ].joined(separator: " ")
+        bestStatsAuditLogger.debug("\(auditLine, privacy: .public)")
+#endif
+        return result
     }
 
     private static func emptySleepSummary(nights: Int) -> HealthSleepSummary {

@@ -57,6 +57,8 @@ struct HomeActiveMatch: Identifiable, Equatable {
     /// When `daysLeft == 1`, local time when the current match day finalizes (10:00 on the calendar day after `match_days.calendar_date`).
     /// Uses the signed-in user’s `profiles.timezone` when available so this matches server cutoff rules.
     let finalDayCutoffAt: Date?
+    /// When `daysLeft == 1`, instant when the scored **calendar day** ends (midnight → start of next day) in profile/device TZ.
+    let finalDayScoreEndsAt: Date?
     let myToday: Int
     let theirToday: Int
     let myScore: Int
@@ -358,6 +360,7 @@ final class HomeRepository {
                 let finalizedCount = dayRows.filter { string(from: $0["status"]) == "finalized" }.count
                 let daysLeft = max(durationDays - finalizedCount, 0)
                 let finalCutoff = finalDayCutoff(from: dayRows, daysLeft: daysLeft, timeZone: profileTimeZone)
+                let scoreEndsAt = finalDayScoreEndsAt(from: dayRows, daysLeft: daysLeft, timeZone: profileTimeZone)
 
                 #if DEBUG
                 if daysLeft == 1, let cutoff = finalCutoff, Date() > cutoff,
@@ -386,6 +389,7 @@ final class HomeRepository {
                             seriesLabel: seriesLabel(for: durationDays),
                             daysLeft: daysLeft,
                             finalDayCutoffAt: finalCutoff,
+                            finalDayScoreEndsAt: scoreEndsAt,
                             myToday: totals.myTotal,
                             theirToday: totals.theirTotal,
                             myScore: scores.myScore,
@@ -553,6 +557,27 @@ final class HomeRepository {
         guard let pending = dayRows.first(where: { string(from: $0["status"]) != "finalized" }),
               let calStr = string(from: pending["calendar_date"]) else { return nil }
         return Self.cutoffDateAfterMatchDay(calendarDateString: calStr, timeZone: timeZone)
+    }
+
+    private func finalDayScoreEndsAt(from dayRows: [[String: Any]], daysLeft: Int, timeZone: TimeZone?) -> Date? {
+        guard daysLeft == 1 else { return nil }
+        guard let pending = dayRows.first(where: { string(from: $0["status"]) != "finalized" }),
+              let calStr = string(from: pending["calendar_date"]) else { return nil }
+        return Self.endOfMatchScorePeriod(calendarDateString: calStr, timeZone: timeZone)
+    }
+
+    /// Start of the calendar day after `calendar_date` (when the competition day ends for scoring).
+    private static func endOfMatchScorePeriod(calendarDateString: String, timeZone: TimeZone?) -> Date? {
+        let tz = timeZone ?? .current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+        let formatter = DateFormatter()
+        formatter.calendar = cal
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = tz
+        guard let dayStart = formatter.date(from: calendarDateString) else { return nil }
+        return cal.date(byAdding: .day, value: 1, to: dayStart)
     }
 
     private static func cutoffDateAfterMatchDay(calendarDateString: String, timeZone: TimeZone?) -> Date? {
