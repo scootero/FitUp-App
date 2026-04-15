@@ -7,6 +7,7 @@
 
 import Foundation
 import HealthKit
+import OSLog
 
 // MARK: - Health screen summaries (Slice 12)
 
@@ -50,13 +51,13 @@ struct HealthSleepSummary: Equatable {
     var varianceHours: Double
     /// Aggregate stage mix over the 7 wake days (percentages sum to ~100).
     var stagePercentagesSevenNight: HealthSleepStagePercentages
-    /// Total hours asleep for **today’s** wake day (same basis as `nightlyAsleepHoursOldestFirst` last bar; aligns with Apple Health “Time Asleep”).
+    /// Total hours asleep for **last night** using the fixed local window (previous calendar day 18:00 → today 12:00); hypnogram and stage mix use the same window.
     var lastNightAsleepHours: Double?
     /// Hours asleep per wake day, **oldest first** (same order as 7-day charts).
     var nightlyAsleepHoursOldestFirst: [Double]
-    /// Stage mix for `lastNightAsleepHours` only; nil when no last-night data.
+    /// Same percents as `lastNightSleepRatio` (Deep / Light as `core` / REM); derived from `SleepRatioBreakdown` only; nil when no last-night data.
     var lastNightStagePercentages: HealthSleepStagePercentages?
-    /// Chronological segments for the last wake night (for hypnogram); empty if none.
+    /// Chronological segments for the last-night clock window (for hypnogram); empty if none.
     var lastNightTimeline: [HealthSleepTimelineSegment]
     /// Deep / Light / REM for the selected last night; nil when no data.
     var lastNightSleepRatio: SleepRatioBreakdown?
@@ -75,6 +76,9 @@ enum HealthMetricType: String {
 }
 
 enum HealthKitService {
+#if DEBUG
+    private static let sleepPipelineLogger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FitUp", category: "healthkit_sleep")
+#endif
     private static let store = HKHealthStore()
     private static var observerQueries: [HKQuantityTypeIdentifier: HKObserverQuery] = [:]
 
@@ -374,6 +378,10 @@ enum HealthKitService {
     }
 
     /// Sleep aggregates for the Health screen (last `nights` local calendar days). Never throws; returns `emptySleepSummary` on failure.
+    ///
+    /// Data source: `HKCategoryTypeIdentifier.sleepAnalysis`. Timeline resolution uses `HKCategoryValueSleepAnalysis`:
+    /// `.asleepDeep`, `.asleepCore`, `.asleepREM`, `.asleepUnspecified` (light), `.awake`, `.inBed`; overlaps pick a winner via `sleepCategoryPriority`.
+    /// Last-night totals and hypnogram use the fixed window previous day 18:00 → today 12:00 (local), not wake-day-only or longest-session selection.
     static func fetchSleepSummary(nights: Int = 7) async -> HealthSleepSummary {
         guard isHealthDataAvailable else {
             AppLogger.log(
@@ -458,52 +466,52 @@ enum HealthKitService {
             awake: pct7(stageSecondsSevenNight["awake"] ?? 0)
         )
 
-        // “Last night” = **today’s** wake day only (no fallback to prior days). Duration = total time asleep for that
-        // wake day (sum of all asleep segments), matching Apple Health “Time Asleep” rather than a single longest
-        // contiguous block — the latter can severely under-count when the watch inserts awake segments mid-night.
+        // Last night: previous calendar day 18:00 → today 12:00 (local). All samples overlapping that window; same overlap resolution; clip to window (see `canonicalMetricsAccumulating`).
         let targetLastNightWakeDay = dayStarts.last
-        let todayMetrics = targetLastNightWakeDay.flatMap { breakdownByWakeDay[$0] }
+        let lastNightBlock = metricsForLastNightClockWindow(samples: samples, calendar: calendar, referenceNow: endDate)
+        let lastNightMetrics = lastNightBlock.metrics
 
         let lastNightHours: Double? = {
-            guard let m = todayMetrics, m.totalAsleepSeconds > 0 else { return nil }
-            return m.totalAsleepSeconds / 3600
+            guard lastNightMetrics.totalAsleepSeconds > 0 else { return nil }
+            return lastNightMetrics.totalAsleepSeconds / 3600
         }()
 
-        var lastNightStageSeconds: [String: Double] = ["deep": 0, "core": 0, "rem": 0, "awake": 0]
         var lastNightTimeline: [HealthSleepTimelineSegment] = []
         var lastNightRatio: SleepRatioBreakdown?
 
-        if let m = todayMetrics, m.totalAsleepSeconds > 0 {
-            lastNightTimeline = m.timeline
-            lastNightStageSeconds["deep"] = m.deepSeconds
-            lastNightStageSeconds["core"] = m.coreSeconds + m.lightSeconds
-            lastNightStageSeconds["rem"] = m.remSeconds
-            lastNightStageSeconds["awake"] = m.awakeSeconds
-            lastNightRatio = sleepRatioBreakdown(from: m)
+        if lastNightMetrics.totalAsleepSeconds > 0 {
+            lastNightTimeline = lastNightMetrics.timeline
+            lastNightRatio = sleepRatioBreakdown(from: lastNightMetrics)
         }
 
-        let totalStageLN = lastNightStageSeconds.values.reduce(0, +)
-        let pctLN: (Double) -> Double = { totalStageLN > 0 ? ($0 / totalStageLN) * 100 : 0 }
-        let lastNightStages: HealthSleepStagePercentages? = (lastNightHours != nil && totalStageLN > 0)
-            ? HealthSleepStagePercentages(
-                deep: pctLN(lastNightStageSeconds["deep"] ?? 0),
-                core: pctLN(lastNightStageSeconds["core"] ?? 0),
-                rem: pctLN(lastNightStageSeconds["rem"] ?? 0),
-                awake: pctLN(lastNightStageSeconds["awake"] ?? 0)
+        let lastNightStages: HealthSleepStagePercentages? = lastNightRatio.map { r in
+            HealthSleepStagePercentages(
+                deep: r.deepPercent,
+                core: r.lightPercent,
+                rem: r.remPercent,
+                awake: 0
             )
-            : nil
+        }
 
         #if DEBUG
-        logSleepAuditDebug(
+        logSleepComparisonV2(
+            windowStart: lastNightBlock.windowStart,
+            windowEnd: lastNightBlock.windowEnd,
+            totalSleepMinutes: lastNightMetrics.totalAsleepSeconds / 60,
+            sampleCount: lastNightBlock.windowSampleCount
+        )
+        logSleepPipelineDebug(
             queryStart: startDate,
             queryEnd: endDate,
             samples: samples,
             dayStarts: dayStarts,
             breakdownByWakeDay: breakdownByWakeDay,
-            lastWakeDay: targetLastNightWakeDay,
-            averageHours: avg,
-            nightlyHours: nightlyHours,
-            lastRatio: lastNightRatio
+            calendar: calendar,
+            lastNightWakeDay: targetLastNightWakeDay,
+            lastNightHours: lastNightHours,
+            lastNightStages: lastNightStages,
+            lastNightRatio: lastNightRatio,
+            lastNightTimeline: lastNightTimeline
         )
         #endif
 
@@ -534,17 +542,19 @@ enum HealthKitService {
     }
 
     private static func sleepRatioBreakdown(from m: CanonicalNightMetrics) -> SleepRatioBreakdown? {
-        let total = m.deepSeconds + m.lightSeconds + m.coreSeconds + m.remSeconds
-        guard total > 0 else { return nil }
-        let lightTotal = m.lightSeconds + m.coreSeconds
-        let pct: (Double) -> Double = { total > 0 ? ($0 / total) * 100 : 0 }
+        let deep = m.deepSeconds
+        let core = m.coreSeconds + m.lightSeconds
+        let rem = m.remSeconds
+        let totalSleep = deep + core + rem
+        guard totalSleep > 0 else { return nil }
+        let pct: (Double) -> Double = { totalSleep > 0 ? ($0 / totalSleep) * 100 : 0 }
         return SleepRatioBreakdown(
-            deepHours: m.deepSeconds / 3600,
-            lightHours: lightTotal / 3600,
-            remHours: m.remSeconds / 3600,
-            deepPercent: pct(m.deepSeconds),
-            lightPercent: pct(lightTotal),
-            remPercent: pct(m.remSeconds)
+            deepHours: deep / 3600,
+            lightHours: core / 3600,
+            remHours: rem / 3600,
+            deepPercent: pct(deep),
+            lightPercent: pct(core),
+            remPercent: pct(rem)
         )
     }
 
@@ -565,10 +575,30 @@ enum HealthKitService {
             }
         }
 
+        return canonicalMetricsAccumulating(daySamples: daySamples, hasStagedSleep: hasStagedSleep, clipToMidpointsIn: nil)
+    }
+
+    /// Shared boundary sweep. When `clipToMidpointsIn` is set, window edges are added to boundaries and only sub-intervals whose midpoint lies in `[clip.start, clip.end)` are accumulated (awake excluded from `totalAsleepSeconds`).
+    private static func canonicalMetricsAccumulating(
+        daySamples: [HKCategorySample],
+        hasStagedSleep: Bool,
+        clipToMidpointsIn: DateInterval?
+    ) -> CanonicalNightMetrics {
+        guard !daySamples.isEmpty else {
+            return CanonicalNightMetrics(
+                totalAsleepSeconds: 0, deepSeconds: 0, coreSeconds: 0, lightSeconds: 0, remSeconds: 0,
+                awakeSeconds: 0, inBedSeconds: 0, timeline: [], longestAsleepContiguousSeconds: 0
+            )
+        }
+
         var boundaries = Set<Date>()
         for s in daySamples {
             boundaries.insert(s.startDate)
             boundaries.insert(s.endDate)
+        }
+        if let clip = clipToMidpointsIn {
+            boundaries.insert(clip.start)
+            boundaries.insert(clip.end)
         }
         let sortedBounds = boundaries.sorted()
         guard sortedBounds.count >= 2 else {
@@ -592,6 +622,9 @@ enum HealthKitService {
             let duration = b.timeIntervalSince(a)
             guard duration > 1e-9 else { continue }
             let mid = a.addingTimeInterval(duration / 2)
+            if let clip = clipToMidpointsIn {
+                guard mid >= clip.start && mid < clip.end else { continue }
+            }
             guard let winner = winningSleepCategory(at: mid, daySamples: daySamples, hasStagedSleep: hasStagedSleep) else { continue }
 
             switch winner {
@@ -632,6 +665,53 @@ enum HealthKitService {
             timeline: mergedTimeline,
             longestAsleepContiguousSeconds: longestAsleep
         )
+    }
+
+    private static func emptyCanonicalNightMetrics() -> CanonicalNightMetrics {
+        CanonicalNightMetrics(
+            totalAsleepSeconds: 0, deepSeconds: 0, coreSeconds: 0, lightSeconds: 0, remSeconds: 0,
+            awakeSeconds: 0, inBedSeconds: 0, timeline: [], longestAsleepContiguousSeconds: 0
+        )
+    }
+
+    /// Previous calendar day 18:00 → today 12:00 (local), for “last night” aggregation.
+    private static func lastNightClockWindowBounds(calendar: Calendar, referenceNow: Date) -> (start: Date, end: Date)? {
+        let todayStart = calendar.startOfDay(for: referenceNow)
+        guard let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: todayStart),
+              let windowStart = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: yesterdayStart),
+              let windowEnd = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: todayStart),
+              windowStart < windowEnd else { return nil }
+        return (windowStart, windowEnd)
+    }
+
+    /// All `sleepAnalysis` samples overlapping the last-night clock window, resolved with `winningSleepCategory`, clipped to the window.
+    private static func metricsForLastNightClockWindow(
+        samples: [HKCategorySample],
+        calendar: Calendar,
+        referenceNow: Date
+    ) -> (metrics: CanonicalNightMetrics, windowStart: Date, windowEnd: Date, windowSampleCount: Int) {
+        guard let bounds = lastNightClockWindowBounds(calendar: calendar, referenceNow: referenceNow) else {
+            return (emptyCanonicalNightMetrics(), referenceNow, referenceNow, 0)
+        }
+        let windowSamples = samples.filter { $0.startDate < bounds.end && $0.endDate > bounds.start }
+        let windowSampleCount = windowSamples.count
+        guard !windowSamples.isEmpty else {
+            return (emptyCanonicalNightMetrics(), bounds.start, bounds.end, 0)
+        }
+        let hasStagedSleep = windowSamples.contains { sample in
+            guard let v = HKCategoryValueSleepAnalysis(rawValue: sample.value) else { return false }
+            switch v {
+            case .asleepDeep, .asleepCore, .asleepREM: return true
+            default: return false
+            }
+        }
+        let interval = DateInterval(start: bounds.start, end: bounds.end)
+        let metrics = canonicalMetricsAccumulating(
+            daySamples: windowSamples,
+            hasStagedSleep: hasStagedSleep,
+            clipToMidpointsIn: interval
+        )
+        return (metrics, bounds.start, bounds.end, windowSampleCount)
     }
 
     /// Higher wins when multiple samples cover the same instant (dedupes overlapping sources).
@@ -726,55 +806,102 @@ enum HealthKitService {
     }
 
     #if DEBUG
-    private static func logSleepAuditDebug(
+    private static func logSleepComparisonV2(
+        windowStart: Date,
+        windowEnd: Date,
+        totalSleepMinutes: Double,
+        sampleCount: Int
+    ) {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let parts = [
+            "[SLEEP_COMPARISON_V2]",
+            "window_start=\(iso.string(from: windowStart))",
+            "window_end=\(iso.string(from: windowEnd))",
+            "total_sleep=\(String(format: "%.1f", totalSleepMinutes))",
+            "sample_count=\(sampleCount)",
+        ]
+        sleepPipelineLogger.debug("\(parts.joined(separator: " "), privacy: .public)")
+    }
+
+    private static func logSleepPipelineDebug(
         queryStart: Date,
         queryEnd: Date,
         samples: [HKCategorySample],
         dayStarts: [Date],
         breakdownByWakeDay: [Date: CanonicalNightMetrics],
-        lastWakeDay: Date?,
-        averageHours: Double,
-        nightlyHours: [Double],
-        lastRatio: SleepRatioBreakdown?
+        calendar: Calendar,
+        lastNightWakeDay: Date?,
+        lastNightHours: Double?,
+        lastNightStages: HealthSleepStagePercentages?,
+        lastNightRatio: SleepRatioBreakdown?,
+        lastNightTimeline: [HealthSleepTimelineSegment]
     ) {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        var lines: [String] = []
-        lines.append("=== Sleep audit (DEBUG) ===")
-        lines.append("query: \(fmt.string(from: queryStart)) .. \(fmt.string(from: queryEnd))")
-        lines.append("raw sample count: \(samples.count)")
-        for (idx, s) in samples.enumerated() {
-            let v = HKCategoryValueSleepAnalysis(rawValue: s.value)
-            let name = String(describing: v)
-            let src = s.sourceRevision.source.name
-            lines.append("  [\(idx)] \(fmt.string(from: s.startDate)) .. \(fmt.string(from: s.endDate)) dur=\(String(format: "%.1f", s.endDate.timeIntervalSince(s.startDate)))s \(name) source=\(src)")
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        var valueCounts: [String: Int] = [:]
+        for s in samples {
+            let key: String
+            if let v = HKCategoryValueSleepAnalysis(rawValue: s.value) {
+                key = String(describing: v)
+            } else {
+                key = "unknown(\(s.value))"
+            }
+            valueCounts[key, default: 0] += 1
         }
-        let cal = Calendar.current
+        let valueCountsStr = valueCounts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+        let sources = Set(samples.map(\.sourceRevision.source.name)).sorted().joined(separator: ",")
+
+        sleepPipelineLogger.debug(
+            "[SLEEP_SAMPLES_SUMMARY] count=\(samples.count) range_start=\(iso.string(from: queryStart)) range_end=\(iso.string(from: queryEnd)) sources=[\(sources)] value_counts=[\(valueCountsStr)]"
+        )
+
+        let dayFmt = ISO8601DateFormatter()
+        dayFmt.formatOptions = [.withInternetDateTime]
         for d in dayStarts {
             guard let m = breakdownByWakeDay[d] else { continue }
-            let key = ISO8601DateFormatter().string(from: d)
-            let rawOnDay = samples.filter { cal.startOfDay(for: $0.endDate) == d }
-            var stagedOnly: Double = 0
-            var genericOnly: Double = 0
-            for s in rawOnDay {
-                let dur = s.endDate.timeIntervalSince(s.startDate)
-                guard dur > 0, let v = HKCategoryValueSleepAnalysis(rawValue: s.value) else { continue }
-                switch v {
-                case .asleepDeep, .asleepCore, .asleepREM: stagedOnly += dur
-                case .asleepUnspecified: genericOnly += dur
-                default: break
-                }
-            }
-            lines.append("wakeDay \(key): canonical_total_h=\(String(format: "%.3f", m.totalAsleepSeconds / 3600)) staged_raw_sum_h=\(String(format: "%.3f", stagedOnly / 3600)) generic_raw_sum_h=\(String(format: "%.3f", genericOnly / 3600)) longest_asleep_h=\(String(format: "%.3f", m.longestAsleepContiguousSeconds / 3600))")
+            let rawOnDay = samples.filter { calendar.startOfDay(for: $0.endDate) == d }
+            let coreInclLightMin = (m.coreSeconds + m.lightSeconds) / 60
+            sleepPipelineLogger.debug(
+                "[SLEEP_WAKE_DAY] model=wake_day wake_day=\(dayFmt.string(from: d)) total_asleep_minutes=\(String(format: "%.1f", m.totalAsleepSeconds / 60)) deep_minutes=\(String(format: "%.1f", m.deepSeconds / 60)) core_minutes=\(String(format: "%.1f", coreInclLightMin)) rem_minutes=\(String(format: "%.1f", m.remSeconds / 60)) awake_minutes=\(String(format: "%.1f", m.awakeSeconds / 60)) sample_count=\(rawOnDay.count) longest_asleep_contiguous_minutes=\(String(format: "%.1f", m.longestAsleepContiguousSeconds / 60))"
+            )
         }
-        lines.append("7-night avg h=\(String(format: "%.3f", averageHours)) nightly_h=[\(nightlyHours.map { String(format: "%.3f", $0) }.joined(separator: ","))]")
-        if let w = lastWakeDay {
-            lines.append("selected lastWakeDay=\(ISO8601DateFormatter().string(from: w))")
+
+        let overnightMin = (lastNightHours ?? 0) * 60
+        let sessionStart = lastNightTimeline.map(\.start).min()
+        let sessionEnd = lastNightTimeline.map(\.end).max()
+        let startStr = sessionStart.map { iso.string(from: $0) } ?? "nil"
+        let endStr = sessionEnd.map { iso.string(from: $0) } ?? "nil"
+
+        var finalParts: [String] = [
+            "[SLEEP_FINAL]",
+            "basis=lastNightStagePercentages_denominator_sleep_only_deep_core_rem",
+            "overnight_minutes=\(String(format: "%.1f", overnightMin))",
+            "session_used_start=\(startStr)",
+            "session_used_end=\(endStr)",
+        ]
+        if let s = lastNightStages {
+            finalParts.append(contentsOf: [
+                "deep_percent=\(String(format: "%.1f", s.deep))",
+                "core_percent=\(String(format: "%.1f", s.core))",
+                "rem_percent=\(String(format: "%.1f", s.rem))",
+                "awake_percent=\(String(format: "%.1f", s.awake))",
+            ])
+        } else {
+            finalParts.append("deep_percent=nil core_percent=nil rem_percent=nil awake_percent=nil")
         }
-        if let r = lastRatio {
-            lines.append("Sleep Ratio: deep \(String(format: "%.1f%%", r.deepPercent)) \(String(format: "%.2f", r.deepHours))h | light \(String(format: "%.1f%%", r.lightPercent)) \(String(format: "%.2f", r.lightHours))h | rem \(String(format: "%.1f%%", r.remPercent)) \(String(format: "%.2f", r.remHours))h")
+        if let r = lastNightRatio {
+            finalParts.append(
+                "ratio_basis=deep_light_rem_excl_awake deep_pct=\(String(format: "%.1f", r.deepPercent)) light_pct=\(String(format: "%.1f", r.lightPercent)) rem_pct=\(String(format: "%.1f", r.remPercent))"
+            )
+        } else {
+            finalParts.append("ratio_basis=deep_light_rem_excl_awake deep_pct=nil light_pct=nil rem_pct=nil")
         }
-        print(lines.joined(separator: "\n"))
+        if let w = lastNightWakeDay {
+            finalParts.append("last_night_wake_day=\(dayFmt.string(from: w))")
+        }
+        sleepPipelineLogger.debug("\(finalParts.joined(separator: " "), privacy: .public)")
     }
     #endif
 

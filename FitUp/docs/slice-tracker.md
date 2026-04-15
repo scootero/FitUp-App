@@ -376,3 +376,18 @@ Supabase changes:
 - Run `slice4e-decline-pending-match.sql` after `slice9-notifications.sql`.
 Notes:
 - Cancels pending matches for both `direct_challenge` and `public_matchmaking`; Home hides rows when `state = 'cancelled'`. Opponent push for random match uses `challenge_declined` like direct decline.
+
+## Slice 15 — Sleep aggregation and stage percentages (HealthKit, final)
+Date: 2026-04-14  
+Status: Complete (spec + implementation)  
+Depends on: Slice 12 — Health screen  
+
+**Docs:** `FitUp/docs/fitup-docs-pack.md` — Section 11, **Sleep data (HealthKit) — authoritative implementation**.  
+**Build slice:** `FitUp/docs/fitup-build-slices.md` — Slice 15.
+
+Files owned / modified (iOS):
+- `FitUp/FitUp/FitUp/Services/HealthKitService.swift` — last-night clock window (18:00 → 12:00 local), `metricsForLastNightClockWindow`, `canonicalMetricsAccumulating`, `sleepRatioBreakdown`, `HealthSleepSummary.lastNightStagePercentages` derived from `SleepRatioBreakdown`
+- `FitUp/FitUp/FitUp/Views/Health/Cards/SleepRatioCard.swift` — percents only from `lastNightSleepRatio`
+
+Notes:
+- Do not use wake-day-only or longest-session-only logic for **last night** totals; see docs Section 11 before changing sleep math.

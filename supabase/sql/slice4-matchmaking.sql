@@ -73,14 +73,14 @@ BEGIN
     v_opponent := v_incoming.creator_id;
   END IF;
 
-  SELECT COALESCE(p.timezone, 'America/New_York')
+  SELECT COALESCE(p.timezone, 'America/Chicago')
   INTO v_tz
   FROM profiles p
   WHERE p.id = v_challenger
   LIMIT 1;
 
   IF v_tz IS NULL OR length(trim(v_tz)) = 0 THEN
-    v_tz := 'America/New_York';
+    v_tz := 'America/Chicago';
   END IF;
 
   INSERT INTO matches (
@@ -171,9 +171,12 @@ BEGIN
     RETURN false;
   END IF;
 
+  -- Match start = 00:00 local on Day 1 in match_timezone (proper timestamptz; server-TZ independent).
+  v_tz := COALESCE(NULLIF(trim(v_tz), ''), 'America/Chicago');
+
   UPDATE matches
   SET state = 'active',
-      starts_at = now()
+      starts_at = (((timezone(v_tz, clock_timestamp()))::date)::timestamp) AT TIME ZONE v_tz
   WHERE id = p_match_id
     AND state = 'pending';
 
@@ -188,7 +191,7 @@ BEGIN
   WHERE id = p_match_id;
 
   IF v_tz IS NULL OR length(trim(v_tz)) = 0 THEN
-    v_tz := 'America/New_York';
+    v_tz := 'America/Chicago';
   END IF;
 
   v_base_date := (timezone(v_tz, v_starts_at))::date;

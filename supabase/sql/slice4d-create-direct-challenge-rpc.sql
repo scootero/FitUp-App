@@ -51,7 +51,7 @@ BEGIN
     RAISE EXCEPTION 'invalid start_mode';
   END IF;
 
-  v_tz := COALESCE(NULLIF(trim(p_match_timezone), ''), 'America/New_York');
+  v_tz := COALESCE(NULLIF(trim(p_match_timezone), ''), 'America/Chicago');
 
   INSERT INTO public.matches (
     match_type,

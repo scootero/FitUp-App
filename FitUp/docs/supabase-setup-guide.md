@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS matches (
   duration_days  int  NOT NULL CHECK (duration_days IN (1, 3, 5, 7)),
   start_mode     text NOT NULL DEFAULT 'today' CHECK (start_mode IN ('today', 'tomorrow')),
   state          text NOT NULL DEFAULT 'pending' CHECK (state IN ('searching', 'pending', 'active', 'completed', 'cancelled')),
-  match_timezone text NOT NULL DEFAULT 'America/New_York',
+  match_timezone text NOT NULL DEFAULT 'America/Chicago',
   starts_at      timestamptz,
   ends_at        timestamptz,
   created_at     timestamptz NOT NULL DEFAULT now(),

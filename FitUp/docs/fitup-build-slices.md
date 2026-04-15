@@ -686,6 +686,8 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] HR Zones shows 5 zones with correct colors and percentages
 - [ ] `ReadinessCalculator` unit tests pass including missing-data cases
 
+**# Sleep data follow-up:** The **authoritative** last-night window (local **18:00 → 12:00**), overlap-resolved totals, and **Sleep Ratio** percentages (`SleepRatioBreakdown` only) are specified in **`fitup-docs-pack.md` §11 Sleep data** and implemented under **Slice 15** (depends on this slice). Do not reintroduce wake-day-only or longest-session-only logic for last-night UI without that slice’s review.
+
 ---
 
 ## Slice 13 — Paywall and Dev Mode
@@ -759,6 +761,44 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] Export produces valid JSON and opens share sheet
 - [ ] Sign Out works and returns to `AuthView`
 - [ ] Dev Mode absent in production build
+
+---
+
+## Slice 15 — Sleep aggregation and stage percentages (HealthKit, final)
+
+**Depends on:** **[Slice 12 — Health screen](#slice-12--health-screen)** (`HealthKitService` sleep reads, Health tab cards). Does not replace Slice 12; it **locks** production rules so sleep totals and % match Apple Health-style full-night aggregation and never regress to session-pick or wake-day-only shortcuts.
+
+**Goal:** Last-night sleep duration, hypnogram, and **Sleep Ratio** (Deep / Light / REM) use one consistent pipeline: fixed **local clock window** (previous day 18:00 → today 12:00), all overlapping `sleepAnalysis` samples, priority-based overlap resolution, **awake excluded** from total sleep and from percentage denominators. UI displays percents **only** from `SleepRatioBreakdown` (`deepPercent`, `lightPercent`, `remPercent`).
+
+**Reference:** **`FitUp/docs/fitup-docs-pack.md` — Section 11, “Sleep data (HealthKit) — authoritative implementation”** — copy changes there if product rules change.
+
+**JSX reference:** Health screen sleep area — `HealthScreen` / sleep cards; numeric behavior is defined by the docs pack, not JSX.
+
+**Files to implement / own (as-built):**
+- `FitUp/FitUp/FitUp/Services/HealthKitService.swift` — `metricsForLastNightClockWindow`, `canonicalMetricsAccumulating`, `sleepRatioBreakdown`, `fetchSleepSummary` last-night fields
+- `FitUp/FitUp/FitUp/Views/Health/Cards/SleepRatioCard.swift` — binds **only** to `lastNightSleepRatio`
+- `FitUp/FitUp/FitUp/ViewModels/HealthViewModel.swift` — loads summary; logs `sleep_ratio_*_pct` from ratio breakdown
+
+**Deliverables (behavioral):**
+- **Last night window:** `window_start` = previous calendar day 18:00, `window_end` = today 12:00, **`Calendar.current`** (user local timezone).
+- **Samples:** every `HKCategorySample` overlapping the window; no “single session” or “longest block only” filter for the primary total.
+- **Stages counted toward asleep total:** deep, core, rem, unspecified; **awake** not counted toward total sleep.
+- **Overlap handling:** existing `winningSleepCategory` / priority merge — no double-counting.
+- **Percentages:** `total_sleep = deep + core + rem` (with unspecified merged into light/core per `sleepRatioBreakdown`); **Sleep Ratio** UI uses `SleepRatioBreakdown` fields only; `lastNightStagePercentages` in `HealthSleepSummary` is **derived from** `lastNightSleepRatio` so it cannot drift.
+- **No data:** empty state copy for last night when total asleep is 0.
+- **Debug (optional):** `[SLEEP_COMPARISON_V2]` / pipeline logs — do not ship noisy raw sample dumps.
+
+**Do not (regressions):**
+- Use `startOfDay` **only** to define last night (wake-day bucketing) for the **primary** last-night card total.
+- Restrict to a single device source (e.g. Ring-only).
+- Include **awake** in total sleep or in Sleep Ratio % denominators.
+- Show Sleep Ratio percents from a separate `HealthSleepStagePercentages` calculation that could include awake in the denominator.
+
+**Acceptance criteria:**
+- [ ] Last-night hours match Apple **Time Asleep**-style full-night aggregation for the window (validate against Health app within a few minutes).
+- [ ] Sleep Ratio row percents match `sleep_ratio_*_pct` in Health load logs (from `lastNightSleepRatio`).
+- [ ] `fitup-docs-pack.md` Section 11 (Sleep data) matches shipped behavior.
+- [ ] Changing only wake-day logic cannot accidentally change last-night totals (separate code path).
 
 ---
 
@@ -848,6 +888,7 @@ Use this with **`FitUp/docs/slice-tracker.md`** (detailed file lists) and **`Fit
 | 12 | Health | Complete — `ReadinessCalculator`, extra HK types (workouts, heart rate) |
 | 13 | Paywall + Dev Mode | Complete — RevenueCat entitlement id **`pro`**, products `fitup_pro_annual` / `fitup_pro_monthly` |
 | 14 | Profile + Dev Tools | Complete |
+| 15 | Sleep aggregation + % (HealthKit, final) | Complete — depends on Slice 12; see **`fitup-docs-pack.md` Section 11 (Sleep data)** |
 
 ### # Extra work not in the original slice list (required for parity)
 
@@ -855,6 +896,7 @@ Use this with **`FitUp/docs/slice-tracker.md`** (detailed file lists) and **`Fit
 - **# Matchmaking reliability (Slice 4b):** Shared `matchmakingPairing.ts`, `retry-matchmaking-search` Edge Function, `slice4b-matchmaking-stale-retry.sql` (cron), client retries + cancel-duplicate-search behavior. See tracker + `supabase-setup-guide.md`.
 - **# RLS / SQL fixes:** e.g. `slice4c-direct-challenge-rls.sql`, `slice4d-create-direct-challenge-rpc.sql`, `fix-match-participants-rls-recursion.sql` — follow setup guide run order.
 - **# Decline pending match (Slice 4e):** `supabase/sql/slice4e-decline-pending-match.sql` — `decline_pending_match` RPC + notification trigger; `HomeRepository.declinePendingMatch` calls RPC for direct + public matchmaking pending rows.
+- **# Sleep pipeline (Slice 15):** Final last-night window + overlap merge + `SleepRatioBreakdown`-only UI; documented in **`fitup-docs-pack.md` Section 11 (Sleep data)**. Extends Health work from Slice 12 — do not edit without re-reading that section.
 - **# iOS config (not all in original Slice 0 bullet list):** `FitUp/FitUp/Config/` — `Debug.xcconfig`, `Secrets.example.xcconfig` → copy to **`Secrets.xcconfig`** (gitignored), `Info-Additional.plist`, `FitUp.entitlements`; deployment target **18.6**; HealthKit + Push capabilities; widget extension **`FitUpWidgetExtension`** for Live Activities (`FitUpActivityAttributes.swift` shared into extension).
 - **# Authentication / “portal” work:** There is **no separate admin web app** in this repo. “Portal” in practice means **Apple Developer Portal** (App ID, Push Notifications, Sign in with Apple, Widget Extension ID) and **Supabase Dashboard** (Auth providers, SQL, Edge Functions, secrets, Vault for service role / `pg_net`). See **`FitUp/docs/supabase-setup-guide.md`** Step 8+ and Slice 9 notes in **`slice-tracker.md`**.
 

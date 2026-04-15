@@ -147,7 +147,7 @@ final class MatchDetailsRepository {
         let durationDays = int(from: matchRow["duration_days"]) ?? 1
         let startsAt = date(from: matchRow["starts_at"])
         let endsAt = date(from: matchRow["ends_at"])
-        let matchTimezone = string(from: matchRow["match_timezone"]) ?? "America/New_York"
+        let matchTimezone = string(from: matchRow["match_timezone"]) ?? "America/Chicago"
 
         let participantRows = try await fetchParticipantRows(matchId: matchId)
         let myAcceptedAt = participantRows

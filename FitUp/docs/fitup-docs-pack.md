@@ -316,7 +316,7 @@ App Launch
 | Battle Readiness | Ring gauge (0–100), Strong/Moderate/Low label, quick stats row |
 | Week chart | 7-day bar chart (steps or calories), segmented toggle |
 | Component Breakdown | Per-factor scores and progress bars (sleep, HR, step pace, cals) |
-| Sleep Quality | 7-night average, variance, sleep stage stacked bar |
+| Sleep Quality | Last night: duration + hypnogram + Sleep Ratio (see **Section 11 — Sleep data**); 7-night average + variance + bars |
 | HR Zones | Resting HR, 5-zone breakdown |
 | JSX reference | `HealthScreen` |
 
@@ -797,7 +797,7 @@ Background freshness is **best effort**. The app uses multiple complementary cha
 | HealthKit background delivery (`HKObserverQuery`) | Incremental sync when HealthKit wakes the app — read new samples, write delta to Supabase |
 | App opens (any reason) | Fresh HealthKit read and Supabase sync |
 | Push-triggered silent notification | App wakes in background, reads HealthKit, syncs to Supabase |
-| Health screen opened | Full health data fetch including HR and sleep stages |
+| Health screen opened | Full health data fetch including HR and sleep (last night uses **18:00 → 12:00 local** window; see **Section 11 — Sleep data**) |
 
 **Do not imply** that data updates on a fixed schedule (e.g. "every 10 minutes") while the app is closed. HealthKit background delivery frequency is controlled by iOS and varies. Design the UI to show `last_updated_at` where relevant so users understand data freshness.
 
@@ -811,6 +811,67 @@ If `match_day_participants.last_updated_at` for the opponent is more than **~2 h
 - Flagged data still counts in v1 — no automatic disqualification
 - All flagged rows logged to `app_logs` (category: `healthkit_sync`)
 
+### Sleep data (HealthKit) — authoritative implementation
+
+**Source:** `HKCategoryTypeIdentifier.sleepAnalysis` only. Apple does **not** expose a single “total sleep” API; FitUp computes all totals and percentages from raw `HKCategorySample` rows processed in [`HealthKitService`](FitUp/FitUp/FitUp/Services/HealthKitService.swift).
+
+**Implementation slice:** **`fitup-build-slices.md` — Slice 15** (Sleep aggregation and stage percentages; depends on Slice 12). Locks the rules below. **Do not revert** to wake-day-only assignment, single-session selection, longest-block-only totals, or raw-sum-without-overlap handling without explicit review and Apple Health validation.
+
+#### Definition: “Last night” (local time)
+
+| Boundary | Rule |
+|---|---|
+| Window start | **Previous calendar day 18:00** (6 PM), **local** (`Calendar.current`) |
+| Window end | **Current calendar day 12:00** (noon), **local** |
+
+All `sleepAnalysis` samples that **overlap** `[window_start, window_end)` belong to that night. This is a **fixed clock window**, not `startOfDay` wake-day filtering and not “latest session” or “longest contiguous block” selection.
+
+#### Aggregation pipeline
+
+1. **Fetch** all `sleepAnalysis` samples whose time range intersects the night window (query range must cover the window; no Ring-only / single-source filtering — overlaps are resolved in software).
+2. **Include** stages: `asleepDeep`, `asleepCore`, `asleepREM`, `asleepUnspecified` (mapped to “light” buckets in UI math where noted).
+3. **Exclude** `awake` from **total sleep** and from **percentage denominators**.
+4. **Overlap resolution:** use existing priority-based winner per sub-interval (`winningSleepCategory` / `sleepCategoryPriority`); **never** sum overlapping wall-clock time twice.
+5. **Window clipping:** window edges are included in the boundary sweep so accumulation matches the 18:00–12:00 span (see `canonicalMetricsAccumulating` + `clipToMidpointsIn`).
+
+#### Total sleep
+
+`total_sleep` = **deep + core + rem + unspecified** (seconds summed after overlap resolution and window clip). Unspecified may be rolled into **light** for percentage math in `sleepRatioBreakdown`. **Awake** and **inBed** do not add to “time asleep” totals (see `HealthKitService` resolution rules).
+
+#### Stage percentages (UI — critical)
+
+Percents for the **Sleep Ratio** card come **only** from [`SleepRatioBreakdown`](FitUp/FitUp/FitUp/Services/HealthKitService.swift) (`deepPercent`, `lightPercent`, `remPercent`) — i.e. **not** from ad-hoc `deep`/`core`/`rem` fields that could accidentally include **awake** in the denominator.
+
+| Concept | Formula |
+|---|---|
+| Denominator | `total_sleep = deep + core + rem` (core includes merged unspecified where applicable in `sleepRatioBreakdown`) |
+| Deep % | `deep / total_sleep × 100` |
+| Light % | `(core + unspecified) / total_sleep × 100` as **light** (labeled “Light” in UI) |
+| REM % | `rem / total_sleep × 100` |
+
+**Awake** is **never** in the denominator. [`SleepRatioCard`](FitUp/FitUp/FitUp/Views/Health/Cards/SleepRatioCard.swift) reads `summary.lastNightSleepRatio` only.
+
+#### Seven-night aggregate
+
+- **Bars / nightly hours:** wake-day canonical metrics may still be used for **7-night charts** (historical design); **last night** uses the **clock window** above.
+- **Averages:** one value per night in range, then average over the last 7 nights (see `HealthSleepSummary` fields).
+
+#### No data
+
+- If there is no qualifying sleep in the window: total sleep = 0; UI shows **“No sleep data from last night”** (and related empty states).
+
+#### Do / don’t (enforcement)
+
+| Don’t | Do |
+|---|---|
+| Use `startOfDay` **alone** to define “last night” for the **primary** total now shown on Health | Use the **18:00 → 12:00** window for last-night totals and hypnogram |
+| Select a single session or only the longest contiguous asleep block for **last night** | Aggregate **all** segments in the window after overlap resolution |
+| Sum raw samples ignoring overlaps | Keep **priority merge** at duplicate instants |
+| Include **awake** in total sleep or in % denominator for Sleep Ratio | Exclude **awake**; use `SleepRatioBreakdown` for displayed % |
+| Restrict to one hardware source | Treat HealthKit as **multi-source**; dedupe by overlap rules, not by dropping sources |
+
+Any change to the window bounds, aggregation pass, or percentage basis requires **product + engineering review** and re-validation against Apple Health.
+
 ---
 
 ## 12. Battle Readiness Formula
@@ -818,7 +879,7 @@ If `match_day_participants.last_updated_at` for the opponent is more than **~2 h
 Computed on-device by `ReadinessCalculator` — a pure Swift function. Not stored in the database.
 
 **Inputs from HealthKit:**
-- `sleepHrs` — last night's total sleep hours
+- `sleepHrs` — last night's total sleep hours (same **18:00 → 12:00 local** window as Health screen; see **Section 11 — Sleep data**)
 - `restingHR` — most recent resting heart rate (bpm)
 - `stepsToday` — today's step count
 - `calsToday` — today's active calories
@@ -1130,6 +1191,7 @@ or the design system — stop and ask. Do not guess.
 | RevenueCat | Configured day one |
 | Dev Mode | Debug builds only — absent from production |
 | Onboarding first match | 1 day, steps, today — single tap to start |
+| Sleep (Health tab) | Last night = **local 18:00 prior day → 12:00 today**; overlap-resolved samples; totals/% from `SleepRatioBreakdown` — **Slice 15** |
 
 ### Open items — `[CONFIRM]`
 
@@ -1150,6 +1212,7 @@ or the design system — stop and ask. Do not guess.
 | # Supabase backend (beyond Section 15 table) | **`matchmaking-pairing`**, **`on-all-accepted`**, **`retry-matchmaking-search`**; SQL: **`slice4-matchmaking.sql`**, **`slice8-finalization.sql`**, **`slice9-notifications.sql`**, **`slice4b-matchmaking-stale-retry.sql`**, **`slice4e-decline-pending-match.sql`**, plus RLS/RPC helper files in `supabase/sql/` — run order in **`FitUp/docs/supabase-setup-guide.md`** |
 | # “Portal” | **No in-repo admin web UI.** Configure **Apple Developer Portal** (identifiers, Push, Sign in with Apple, widget App ID) and **Supabase Dashboard** (Auth, SQL, Edge Functions, secrets, Vault for service role / `pg_net` triggers). |
 | # Decline behavior | Pending decline for **direct and public matchmaking** uses RPC + triggers (`slice4e-decline-pending-match.sql`); challenger may receive `challenge_declined`-style notification for random match decline |
+| # Sleep (Slice 15) | Last night = local **18:00 → 12:00** `sleepAnalysis` window; overlap merge; **Sleep Ratio** UI from `SleepRatioBreakdown` only — **Section 11** + `fitup-build-slices.md` Slice 15 |
 
 ---
 

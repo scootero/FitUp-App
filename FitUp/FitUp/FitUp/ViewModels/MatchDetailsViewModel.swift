@@ -239,7 +239,7 @@ final class MatchDetailsViewModel: ObservableObject {
     @Published private(set) var opponentTodayLastSyncedAt: Date?
     @Published private(set) var startsAt: Date?
     @Published private(set) var endsAt: Date?
-    @Published private(set) var matchTimezone: String = "America/New_York"
+    @Published private(set) var matchTimezone: String = "America/Chicago"
 
     @Published private(set) var myTodayHK: Int?
     @Published private(set) var healthKitStale = false

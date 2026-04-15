@@ -2,7 +2,8 @@
 //  SleepRatioCard.swift
 //  FitUp
 //
-//  Deep / Light / REM from canonical HealthKit pipeline.
+//  Deep / Light / REM — percents and hours come only from `HealthSleepSummary.lastNightSleepRatio`
+//  (`SleepRatioBreakdown`: deepPercent, lightPercent, remPercent). Do not use `lastNightStagePercentages` for display.
 //
 
 import SwiftUI
@@ -41,7 +42,7 @@ struct SleepRatioCard: View {
                 .foregroundStyle(FitUpColors.Text.tertiary)
                 .frame(width: 44, alignment: .leading)
             Spacer(minLength: 8)
-            Text(String(format: "%.0f%%", percent))
+            Text(String(format: "%.1f%%", percent))
                 .font(FitUpFont.display(14, weight: .bold))
                 .foregroundStyle(color)
             Text(durationText(hours: hours))
