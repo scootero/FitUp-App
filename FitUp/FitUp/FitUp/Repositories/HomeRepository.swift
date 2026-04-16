@@ -76,6 +76,10 @@ struct HomePendingMatch: Identifiable, Equatable {
     let sportLabel: String
     let seriesLabel: String
     let opponent: HomeOpponent
+    /// Current user has set `accepted_at` on `match_participants`.
+    let hasAcceptedByMe: Bool
+    /// Opponent has set `accepted_at`.
+    let hasAcceptedByOpponent: Bool
 }
 
 struct HomeDiscoverUser: Identifiable, Equatable {
@@ -352,6 +356,9 @@ final class HomeRepository {
                 let myAccepted = participantRows
                     .first(where: { uuid(from: $0["user_id"]) == currentUserId })
                     .flatMap { date(from: $0["accepted_at"]) } != nil
+                let theyAccepted = participantRows
+                    .first(where: { uuid(from: $0["user_id"]) == opponentId })
+                    .flatMap { date(from: $0["accepted_at"]) } != nil
 
                 let dayRows = await fetchDayRows(matchId: matchId)
                 let scores = deriveScores(dayRows: dayRows, currentUserId: currentUserId, opponentId: opponentId)
@@ -399,7 +406,7 @@ final class HomeRepository {
                             dayPips: dayPips
                         )
                     )
-                } else if !myAccepted {
+                } else if state == "pending" {
                     let challengeId = await fetchChallengeId(matchId: matchId)
                     pending.append(
                         HomePendingMatch(
@@ -409,7 +416,9 @@ final class HomeRepository {
                             durationDays: durationDays,
                             sportLabel: sportLabel(for: metricType),
                             seriesLabel: seriesLabel(for: durationDays),
-                            opponent: opponent
+                            opponent: opponent,
+                            hasAcceptedByMe: myAccepted,
+                            hasAcceptedByOpponent: theyAccepted
                         )
                     )
                 }

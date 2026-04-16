@@ -34,37 +34,40 @@ struct ProfileView: View {
 #endif
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                titleHeader
-                heroCard
-                upgradeBannerIfNeeded
-                accountGroup
-                subscriptionGroup
-                devSection
-                signOutRow
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    titleHeader
+                    heroCard
+                    upgradeBannerIfNeeded
+                    accountGroup
+                    subscriptionGroup
+                    healthDataInfoGroup
+                    devSection
+                    signOutRow
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 40)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 40)
-        }
-        .task {
-            await viewModel.load(profile: profile)
-            if let enabled = profile?.notificationsEnabled {
-                notificationsEnabled = enabled
+            .task {
+                await viewModel.load(profile: profile)
+                if let enabled = profile?.notificationsEnabled {
+                    notificationsEnabled = enabled
+                }
             }
-        }
-        .onChange(of: notificationsEnabled) { _, newValue in
-            guard let authUserId = profile?.authUserId else { return }
-            Task {
-                await ProfileRepository().updateNotificationsEnabled(newValue, authUserId: authUserId)
+            .onChange(of: notificationsEnabled) { _, newValue in
+                guard let authUserId = profile?.authUserId else { return }
+                Task {
+                    await ProfileRepository().updateNotificationsEnabled(newValue, authUserId: authUserId)
+                }
             }
-        }
-        .sheet(isPresented: $showPaywall) {
-            PaywallView { showPaywall = false }
-        }
-        .sheet(isPresented: $showEditDisplayName) {
-            editDisplayNameSheet
+            .sheet(isPresented: $showPaywall) {
+                PaywallView { showPaywall = false }
+            }
+            .sheet(isPresented: $showEditDisplayName) {
+                editDisplayNameSheet
+            }
         }
     }
 
@@ -226,6 +229,38 @@ struct ProfileView: View {
                 showSeparator: false,
                 action: .chevron { showPaywall = true }
             )
+        }
+    }
+
+    // MARK: - DATA (Health)
+
+    private var healthDataInfoGroup: some View {
+        SettingsGroupView(title: "DATA") {
+            NavigationLink {
+                HealthDataBreakdownView(profile: profile)
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.white.opacity(0.07))
+                            .frame(width: 28, height: 28)
+                        Image(systemName: "heart.text.square")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                    }
+                    Text("Health Data Info")
+                        .font(FitUpFont.body(14))
+                        .foregroundStyle(FitUpColors.Text.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 13)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 

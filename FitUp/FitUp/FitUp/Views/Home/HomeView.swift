@@ -110,7 +110,21 @@ struct HomeView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 .zIndex(1)
             }
+
+            if let declinedOpponent = viewModel.declineFeedbackOpponentName {
+                VStack {
+                    Spacer()
+                    ChallengeDeclinedToast(opponentName: declinedOpponent) {
+                        viewModel.dismissDeclineFeedback()
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 28)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(2)
+            }
         }
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: viewModel.declineFeedbackOpponentName)
         .task(id: profile?.id) {
             viewModel.start(profile: profile, showOnboardingSearching: showOnboardingSearching)
         }
@@ -258,6 +272,60 @@ struct HomeView: View {
             initials: user.initials,
             colorHex: user.colorHex
         )
+    }
+}
+
+// MARK: - Challenge declined toast (retro)
+
+private struct ChallengeDeclinedToast: View {
+    let opponentName: String
+    var onDismiss: () -> Void
+
+    @State private var appeared = false
+
+    var body: some View {
+        Button(action: onDismiss) {
+            VStack(spacing: 6) {
+                Text("CHALLENGE DECLINED")
+                    .font(FitUpFont.mono(13, weight: .heavy))
+                    .foregroundStyle(FitUpColors.Neon.pink)
+                    .shadow(color: FitUpColors.Neon.pink.opacity(0.45), radius: 8)
+                Text("VS \(opponentName.uppercased())")
+                    .font(FitUpFont.mono(11, weight: .semibold))
+                    .foregroundStyle(FitUpColors.Neon.yellow.opacity(0.95))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                    .fill(Color(rgb: 0x0A1020).opacity(0.96))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        FitUpColors.Neon.pink.opacity(0.85),
+                                        FitUpColors.Neon.purple.opacity(0.5),
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                lineWidth: 1.5
+                            )
+                    )
+            )
+            .shadow(color: FitUpColors.Neon.pink.opacity(0.2), radius: 16)
+            .scaleEffect(appeared ? 1 : 0.94)
+            .opacity(appeared ? 1 : 0)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Challenge declined, tap to dismiss")
+        .onAppear {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                appeared = true
+            }
+        }
     }
 }
 

@@ -30,6 +30,8 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var activeActionPendingMatchID: UUID?
     /// Shown when a search (including onboarding placeholder) resolves into a new pending match while Home is loaded.
     @Published private(set) var matchFoundCelebration: HomePendingMatch?
+    /// Short retro banner after successfully declining a pending match from Home.
+    @Published private(set) var declineFeedbackOpponentName: String?
 
     var hasAnyContent: Bool {
         !searchingRequests.isEmpty || !activeMatches.isEmpty || !pendingMatches.isEmpty
@@ -45,6 +47,7 @@ final class HomeViewModel: ObservableObject {
     private var shouldShowOnboardingPlaceholder = false
     private var hasStartedRealtime = false
     private var celebrationDismissTask: Task<Void, Never>?
+    private var declineFeedbackDismissTask: Task<Void, Never>?
 
     func start(profile: Profile?, showOnboardingSearching: Bool) {
         guard let profileId = profile?.id else { return }
@@ -77,7 +80,10 @@ final class HomeViewModel: ObservableObject {
         waitTimerCancellable = nil
         celebrationDismissTask?.cancel()
         celebrationDismissTask = nil
+        declineFeedbackDismissTask?.cancel()
+        declineFeedbackDismissTask = nil
         matchFoundCelebration = nil
+        declineFeedbackOpponentName = nil
         repository.stopRealtimeSubscriptions()
         hasStartedRealtime = false
     }
@@ -138,6 +144,26 @@ final class HomeViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             guard !Task.isCancelled else { return }
             dismissMatchFoundCelebration()
+        }
+    }
+
+    func dismissDeclineFeedback() {
+        declineFeedbackDismissTask?.cancel()
+        declineFeedbackDismissTask = nil
+        withAnimation(.easeOut(duration: 0.22)) {
+            declineFeedbackOpponentName = nil
+        }
+    }
+
+    private func showDeclineFeedback(opponentName: String) {
+        declineFeedbackDismissTask?.cancel()
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
+            declineFeedbackOpponentName = opponentName
+        }
+        declineFeedbackDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            guard !Task.isCancelled else { return }
+            dismissDeclineFeedback()
         }
     }
 
@@ -206,9 +232,11 @@ final class HomeViewModel: ObservableObject {
         activeActionPendingMatchID = pendingMatch.id
         defer { activeActionPendingMatchID = nil }
 
+        let opponentName = pendingMatch.opponent.displayName
         do {
             try await repository.declinePendingMatch(challengeId: pendingMatch.challengeId, matchId: pendingMatch.id)
             await reload(force: true)
+            showDeclineFeedback(opponentName: opponentName)
         } catch {
             errorMessage = "Could not decline challenge right now."
             AppLogger.log(category: "matchmaking", level: .warning, message: "decline challenge failed", metadata: ["error": error.localizedDescription])

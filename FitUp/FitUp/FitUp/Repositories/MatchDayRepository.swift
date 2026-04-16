@@ -48,15 +48,6 @@ final class MatchDayRepository {
 
             var writes: [MatchDaySyncWrite] = []
             for match in matches {
-                let total: Int?
-                switch match.metricType {
-                case .steps:
-                    total = stepsTotal
-                case .activeCalories:
-                    total = caloriesTotal
-                }
-                guard let total else { continue }
-
                 do {
                     let participantIds = try await fetchParticipantIds(matchId: match.id)
                     let dayRows = try await ensureMatchDays(
@@ -67,19 +58,82 @@ final class MatchDayRepository {
                         continue
                     }
 
+                    if targetDay.status == "finalized" {
+                        continue
+                    }
+
+                    let matchTZ = TimeZone(identifier: match.matchTimezone ?? "")
+                    let formatter = Self.calendarFormatter(timezone: matchTZ)
+                    let todayString = formatter.string(from: Date())
+
+                    let resolvedTotal: Int
+                    let querySource: String
+
+                    if targetDay.calendarDate == todayString {
+                        let live: Int?
+                        switch match.metricType {
+                        case .steps:
+                            live = stepsTotal
+                        case .activeCalories:
+                            live = caloriesTotal
+                        }
+                        guard let live else { continue }
+                        resolvedTotal = live
+                        querySource = "today"
+                    } else {
+                        guard let dayDate = dateFromCalendarString(targetDay.calendarDate, timezone: matchTZ) else {
+                            continue
+                        }
+                        do {
+                            resolvedTotal = try await HealthKitService.fetchMetricTotal(
+                                metricType: match.metricType,
+                                for: dayDate,
+                                timeZone: matchTZ
+                            )
+                            querySource = "calendar_day"
+                        } catch {
+                            AppLogger.log(
+                                category: "healthkit_sync",
+                                level: .warning,
+                                message: "active match calendar-day metric read failed",
+                                userId: currentUserId,
+                                metadata: [
+                                    "match_id": match.id.uuidString,
+                                    "calendar_date": targetDay.calendarDate,
+                                    "error": error.localizedDescription,
+                                ]
+                            )
+                            continue
+                        }
+                    }
+
                     try await updateMetricTotal(
                         matchDayId: targetDay.id,
                         userId: currentUserId,
-                        metricTotal: total
+                        metricTotal: resolvedTotal
                     )
                     try await markDayProvisional(matchDayId: targetDay.id)
                     writes.append(
                         MatchDaySyncWrite(
                             matchId: match.id,
                             metricType: match.metricType,
-                            value: total,
+                            value: resolvedTotal,
                             sourceDate: targetDay.calendarDate
                         )
+                    )
+                    AppLogger.log(
+                        category: "match_debug",
+                        level: .debug,
+                        message: "active match metric_total sync",
+                        userId: currentUserId,
+                        metadata: [
+                            "match_id": match.id.uuidString,
+                            "match_day_id": targetDay.id.uuidString,
+                            "calendar_date": targetDay.calendarDate,
+                            "query_source": querySource,
+                            "metric_total": "\(resolvedTotal)",
+                            "metric_type": match.metricType.rawValue,
+                        ]
                     )
                 } catch {
                     AppLogger.log(
