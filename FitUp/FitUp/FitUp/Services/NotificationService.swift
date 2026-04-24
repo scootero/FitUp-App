@@ -30,6 +30,9 @@ final class NotificationService: NSObject, ObservableObject {
     /// Published so `ContentView` / `RootShellView` can react to tapped notifications.
     @Published private(set) var pendingDeepLink: NotificationDeepLink?
 
+    /// Wired from `FitUpApp` so `match_found` pushes can queue a Home celebration match id.
+    weak var sessionStore: SessionStore?
+
     private override init() {
         super.init()
         UNUserNotificationCenter.current().delegate = self
@@ -80,11 +83,20 @@ final class NotificationService: NSObject, ObservableObject {
         return pendingDeepLink
     }
 
+    func attachSessionStore(_ store: SessionStore) {
+        sessionStore = store
+    }
+
     // MARK: - Private helpers
 
     private func routeNotification(userInfo: [AnyHashable: Any]) {
-        let target = userInfo["deep_link_target"] as? String ?? ""
+        let eventType = userInfo["event_type"] as? String ?? ""
         let matchIdString = userInfo["match_id"] as? String ?? ""
+        if eventType == "match_found", let uuid = UUID(uuidString: matchIdString) {
+            sessionStore?.queueMatchFoundCelebration(matchId: uuid)
+        }
+
+        let target = userInfo["deep_link_target"] as? String ?? ""
 
         switch target {
         case "match_details":

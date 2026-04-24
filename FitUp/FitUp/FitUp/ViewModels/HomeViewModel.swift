@@ -48,9 +48,18 @@ final class HomeViewModel: ObservableObject {
     private var hasStartedRealtime = false
     private var celebrationDismissTask: Task<Void, Never>?
     private var declineFeedbackDismissTask: Task<Void, Never>?
+    private weak var sessionStore: SessionStore?
 
-    func start(profile: Profile?, showOnboardingSearching: Bool) {
+    private static let publicMatchmakingMatchType = "public_matchmaking"
+    private static let matchFoundCelebrationFreshnessSeconds: TimeInterval = 300
+
+    private static func isMatchCreationFreshForCelebration(_ pending: HomePendingMatch) -> Bool {
+        max(0, Date().timeIntervalSince(pending.createdAt)) < matchFoundCelebrationFreshnessSeconds
+    }
+
+    func start(profile: Profile?, showOnboardingSearching: Bool, sessionStore: SessionStore) {
         guard let profileId = profile?.id else { return }
+        self.sessionStore = sessionStore
         myDisplayName = profile?.displayName ?? "You"
         profileTimeZoneIdentifier = profile?.timezone
 
@@ -119,8 +128,34 @@ final class HomeViewModel: ObservableObject {
         completedMatches = completed
         stats = Self.makeStats(from: completed)
 
-        if hadSearchingUI, searchingRequests.isEmpty, !newPendingMatchIds.isEmpty,
-           let celebration = snapshot.pendingMatches.first(where: { newPendingMatchIds.contains($0.id) }) {
+        var celebration: HomePendingMatch?
+        if snapshot.searching.isEmpty, !newPendingMatchIds.isEmpty {
+            if hadSearchingUI,
+               let m = snapshot.pendingMatches.first(where: { newPendingMatchIds.contains($0.id) }),
+               !MatchFoundCelebrationStore.hasShown(profileId: userId, matchId: m.id) {
+                celebration = m
+            } else if !hadSearchingUI,
+                      let m = snapshot.pendingMatches.first(where: { pending in
+                          newPendingMatchIds.contains(pending.id)
+                              && pending.matchType == Self.publicMatchmakingMatchType
+                              && Self.isMatchCreationFreshForCelebration(pending)
+                      }),
+                      !MatchFoundCelebrationStore.hasShown(profileId: userId, matchId: m.id) {
+                celebration = m
+            }
+        }
+
+        if celebration == nil, snapshot.searching.isEmpty {
+            let pendingIds = Set(snapshot.pendingMatches.map(\.id))
+            if let qid = sessionStore?.takePendingMatchFoundCelebrationIfPendingContains(pendingIds),
+               let m = snapshot.pendingMatches.first(where: { $0.id == qid }),
+               m.matchType == Self.publicMatchmakingMatchType,
+               !MatchFoundCelebrationStore.hasShown(profileId: userId, matchId: m.id) {
+                celebration = m
+            }
+        }
+
+        if let celebration {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
                 matchFoundCelebration = celebration
             }
@@ -133,6 +168,9 @@ final class HomeViewModel: ObservableObject {
     func dismissMatchFoundCelebration() {
         celebrationDismissTask?.cancel()
         celebrationDismissTask = nil
+        if let id = matchFoundCelebration?.id, let profileId = userId {
+            MatchFoundCelebrationStore.markShown(profileId: profileId, matchId: id)
+        }
         withAnimation(.easeOut(duration: 0.22)) {
             matchFoundCelebration = nil
         }

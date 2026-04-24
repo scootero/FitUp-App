@@ -20,6 +20,9 @@ final class SessionStore: ObservableObject {
     @Published private(set) var healthKitPromptCompleted = false
     @Published private(set) var showSearchingCardOnHome = false
 
+    /// Set by push handling (`match_found`); consumed when Home loads a pending card for this id.
+    private var pendingMatchFoundCelebrationMatchId: UUID?
+
     private let profileRepository = ProfileRepository()
 
     private static let onboardingKey = "onboardingComplete"
@@ -47,20 +50,45 @@ final class SessionStore: ObservableObject {
         do {
             let session = try await client.auth.session
             let authUserId = try Self.resolveAuthUserId(from: session.user.id)
-            currentProfile = try await profileRepository.fetchProfile(authUserId: authUserId)
-            isAuthenticated = true
-            showSearchingCardOnHome = false
-            syncHealthKitPromptCompletedFromDefaults()
-            AppLogger.log(
-                category: "auth",
-                level: .info,
-                message: "session restored",
-                userId: currentProfile?.id
-            )
+            let profile = try await profileRepository.fetchProfile(authUserId: authUserId)
+            if let profile {
+                currentProfile = profile
+                isAuthenticated = true
+                showSearchingCardOnHome = false
+                syncHealthKitPromptCompletedFromDefaults()
+                AppLogger.log(
+                    category: "auth",
+                    level: .info,
+                    message: "session restored",
+                    userId: currentProfile?.id
+                )
+            } else {
+                AppLogger.log(
+                    category: "auth",
+                    level: .info,
+                    message: "session present but no profile row; signing out"
+                )
+                do {
+                    try await client.auth.signOut()
+                } catch {
+                    AppLogger.log(
+                        category: "auth",
+                        level: .warning,
+                        message: "sign-out after missing profile failed",
+                        metadata: ["error": error.localizedDescription]
+                    )
+                }
+                isAuthenticated = false
+                currentProfile = nil
+                showSearchingCardOnHome = false
+                pendingMatchFoundCelebrationMatchId = nil
+                healthKitPromptCompleted = false
+            }
         } catch {
             isAuthenticated = false
             currentProfile = nil
             showSearchingCardOnHome = false
+            pendingMatchFoundCelebrationMatchId = nil
             healthKitPromptCompleted = false
             AppLogger.log(category: "auth", level: .info, message: "no active session on launch")
         }
@@ -145,6 +173,7 @@ final class SessionStore: ObservableObject {
             isAuthenticated = false
             currentProfile = nil
             showSearchingCardOnHome = false
+            pendingMatchFoundCelebrationMatchId = nil
             healthKitPromptCompleted = false
             AppLogger.log(
                 category: "auth",
@@ -198,6 +227,17 @@ final class SessionStore: ObservableObject {
         guard showSearchingCardOnHome else { return }
         showSearchingCardOnHome = false
         AppLogger.log(category: "onboarding", level: .info, message: "home searching card flag cleared")
+    }
+
+    func queueMatchFoundCelebration(matchId: UUID) {
+        pendingMatchFoundCelebrationMatchId = matchId
+    }
+
+    /// Clears and returns the queued id only when it appears in the current pending list (Home has synced).
+    func takePendingMatchFoundCelebrationIfPendingContains(_ pendingMatchIds: Set<UUID>) -> UUID? {
+        guard let id = pendingMatchFoundCelebrationMatchId, pendingMatchIds.contains(id) else { return nil }
+        pendingMatchFoundCelebrationMatchId = nil
+        return id
     }
 
     func updateDisplayName(_ name: String) async {

@@ -8,7 +8,7 @@
 
 ## How to use this file
 
-1. Work through slices **in exact order** — each depends on the previous
+1. Work through slices **in exact order** — each depends on the previous. **Slices 16–17** are **appended** operations/UX slices (Supabase deploy + match-found overlay); run after the numbered feature slices you need, or treat them as parallel ops work.
 2. For every slice, use the **Cursor Execution Template** at the bottom
 3. Commit after each slice passes all acceptance criteria
 4. The JSX file at `FitUp/docs/mockups/FitUp_Final_Mockup.jsx` is the visual source of truth — read the relevant components **before** implementing any UI
@@ -35,9 +35,9 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 
 | JSX pattern | SwiftUI equivalent |
 |---|---|
-| `T.neon.cyan`, `T.neon.orange`, etc. | `static let` Color constants in `DesignTokens.swift` |
-| `T.radius.lg`, `T.radius.pill` | `static let` CGFloat constants in `DesignTokens.swift` |
-| `T.font.display`, `T.font.mono` | `static func` Font helpers in `DesignTokens.swift` |
+| `T.neon.cyan`, `T.neon.orange`, etc. | `FitUpColors.Neon.*` in `DesignTokens.swift` |
+| `T.radius.lg`, `T.radius.pill` | `FitUpRadius.*` in `DesignTokens.swift` |
+| `T.font.display`, `T.font.mono` | `FitUpFont.*` helpers in `DesignTokens.swift` |
 | `glassCard("win")` | `.glassCard(.win)` ViewModifier |
 | `glassCard("lose")` | `.glassCard(.lose)` ViewModifier |
 | `glassCard("base")` | `.glassCard(.base)` ViewModifier |
@@ -86,19 +86,18 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
   - `SectionHeader.swift`
   - `FloatingTabBar.swift`
 - **Supabase Swift SDK** — installed via SPM, configured with env-based keys (not hardcoded)
-- **RevenueCat SDK** — installed, `Purchases.configure(withAPIKey:)` called in `FitUpApp.swift`
+- **RevenueCat SDK** — installed; `Purchases.configure(withAPIKey:)` called from **`AppThirdPartyConfig`** in `SupabaseProvider.swift` (invoked by `FitUpApp.init`)
 - **`HealthKitService.swift`** stub in `Services/` — authorization method wired, no reads yet
 - **`AppLogger.swift`** in `Utilities/` — writes structured entries to `app_logs` Supabase table
 - **`.cursor/rules.md`** at repository root (e.g. `FitUp-App/.cursor/rules.md` if the repo folder is named `FitUp-App`) — copy from Section 19 of docs pack
-- **Supabase tables** — run all CREATE TABLE scripts from Section 7 of docs pack in Supabase dashboard
+- **Supabase** — project linked; **schema from `supabase/migrations/`** applied (`supabase db push` or hosted equivalent) — see **`fitup-docs-pack.md` Section 15–16**
 - **Git** — initial commit with foundation pushed to remote
 
-**Supabase setup (manual — not done by Cursor):**
-- Create Supabase project if not already done
-- Run all CREATE TABLE scripts
-- Enable Row Level Security on all tables
-- Enable Apple + Email auth providers
-- Create `SUPABASE_URL` and `SUPABASE_ANON_KEY` env config accessible to the app
+**Supabase setup (migration-based — not dashboard-only):**
+- Create or link a Supabase project
+- Apply migrations in `supabase/migrations/` in filename order (canonical schema: `20260416114943_remote_schema.sql`; earlier file may be empty)
+- Enable Apple + Email auth providers; configure URLs for Sign in with Apple
+- Supply `SUPABASE_URL` and `SUPABASE_ANON_KEY` to the app via **`Config/Secrets.xcconfig`** → **`Info-Additional.plist`** (see `Secrets.example.xcconfig`)
 
 **Acceptance criteria:**
 - [ ] App builds and runs on simulator with zero errors and zero warnings
@@ -108,9 +107,16 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] All shared components (`AvatarView`, `NeonBadge`, etc.) compile
 - [ ] Supabase test query returns without error
 - [ ] HealthKit authorization dialog triggers when called manually
-- [ ] All 13 tables exist in Supabase with correct columns
+- [ ] All **14** `public` tables exist in Supabase per migrations (see docs pack Section 7)
 - [ ] `.cursor/rules.md` present at repository root
 - [ ] Git remote exists, initial commit pushed
+
+### # As-built update (Slice 0)
+
+- **Backend:** `/supabase` is the source of truth — migrations, `functions/`, `cron.sql`, optional `roles.sql`. Do not rely on hand-run Section 7 snippets alone.
+- **Config:** `FitUp/FitUp/Config/` — `Debug.xcconfig`, `Secrets.example.xcconfig` → **`Secrets.xcconfig`** (gitignored), `Info-Additional.plist`, `FitUp.entitlements`.
+- **Third-party init:** `AppThirdPartyConfig.configureIfPossible()` in `FitUpApp.init`; `Task { await SubscriptionService.shared.refreshEntitlement() }` on launch.
+- **APNs:** `AppDelegate` in `FitUpApp.swift` forwards token registration to `NotificationService`.
 
 ---
 
@@ -149,6 +155,10 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] Sign out clears session, returns to `AuthView`
 - [ ] First-time launch → onboarding; returning launch → Home
 - [ ] Auth events logged to `app_logs`
+
+### # As-built update (Slice 1)
+
+- **`AppThirdPartyConfig`** (not `FitUpApp` directly) configures Supabase + RevenueCat keys from the bundle.
 
 ---
 
@@ -195,6 +205,10 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] Redirect to Home after tap — Searching card visible
 - [ ] Second launch skips onboarding
 
+### # As-built update (Slice 2)
+
+- **`OnboardingViewModel`** coordinates steps; **`SessionStore`** tracks flags such as `healthKitPromptCompleted` and `showSearchingCardOnHome` for routing and first-match UX.
+
 ---
 
 ## Slice 3 — Home shell and tab navigation
@@ -203,7 +217,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 
 **JSX reference:** `BottomNav`, `HomeScreen`, `MatchCard`, `SecHead`. Read all of them carefully, especially `BottomNav` floating card spec and section order.
 
-**Home section order (locked): Searching → Active → Pending → Discover Players**
+**Home section order — original spec:** Searching → Active → Pending → Discover Players. **As built:** see `# As-built update` below (Pending before Active; past matches on Home).
 
 **Files to create:**
 - `Views/Home/HomeView.swift`
@@ -220,7 +234,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 
 **Deliverables:**
 - `FloatingTabBar` — complete floating card implementation:
-  - 6 tabs: Home, Activity, [BATTLE center], Health, Profile, Ranks
+  - **As built:** 4 edge tabs — Home, Health, Ranks, Profile — plus center **[BATTLE]** (mockup showed six labels including Activity; **no Activity tab** in shipped `MainTab`)
   - `glassCard(.base)` backing + blur, 28pt corner radius, 12pt horizontal padding, 10pt bottom + safe area
   - Center ⚔️ button: `54×54pt`, `18pt` corner radius, cyan→blue gradient, `offset(y: -14)`
   - Active tab: full opacity icon + cyan glow + cyan label
@@ -252,7 +266,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 **Acceptance criteria:**
 - [ ] Floating tab bar renders correctly — floating card, all 4 corners rounded, correct colors
 - [ ] Center BATTLE button floats above bar, correct gradient and shadow
-- [ ] Home sections appear in order: Searching → Active → Pending → Discover Players
+- [ ] Home sections appear in order per product: **as built** = Searching → Pending → Active → Past → Discover (with stats row above); original spec order was Searching → Active → Pending → Discover
 - [ ] Each section hides independently when no data
 - [ ] Match cards have colored top accent bar, score pill, day pips, entrance animation
 - [ ] Searching cards show animated dots, wait time, Cancel button
@@ -262,6 +276,11 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 
 - [ ] Realtime updates: opening a search on another device appears in Home without manual refresh
 - [ ] Background gradient visible behind all content
+
+### # As-built update (Slice 3)
+
+- **Past matches + activity stats** live on **Home** (`PastMatchesSection`, stats row) via **`ActivityRepository`** / **`HomeViewModel`** — not a separate Activity tab.
+- **Client retry:** `MatchRepository.retryMatchmakingSearch` → Edge Function **`retry-matchmaking-search`** if DB-triggered pairing did not run.
 
 ---
 
@@ -435,8 +454,8 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - `match_day_participants` rows: created with `match_days` (one per user per day)
 - Today pip on match card: `22pt` wide (vs `16pt` for other days), pulsing animation
 
-**Backend function triggered:**
-- Client calls `sync-metric-snapshot` Edge Function (or writes directly to Supabase via repository) — backend updates totals
+**Backend / client sync (as built):**
+- **`MetricSyncCoordinator`** + repositories write **`metric_snapshots`**, update **`match_day_participants.metric_total`**, and **`user_health_baselines`** via Supabase client (authenticated). There is **no** `sync-metric-snapshot` Edge Function in `supabase/functions/`.
 
 **Data wired:**
 - Reads: HealthKit `HKStatisticsQuery` (foreground), `HKObserverQuery` (background)
@@ -452,11 +471,16 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] `user_health_baselines` updated on every sync
 - [ ] Today pip is 22pt wide and pulsing vs 16pt static for other days
 
+### # As-built update (Slice 7)
+
+- **`MetricSyncCoordinator`** (actor) orchestrates foreground, observer, and manual sync; throttles very frequent Live Match reads.
+- **`ContentView`** attaches coordinator to profile + onboarding flags and calls `appDidBecomeActive` on scene phase.
+
 ---
 
 ## Slice 8 — Day finalization and match scoring
 
-**Goal:** Days finalize correctly at 10am cutoff. Winners locked. Series score always correct. Completed matches move to Activity.
+**Goal:** Days finalize correctly at 10am cutoff. Winners locked. Series score always correct. Completed matches appear in **Home → Past matches** (as built; original spec referenced an Activity tab).
 
 **JSX reference:** `DayBar` — `finalized` prop controls pip style. `match.days[].winner = "me" | "them" | null`.
 
@@ -498,7 +522,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] `winner_user_id` correct (higher value wins)
 - [ ] Void day: `is_void = true`, `winner_user_id = null`, no points
 - [ ] Series score counted correctly (non-void finalized days only)
-- [ ] Completed match appears in Activity tab
+- [ ] Completed match appears in **Home past matches** (or dedicated Activity UI if you add a tab later)
 - [ ] Day chart pips: solid for finalized, pulsing for today
 - [ ] `leaderboard_entries` updated after each finalization
 
@@ -515,7 +539,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 
 **Files to create:**
 - `Services/NotificationService.swift` (full implementation)
-- `Views/LiveActivity/FitUpLiveActivity.swift` (ActivityKit widget)
+- **`FitUpWidgetExtension/FitUpLiveActivity.swift`** (widget extension target) and shared **`Views/LiveActivity/`** (`FitUpActivityAttributes.swift`, `LiveActivityCoordinator.swift`)
 
 **Deliverables:**
 - APNs device token: registered on `FitUpApp` launch, stored in `profiles.apns_token`
@@ -547,6 +571,11 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] Live Activity updates when opponent syncs
 - [ ] Live Activity dismisses when match completes
 
+### # As-built update (Slice 9)
+
+- **APNs:** `UIApplicationDelegateAdaptor` in `FitUpApp` + `NotificationService.didRegister` persist **`profiles.apns_token`**.
+- **Cron schedules** are versioned in **`supabase/cron.sql`** (including **`matchmaking-retry-stale`** every minute).
+
 ---
 
 ## Slice 10 — Activity screen
@@ -555,18 +584,20 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 
 **JSX reference:** `ActivityScreen` — stats row, active list, past matches list, won/lost badge styling.
 
-**Files to create:**
+**Files to create (original spec):**
 - `Views/Activity/ActivityView.swift`
 - `Views/Activity/Rows/ActiveMatchRow.swift`
 - `Views/Activity/Rows/PastMatchRow.swift`
 - `ViewModels/ActivityViewModel.swift`
+
+**# As-built:** There is **no** standalone `ActivityView` tab. Use **`ActivityRepository`** + **`HomeView`** sections (`PastMatchesSection`, stats row) and/or shared row components under `Views/Activity/Rows/`.
 
 **Deliverables:**
 - Stats row: Matches count, Wins count, Win Rate — Win Rate highlighted in `neon.cyan` glass card
 - Active section: compact match rows, today's step counts, win/lose badge
 - Past Matches section: final score, sport + date range, won/lost badge (cyan = won, orange = lost)
 - Tap any row → Match Details for that match
-- Back from Match Details returns to Activity (not Home)
+- **As built:** Back from Match Details returns to **Home** (no Activity tab); original spec: back to Activity screen
 - Load all matches from Supabase where current user is a participant
 
 **Data wired:**
@@ -576,8 +607,12 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] Stats row shows correct Matches, Wins, Win Rate values
 - [ ] Active section shows live today totals
 - [ ] Past matches show correct final scores, dates, won/lost badges
-- [ ] Tap opens Match Details; back returns to Activity
+- [ ] Tap opens Match Details; back returns to **Home** (as built)
 - [ ] Empty states render without crash
+
+### # As-built update (Slice 10)
+
+- Activity-style lists are **embedded in Home**; deep link target **`activity`** may still appear in payloads but maps to **Home** in `ContentView` (`selectedTab = .home`).
 
 ---
 
@@ -633,7 +668,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - `Views/Health/Cards/BattleReadinessCard.swift`
 - `Views/Health/Cards/WeekChartCard.swift`
 - `Views/Health/Cards/ComponentBreakdownCard.swift`
-- `Views/Health/Cards/SleepQualityCard.swift`
+- `Views/Health/Cards/LastNightSleepCard.swift`, `SleepRatioCard.swift`, `SevenNightSleepAverageCard.swift` (sleep quality area — replaces single `SleepQualityCard` name)
 - `Views/Health/Cards/HRZonesCard.swift`
 - `Services/ReadinessCalculator.swift`
 
@@ -687,6 +722,10 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] `ReadinessCalculator` unit tests pass including missing-data cases
 
 **# Sleep data follow-up:** The **authoritative** last-night window (local **18:00 → 12:00**), overlap-resolved totals, and **Sleep Ratio** percentages (`SleepRatioBreakdown` only) are specified in **`fitup-docs-pack.md` §11 Sleep data** and implemented under **Slice 15** (depends on this slice). Do not reintroduce wake-day-only or longest-session-only logic for last-night UI without that slice’s review.
+
+### # As-built update (Slice 12)
+
+- Health UI uses **`LastNightSleepCard`**, **`SleepRatioCard`**, **`SevenNightSleepAverageCard`**; optional **`HealthKitPerSourceBreakdown`** for diagnostics-style views.
 
 ---
 
@@ -802,6 +841,54 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 
 ---
 
+## Slice 16 — Supabase migrations, deploy, and cron (operations)
+
+**Goal:** Any developer can recreate the **same** Postgres + Edge surface the app expects, using the repo as source of truth — not one-off dashboard SQL.
+
+**Depends on:** conceptual Slice 0; aligns with **`fitup-docs-pack.md` Sections 15–16**.
+
+**Files involved:**
+- `supabase/migrations/*.sql`
+- `supabase/functions/*/index.ts`
+- `supabase/cron.sql`, `supabase/config.toml`, optional `supabase/roles.sql`
+
+**Deliverables:**
+- Linked Supabase project; migrations applied in order (`supabase db push` or CI equivalent).
+- All Edge Functions deployed with required secrets (JWT validation, service role for `pg_net` invokes, APNs keys for `dispatch-notification`, etc.).
+- **`cron.sql`** jobs installed where pg_cron is available: `day-cutoff-check`, `send-pending-reminders`, `send-morning-checkins`, `matchmaking-retry-stale`.
+- Documented env vars / Vault entries per function README or `supabase-setup-guide.md` (verify against **migrations**).
+
+**Data wired:** Full schema per migrations (14 `public` tables, RLS policies, triggers).
+
+**Acceptance criteria:**
+- [ ] Fresh project + migrations yields same constraints and triggers as production (spot-check `matches_state_check`, `match_search_requests` status check, trigger names).
+- [ ] `supabase functions list` / deploy matches the nine function folders in repo.
+- [ ] Cron entries match `supabase/cron.sql`.
+
+---
+
+## Slice 17 — Match found celebration (Home overlay)
+
+**Goal:** When a user receives a **match_found** style push (or equivalent), the app can surface a **one-time celebratory overlay** on Home without duplicate spam across launches.
+
+**Depends on:** Slices 3 (Home), 9 (notifications), 1 (`SessionStore`).
+
+**Files involved (as built):**
+- `Services/MatchFoundCelebrationStore.swift`
+- `Services/NotificationService.swift` (queues celebration match id on `SessionStore`)
+- `ViewModels/SessionStore.swift` (`queueMatchFoundCelebration`, `takePendingMatchFoundCelebrationIfPendingContains`)
+- `ViewModels/HomeViewModel.swift` + `Views/Home/HomeView.swift` (`MatchFoundCelebrationOverlay`)
+
+**Deliverables:**
+- UserDefaults-backed dedupe: **`MatchFoundCelebrationStore.hasShown` / `markShown`** per `(profileId, matchId)`.
+- Dismiss path clears overlay and marks shown.
+
+**Acceptance criteria:**
+- [ ] First arrival of a pending match after notification shows overlay at most once per match per profile.
+- [ ] Dismiss does not re-show on next Home load.
+
+---
+
 ## Cursor Execution Template
 
 Use for every Cursor session. Fill in all bracketed sections.
@@ -866,7 +953,7 @@ Verification:
 
 ## # Appendix — Rebuild snapshot (as implemented)
 
-Use this with **`FitUp/docs/slice-tracker.md`** (detailed file lists) and **`FitUp/docs/supabase-setup-guide.md`** (full SQL + Edge Function instructions; the **`## # Master run order (rebuild checklist)`** section is the phased overview). UI source: **`FitUp/docs/mockups/`** (paths are relative to the repository root).
+Use this with **`FitUp/docs/slice-tracker.md`** (detailed file lists). **Backend:** **`/supabase/migrations`**, **`/supabase/functions`**, **`/supabase/cron.sql`** — authoritative; **`FitUp/docs/supabase-setup-guide.md`** is supplemental for secrets / runbooks. UI source: **`FitUp/docs/mockups/`** (paths relative to repository root).
 
 ### # Numbered slices — status
 
@@ -881,7 +968,7 @@ Use this with **`FitUp/docs/slice-tracker.md`** (detailed file lists) and **`Fit
 | 5 | Match Details | Complete (includes early `LiveMatchView` stub) |
 | 6 | Live Match | Complete |
 | 7 | HealthKit sync | Complete — `MetricSyncCoordinator`, Realtime vs polling |
-| 8 | Finalization + scoring | Complete — Edge Functions + `slice8-finalization.sql`, minimal Activity until Slice 10 |
+| 8 | Finalization + scoring | Complete — Edge Functions + migration SQL (`day_cutoff_check`, triggers); past matches on Home |
 | 9 | Notifications + Live Activities | Complete — widget extension target, APNs, `profiles` columns, cron jobs |
 | 10 | Activity | Complete |
 | 11 | Leaderboard | Complete — Friends = past opponents |
@@ -889,16 +976,17 @@ Use this with **`FitUp/docs/slice-tracker.md`** (detailed file lists) and **`Fit
 | 13 | Paywall + Dev Mode | Complete — RevenueCat entitlement id **`pro`**, products `fitup_pro_annual` / `fitup_pro_monthly` |
 | 14 | Profile + Dev Tools | Complete |
 | 15 | Sleep aggregation + % (HealthKit, final) | Complete — depends on Slice 12; see **`fitup-docs-pack.md` Section 11 (Sleep data)** |
+| 16 | Supabase migrations + deploy + cron | Complete — **`/supabase`**; see docs pack **§15–16** |
+| 17 | Match found celebration overlay | Complete — `MatchFoundCelebrationStore`, `HomeView` overlay |
 
 ### # Extra work not in the original slice list (required for parity)
 
-- **# Slice 4 backend (Supabase):** RPCs + triggers → `matchmaking-pairing` and `on-all-accepted`; `MatchRepository` direct-challenge rows include `role`, `joined_via`. See `supabase/sql/slice4-matchmaking.sql`.
-- **# Matchmaking reliability (Slice 4b):** Shared `matchmakingPairing.ts`, `retry-matchmaking-search` Edge Function, `slice4b-matchmaking-stale-retry.sql` (cron), client retries + cancel-duplicate-search behavior. See tracker + `supabase-setup-guide.md`.
-- **# RLS / SQL fixes:** e.g. `slice4c-direct-challenge-rls.sql`, `slice4d-create-direct-challenge-rpc.sql`, `fix-match-participants-rls-recursion.sql` — follow setup guide run order.
-- **# Decline pending match (Slice 4e):** `supabase/sql/slice4e-decline-pending-match.sql` — `decline_pending_match` RPC + notification trigger; `HomeRepository.declinePendingMatch` calls RPC for direct + public matchmaking pending rows.
-- **# Sleep pipeline (Slice 15):** Final last-night window + overlap merge + `SleepRatioBreakdown`-only UI; documented in **`fitup-docs-pack.md` Section 11 (Sleep data)**. Extends Health work from Slice 12 — do not edit without re-reading that section.
-- **# iOS config (not all in original Slice 0 bullet list):** `FitUp/FitUp/Config/` — `Debug.xcconfig`, `Secrets.example.xcconfig` → copy to **`Secrets.xcconfig`** (gitignored), `Info-Additional.plist`, `FitUp.entitlements`; deployment target **18.6**; HealthKit + Push capabilities; widget extension **`FitUpWidgetExtension`** for Live Activities (`FitUpActivityAttributes.swift` shared into extension).
-- **# Authentication / “portal” work:** There is **no separate admin web app** in this repo. “Portal” in practice means **Apple Developer Portal** (App ID, Push Notifications, Sign in with Apple, Widget Extension ID) and **Supabase Dashboard** (Auth providers, SQL, Edge Functions, secrets, Vault for service role / `pg_net`). See **`FitUp/docs/supabase-setup-guide.md`** Step 8+ and Slice 9 notes in **`slice-tracker.md`**.
+- **# Slice 4 backend (Supabase):** RPCs + triggers live in **`supabase/migrations/`** (e.g. `matchmaking_pair_atomic`, `tr_matchmaking_pairing_after_insert`, `invoke_matchmaking_pairing` → **`matchmaking-pairing`** Edge Function). `MatchRepository` direct-challenge rows include `role`, `joined_via`.
+- **# Matchmaking reliability:** **`retry-matchmaking-search`** Edge Function; pg_cron **`matchmaking-retry-stale`** (`supabase/cron.sql`); client **`cancelPriorSearchingRequests`** + retry invoke.
+- **# Decline / RLS / RPCs:** Implemented in migrations (e.g. `decline_pending_match`, RLS policies) — diff migrations vs any legacy `supabase/sql/*.sql` in the setup guide.
+- **# Sleep pipeline (Slice 15):** Documented **`fitup-docs-pack.md` Section 11**; Slice 12 cards + Slice 15 `HealthKitService` rules.
+- **# iOS config:** `FitUp/FitUp/Config/` — `Secrets.xcconfig`, `Info-Additional.plist`, `FitUp.entitlements`; deployment target **18.6**; **`FitUpWidgetExtension`** + `Views/LiveActivity/` shared types.
+- **# “Portal”:** **Apple Developer Portal** + **Supabase Dashboard** (Auth, secrets, monitoring). No admin web app in repo.
 
 ### # Git history (high level)
 

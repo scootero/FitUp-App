@@ -76,6 +76,10 @@ struct HomePendingMatch: Identifiable, Equatable {
     let sportLabel: String
     let seriesLabel: String
     let opponent: HomeOpponent
+    /// From `matches.match_type` (e.g. `public_matchmaking`, `direct_challenge`).
+    let matchType: String
+    /// From `matches.created_at`.
+    let createdAt: Date
     /// Current user has set `accepted_at` on `match_participants`.
     let hasAcceptedByMe: Bool
     /// Opponent has set `accepted_at`.
@@ -408,6 +412,8 @@ final class HomeRepository {
                     )
                 } else if state == "pending" {
                     let challengeId = await fetchChallengeId(matchId: matchId)
+                    let matchType = string(from: match["match_type"]) ?? "public_matchmaking"
+                    let createdAt = date(from: match["created_at"]) ?? Date()
                     pending.append(
                         HomePendingMatch(
                             id: matchId,
@@ -417,6 +423,8 @@ final class HomeRepository {
                             sportLabel: sportLabel(for: metricType),
                             seriesLabel: seriesLabel(for: durationDays),
                             opponent: opponent,
+                            matchType: matchType,
+                            createdAt: createdAt,
                             hasAcceptedByMe: myAccepted,
                             hasAcceptedByOpponent: theyAccepted
                         )
@@ -439,7 +447,7 @@ final class HomeRepository {
         do {
             let response = try await client
                 .from("matches")
-                .select("id, state, metric_type, duration_days")
+                .select("id, state, metric_type, duration_days, match_type, created_at")
                 .eq("id", value: matchId.uuidString)
                 .limit(1)
                 .execute()

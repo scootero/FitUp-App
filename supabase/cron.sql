@@ -4,6 +4,10 @@ SELECT cron.schedule(
   $$ SELECT public.day_cutoff_check(); $$
 );
 
+-- Match completion backfill: public.reconcile_stuck_match_completions (*/10) is registered in
+-- migration 20260422120000_reconcile_stuck_match_completions.sql — not duplicated here to avoid
+-- duplicate jobname errors if migrations are applied first.
+
 SELECT cron.schedule(
   'send-pending-reminders',
   '15 16 * * *',

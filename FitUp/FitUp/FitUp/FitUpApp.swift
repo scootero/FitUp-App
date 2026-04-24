@@ -23,6 +23,9 @@ struct FitUpApp: App {
             ContentView()
                 .environmentObject(sessionStore)
                 .environmentObject(NotificationService.shared)
+                .onAppear {
+                    NotificationService.shared.attachSessionStore(sessionStore)
+                }
         }
     }
 }

@@ -126,7 +126,7 @@ struct HomeView: View {
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: viewModel.declineFeedbackOpponentName)
         .task(id: profile?.id) {
-            viewModel.start(profile: profile, showOnboardingSearching: showOnboardingSearching)
+            viewModel.start(profile: profile, showOnboardingSearching: showOnboardingSearching, sessionStore: sessionStore)
         }
         .onAppear {
             clearSearchingFlagIfHasMatch()
