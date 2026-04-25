@@ -11,6 +11,14 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
+// MARK: - Copy (mirrors app MatchDurationCopy.dayProgress)
+
+private func dayProgressLabel(day: Int, total: Int) -> String {
+    let t = max(total, 1)
+    let d = min(max(day, 1), t)
+    return "Day \(d) of \(t)"
+}
+
 // MARK: - Color constants (mirrors DesignTokens — no shared module needed)
 
 private extension Color {
@@ -56,7 +64,7 @@ struct FitUpLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.center) {
                     VStack(spacing: 1) {
-                        Text("DAY \(context.state.dayNumber)/\(context.attributes.durationDays)")
+                        Text(dayProgressLabel(day: context.state.dayNumber, total: context.attributes.durationDays).uppercased())
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(Color.fitupSecondary)
                         ScoreView(
@@ -101,7 +109,7 @@ private struct LockScreenLiveActivityView: View {
             VStack(spacing: 10) {
                 HStack {
                     Label(
-                        "Day \(state.dayNumber) of \(attributes.durationDays)",
+                        dayProgressLabel(day: state.dayNumber, total: attributes.durationDays),
                         systemImage: "flame.fill"
                     )
                     .font(.system(size: 11, weight: .bold))

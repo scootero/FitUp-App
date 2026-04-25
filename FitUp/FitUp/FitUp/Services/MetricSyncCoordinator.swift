@@ -28,6 +28,7 @@ actor MetricSyncCoordinator {
 
     private let snapshotRepository = MetricSnapshotRepository()
     private let matchDayRepository = MatchDayRepository()
+    private let publicDailyActivityRepository = PublicDailyActivityRepository()
 
     private var activeProfile: Profile?
     private var hasObserverPipeline = false
@@ -147,6 +148,23 @@ actor MetricSyncCoordinator {
             caloriesTotal = try await HealthKitService.fetchTodayActiveCalories()
         } catch {
             handleHealthReadError(error, profile: profile, metricType: .activeCalories)
+        }
+
+        do {
+            try await publicDailyActivityRepository.upsertMyPublicDailyActivity(
+                userId: profile.id,
+                activeDate: PublicDailyActivityRepository.activeDateString(for: profile),
+                steps: stepsTotal,
+                activeCalories: caloriesTotal
+            )
+        } catch {
+            AppLogger.log(
+                category: "healthkit_sync",
+                level: .warning,
+                message: "public daily activity upsert failed",
+                userId: profile.id,
+                metadata: ["error": error.localizedDescription]
+            )
         }
 
         var writes = await matchDayRepository.syncActiveMatchTotals(

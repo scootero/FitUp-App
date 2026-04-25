@@ -75,6 +75,14 @@ enum HealthMetricType: String {
     case activeCalories = "active_calories"
 }
 
+/// Cumulative metric samples for intraday charts (e.g. Match Details).
+struct HealthIntradayCumulativePoint: Equatable, Identifiable {
+    let date: Date
+    let cumulative: Int
+
+    var id: Date { date }
+}
+
 enum HealthKitService {
 #if DEBUG
     private static let sleepPipelineLogger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FitUp", category: "healthkit_sleep")
@@ -289,6 +297,112 @@ enum HealthKitService {
             timeZone: timeZone
         )
         return Int(total.rounded())
+    }
+
+    /// Intraday **cumulative** series for `calendarDate` in `timeZone`, from midnight through the end of the visible window
+    /// (`now` when that date is “today”, otherwise end of that calendar day). Uses 15-minute buckets, then reduces to at most
+    /// `maxPoints`. The final sample matches `fetchCumulativeTotal` over the same `[dayStart, chartEnd]` window.
+    static func fetchIntradayCumulativeSeries(
+        metricType: HealthMetricType,
+        for calendarDate: Date,
+        timeZone: TimeZone? = nil,
+        maxPoints: Int = 48
+    ) async throws -> [HealthIntradayCumulativePoint] {
+        let quantityIdentifier: HKQuantityTypeIdentifier
+        let unit: HKUnit
+        switch metricType {
+        case .steps:
+            quantityIdentifier = .stepCount
+            unit = .count()
+        case .activeCalories:
+            quantityIdentifier = .activeEnergyBurned
+            unit = .kilocalorie()
+        }
+
+        guard isHealthDataAvailable else {
+            throw HealthKitError.notAvailable
+        }
+        guard let quantityType = HKObjectType.quantityType(forIdentifier: quantityIdentifier) else {
+            throw typeError(for: quantityIdentifier)
+        }
+
+        var calendar = Calendar.current
+        calendar.timeZone = timeZone ?? .current
+        let dayStart = calendar.startOfDay(for: calendarDate)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+            throw HealthKitError.invalidDateRange
+        }
+
+        let now = Date()
+        let todayStart = calendar.startOfDay(for: now)
+        let chartEnd = dayStart == todayStart ? min(now, dayEnd) : dayEnd
+        if chartEnd <= dayStart {
+            return [HealthIntradayCumulativePoint(date: dayStart, cumulative: 0)]
+        }
+
+        let authoritative = Int(
+            try await fetchCumulativeTotal(
+                quantityIdentifier: quantityIdentifier,
+                unit: unit,
+                startDate: dayStart,
+                endDate: chartEnd
+            ).rounded()
+        )
+
+        let predicate = HKQuery.predicateForSamples(
+            withStart: dayStart,
+            end: chartEnd,
+            options: [.strictStartDate]
+        )
+
+        let interval = DateComponents(minute: 15)
+        var bucketPoints: [HealthIntradayCumulativePoint] = [
+            HealthIntradayCumulativePoint(date: dayStart, cumulative: 0),
+        ]
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: quantityType,
+                quantitySamplePredicate: predicate,
+                options: [.cumulativeSum],
+                anchorDate: dayStart,
+                intervalComponents: interval
+            )
+
+            query.initialResultsHandler = { _, collection, error in
+                if let error {
+                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchIntradayCumulativeSeries"))
+                    return
+                }
+                guard let collection else {
+                    continuation.resume()
+                    return
+                }
+
+                var running = 0
+                collection.enumerateStatistics(from: dayStart, to: chartEnd) { statistics, _ in
+                    let delta = statistics.sumQuantity()?.doubleValue(for: unit) ?? 0
+                    running += Int(delta.rounded())
+                    let t = min(statistics.endDate, chartEnd)
+                    if t > dayStart {
+                        bucketPoints.append(HealthIntradayCumulativePoint(date: t, cumulative: running))
+                    }
+                }
+                continuation.resume()
+            }
+
+            store.execute(query)
+        }
+
+        if bucketPoints.last?.date != chartEnd || bucketPoints.last?.cumulative != authoritative {
+            if bucketPoints.last?.date == chartEnd {
+                bucketPoints[bucketPoints.count - 1] = HealthIntradayCumulativePoint(date: chartEnd, cumulative: authoritative)
+            } else {
+                bucketPoints.append(HealthIntradayCumulativePoint(date: chartEnd, cumulative: authoritative))
+            }
+        }
+
+        return downsampleIntradaySeries(bucketPoints, maxPoints: max(4, maxPoints))
     }
 
     /// Most recent resting heart rate sample (bpm), if any.
@@ -1360,6 +1474,32 @@ enum HealthKitService {
             startDate: startDate,
             endDate: endDate
         )
+    }
+
+    private static func downsampleIntradaySeries(
+        _ series: [HealthIntradayCumulativePoint],
+        maxPoints: Int
+    ) -> [HealthIntradayCumulativePoint] {
+        guard maxPoints > 1, series.count > maxPoints else { return series }
+        let n = series.count
+        var result: [HealthIntradayCumulativePoint] = []
+        for i in 0..<maxPoints {
+            let idx = min(n - 1, Int((Double(i) * Double(n - 1) / Double(maxPoints - 1)).rounded()))
+            let p = series[idx]
+            if let last = result.last, last.date == p.date {
+                result[result.count - 1] = p
+            } else {
+                result.append(p)
+            }
+        }
+        if let last = series.last, result.last?.cumulative != last.cumulative || result.last?.date != last.date {
+            if !result.isEmpty {
+                result[result.count - 1] = last
+            } else {
+                result.append(last)
+            }
+        }
+        return result
     }
 
     private static func fetchCumulativeTotal(

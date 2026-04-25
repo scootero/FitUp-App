@@ -26,20 +26,19 @@ enum ChallengeFormatType: CaseIterable {
     case bestOf7
 
     var displayName: String {
-        switch self {
-        case .daily: return "Daily"
-        case .firstTo3: return "First to 3"
-        case .bestOf5: return "Best of 5"
-        case .bestOf7: return "Best of 7"
-        }
+        MatchDurationCopy.competitionLengthBadge(days: durationDays)
     }
 
     var subtitle: String {
         switch self {
-        case .daily: return "Single day showdown"
-        case .firstTo3: return "First to 3 wins"
-        case .bestOf5: return "First to 3 wins"
-        case .bestOf7: return "First to 4 wins"
+        case .daily:
+            return "One competition day. Highest score wins."
+        case .firstTo3:
+            return "Three competition days. Win more days than your opponent."
+        case .bestOf5:
+            return "Five competition days. First to 3 day-wins takes the match."
+        case .bestOf7:
+            return "Seven competition days. First to 4 day-wins takes the match."
         }
     }
 

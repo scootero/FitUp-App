@@ -48,13 +48,7 @@ struct LiveMatchBootstrap: Equatable {
     let opponentTodayTotal: Int
 
     var seriesLabel: String {
-        switch durationDays {
-        case 1: return "Daily"
-        case 3: return "First to 3"
-        case 5: return "Best of 5"
-        case 7: return "Best of 7"
-        default: return "Best of \(durationDays)"
-        }
+        MatchDurationCopy.competitionLengthBadge(days: durationDays)
     }
 }
 

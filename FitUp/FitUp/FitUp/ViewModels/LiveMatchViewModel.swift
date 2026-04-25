@@ -39,7 +39,7 @@ final class LiveMatchViewModel: ObservableObject {
     @Published var opponentHexColor = "FF6200"
     @Published var isPaused = false
     @Published private(set) var toasts: [LiveToastItem] = []
-    @Published private(set) var seriesLabel = "Daily"
+    @Published private(set) var seriesLabel = MatchDurationCopy.competitionLengthBadge(days: 1)
     @Published private(set) var myScore = 0
     @Published private(set) var theirScore = 0
     @Published private(set) var durationDays = 1

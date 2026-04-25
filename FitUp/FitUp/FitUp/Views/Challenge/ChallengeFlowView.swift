@@ -80,6 +80,13 @@ struct ChallengeFlowView: View {
 
     @State private var searchTask: Task<Void, Never>?
 
+    @State private var rivalStripEntries: [ChallengeRivalStripEntry] = []
+    @State private var myPublicSteps: Int?
+    @State private var myPublicCalories: Int?
+    @State private var isLoadingRivalStrip = false
+
+    private let publicDailyActivityRepository = PublicDailyActivityRepository()
+
     init(
         profile: Profile?,
         launchContext: ChallengeLaunchContext,
@@ -119,6 +126,17 @@ struct ChallengeFlowView: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
+            if !isCheckingGate, entryGate?.isBlocked != true, !isSent {
+                ChallengeRivalStripView(
+                    entries: rivalStripEntries,
+                    mySteps: myPublicSteps,
+                    myActiveCalories: myPublicCalories,
+                    isLoading: isLoadingRivalStrip,
+                    onSelect: { entry in
+                        selectRivalFromStrip(entry)
+                    }
+                )
+            }
             if isCheckingGate {
                 ProgressView("Checking match slot...")
                     .font(FitUpFont.body(13, weight: .medium))
@@ -192,7 +210,7 @@ struct ChallengeFlowView: View {
             ChallengeSentView(
                 opponentName: sentOpponentName,
                 metricLabel: selectedMetric?.displayName ?? "Steps",
-                formatLabel: selectedFormat?.displayName ?? "Daily"
+                formatLabel: selectedFormat?.displayName ?? MatchDurationCopy.competitionLengthBadge(days: 1)
             ) {
                 onClose()
             }
@@ -321,8 +339,56 @@ struct ChallengeFlowView: View {
         }
 
         await loadOpponents(query: "")
+        await loadRivalStrip()
         hydratePrefillFromFetchedOpponents()
         applyLaunchStepIfNeeded()
+    }
+
+    @MainActor
+    private func loadRivalStrip() async {
+        guard let userId = profile?.id else { return }
+        isLoadingRivalStrip = true
+        defer { isLoadingRivalStrip = false }
+        do {
+            let viewDate = PublicDailyActivityRepository.viewerLocalDateString()
+            let (rivals, myS, myC) = try await publicDailyActivityRepository.fetchRivalStripEntries(
+                currentUserId: userId,
+                viewerLocalActiveDate: viewDate
+            )
+            rivalStripEntries = rivals
+            myPublicSteps = myS
+            myPublicCalories = myC
+        } catch {
+            rivalStripEntries = []
+            AppLogger.log(
+                category: "matchmaking",
+                level: .debug,
+                message: "rival strip load failed",
+                userId: userId,
+                metadata: ["error": error.localizedDescription]
+            )
+        }
+    }
+
+    private func selectRivalFromStrip(_ entry: ChallengeRivalStripEntry) {
+        query = entry.displayName
+        if selectedMetric != nil, selectedFormat != nil {
+            selectedOpponent = ChallengeOpponent(
+                id: entry.userId,
+                displayName: entry.displayName,
+                initials: entry.initials,
+                colorHex: entry.colorHex,
+                todaySteps: entry.steps,
+                wins: nil,
+                losses: nil,
+                rollingStepsBaseline: nil,
+                rollingCaloriesBaseline: nil
+            )
+            isQuickMatch = false
+            stepIndex = 3
+        } else {
+            if selectedMetric != nil { stepIndex = 1 }
+        }
     }
 
     @MainActor

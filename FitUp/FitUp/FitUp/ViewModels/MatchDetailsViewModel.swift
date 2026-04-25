@@ -42,7 +42,7 @@ struct MatchDetailDisplayModel {
     }
 
     var formatDurationPill: String {
-        "\(snapshot.seriesLabel) · \(snapshot.durationDays)-Day"
+        MatchDurationCopy.competitionLengthBadge(days: snapshot.durationDays)
     }
 
     /// Hero / today: winning side for active matches (completed uses series outcome).
@@ -79,10 +79,11 @@ struct MatchDetailDisplayModel {
 
     var dayBadgeLabel: String {
         if let today = mergedDayRows.first(where: { $0.isToday }) {
-            return "Day \(today.dayNumber)/\(snapshot.durationDays)"
+            return MatchDurationCopy.dayProgress(current: today.dayNumber, total: snapshot.durationDays)
         }
         let finalized = mergedDayRows.filter(\.isFinalized).count
-        return "Day \(min(finalized + 1, snapshot.durationDays))/\(snapshot.durationDays)"
+        let current = min(finalized + 1, snapshot.durationDays)
+        return MatchDurationCopy.dayProgress(current: current, total: snapshot.durationDays)
     }
 
     var seriesProgressFraction: Double {
@@ -93,8 +94,7 @@ struct MatchDetailDisplayModel {
 
     var daysRemainingLabel: String {
         let finalizedCount = mergedDayRows.filter { $0.isFinalized }.count
-        let left = max(0, snapshot.durationDays - finalizedCount)
-        return "\(left) day\(left == 1 ? "" : "s") left"
+        return MatchDurationCopy.daysRemainingToWin(finalizedCount: finalizedCount, totalDays: snapshot.durationDays)
     }
 
     var percentCompleteLabel: String {
@@ -149,7 +149,7 @@ struct MatchDetailDisplayModel {
     }
 
     var daysWonFractionLabel: String {
-        "\(snapshot.myScore)/\(snapshot.durationDays)"
+        MatchDurationCopy.daysWonFraction(won: snapshot.myScore, totalDays: snapshot.durationDays)
     }
 
     var winRateMinePercent: Double {
@@ -243,6 +243,8 @@ final class MatchDetailsViewModel: ObservableObject {
 
     @Published private(set) var myTodayHK: Int?
     @Published private(set) var healthKitStale = false
+    /// Cumulative intraday points for the in-progress “today” row (active matches with HealthKit); empty otherwise.
+    @Published private(set) var intradaySeries: [HealthIntradayCumulativePoint] = []
     @Published private(set) var headToHead: HeadToHeadStats?
 
     let matchId: UUID
@@ -304,6 +306,7 @@ final class MatchDetailsViewModel: ObservableObject {
         detailsRepository.stopLiveRefresh()
         hasStarted = false
         headToHeadRepository.clearMemoryCache()
+        intradaySeries = []
     }
 
     private func loadCacheSync() {
@@ -357,14 +360,20 @@ final class MatchDetailsViewModel: ObservableObject {
 
         applyBundle(bundle)
 
-        async let hkTask = fetchMyTodayHK(metricType: bundle.snapshot.metricType)
         async let h2hTask: HeadToHeadStats? = {
             let oid = bundle.snapshot.opponent.id
             return try? await headToHeadRepository.fetchStats(opponentId: oid, viewerId: profile.id)
         }()
 
-        let hk = await hkTask
-        applyHK(hk, fallbackMyToday: bundle.snapshot.myToday)
+        if shouldUseLiveHealthKit(for: bundle.snapshot) {
+            let hk = await fetchMyTodayHK(metricType: bundle.snapshot.metricType)
+            applyHK(hk, fallbackMyToday: bundle.snapshot.myToday)
+            await refreshIntradaySeriesIfNeeded()
+        } else {
+            myTodayHK = nil
+            healthKitStale = false
+            intradaySeries = []
+        }
 
         headToHead = await h2hTask
 
@@ -402,6 +411,27 @@ final class MatchDetailsViewModel: ObservableObject {
         }
     }
 
+    private func refreshIntradaySeriesIfNeeded() async {
+        guard let snapshot, shouldUseLiveHealthKit(for: snapshot) else {
+            intradaySeries = []
+            return
+        }
+        let calDay = snapshot.dayRows.first(where: { $0.isToday })?.calendarDate
+            ?? Calendar.current.startOfDay(for: Date())
+        let metric: HealthMetricType = snapshot.metricType == "active_calories" ? .activeCalories : .steps
+        let tz = TimeZone(identifier: matchTimezone) ?? .current
+        do {
+            intradaySeries = try await HealthKitService.fetchIntradayCumulativeSeries(
+                metricType: metric,
+                for: calDay,
+                timeZone: tz,
+                maxPoints: 48
+            )
+        } catch {
+            intradaySeries = []
+        }
+    }
+
     private func applyBundle(_ bundle: MatchDetailBundle) {
         snapshot = bundle.snapshot
         opponentTodayLastSyncedAt = bundle.opponentTodayLastSyncedAt
@@ -410,8 +440,14 @@ final class MatchDetailsViewModel: ObservableObject {
         matchTimezone = bundle.matchTimezone
     }
 
+    /// Live HealthKit "today" is only meaningful for the in-progress match day; completed/historical
+    /// details should use Supabase totals so the hero and charts stay stable.
+    private func shouldUseLiveHealthKit(for snapshot: MatchDetailsSnapshot) -> Bool {
+        snapshot.state == .active && snapshot.dayRows.contains(where: \.isToday)
+    }
+
     private func resolvedMyToday(snapshot: MatchDetailsSnapshot) -> Int {
-        if let hk = myTodayHK {
+        if shouldUseLiveHealthKit(for: snapshot), let hk = myTodayHK {
             return hk
         }
         return snapshot.myToday
@@ -430,6 +466,13 @@ final class MatchDetailsViewModel: ObservableObject {
         do {
             let bundle = try await detailsRepository.loadMatchDetailBundle(matchId: matchId, currentUser: profile)
             applyBundle(bundle)
+            if !shouldUseLiveHealthKit(for: bundle.snapshot) {
+                myTodayHK = nil
+                healthKitStale = false
+                intradaySeries = []
+            } else {
+                await refreshIntradaySeriesIfNeeded()
+            }
             saveCache(bundle.snapshot)
             if errorMessage != nil {
                 errorMessage = nil
@@ -463,8 +506,15 @@ final class MatchDetailsViewModel: ObservableObject {
         do {
             let bundle = try await detailsRepository.loadMatchDetailBundle(matchId: matchId, currentUser: profile)
             applyBundle(bundle)
-            let hk = await fetchMyTodayHK(metricType: bundle.snapshot.metricType)
-            applyHK(hk, fallbackMyToday: bundle.snapshot.myToday)
+            if shouldUseLiveHealthKit(for: bundle.snapshot) {
+                let hk = await fetchMyTodayHK(metricType: bundle.snapshot.metricType)
+                applyHK(hk, fallbackMyToday: bundle.snapshot.myToday)
+                await refreshIntradaySeriesIfNeeded()
+            } else {
+                myTodayHK = nil
+                healthKitStale = false
+                intradaySeries = []
+            }
             headToHead = try? await headToHeadRepository.fetchStats(
                 opponentId: bundle.snapshot.opponent.id,
                 viewerId: profile.id

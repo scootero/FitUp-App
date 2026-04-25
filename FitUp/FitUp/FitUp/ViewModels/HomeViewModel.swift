@@ -28,8 +28,10 @@ final class HomeViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published private(set) var activeActionSearchID: UUID?
     @Published private(set) var activeActionPendingMatchID: UUID?
-    /// Shown when a search (including onboarding placeholder) resolves into a new pending match while Home is loaded.
+    /// Shown when a new pending match appears or a `match_found` / `challenge_received` push was queued.
     @Published private(set) var matchFoundCelebration: HomePendingMatch?
+    /// Shown once when a match becomes active (both accepted) or `match_active` was queued.
+    @Published private(set) var matchActiveCelebration: HomeActiveMatch?
     /// Short retro banner after successfully declining a pending match from Home.
     @Published private(set) var declineFeedbackOpponentName: String?
 
@@ -47,15 +49,11 @@ final class HomeViewModel: ObservableObject {
     private var shouldShowOnboardingPlaceholder = false
     private var hasStartedRealtime = false
     private var celebrationDismissTask: Task<Void, Never>?
+    private var activeCelebrationDismissTask: Task<Void, Never>?
     private var declineFeedbackDismissTask: Task<Void, Never>?
     private weak var sessionStore: SessionStore?
-
-    private static let publicMatchmakingMatchType = "public_matchmaking"
-    private static let matchFoundCelebrationFreshnessSeconds: TimeInterval = 300
-
-    private static func isMatchCreationFreshForCelebration(_ pending: HomePendingMatch) -> Bool {
-        max(0, Date().timeIntervalSince(pending.createdAt)) < matchFoundCelebrationFreshnessSeconds
-    }
+    /// When match-found and match-live both trigger in one reload, show live after the user dismisses match-found.
+    private var deferredMatchActiveCelebration: HomeActiveMatch?
 
     func start(profile: Profile?, showOnboardingSearching: Bool, sessionStore: SessionStore) {
         guard let profileId = profile?.id else { return }
@@ -89,9 +87,13 @@ final class HomeViewModel: ObservableObject {
         waitTimerCancellable = nil
         celebrationDismissTask?.cancel()
         celebrationDismissTask = nil
+        activeCelebrationDismissTask?.cancel()
+        activeCelebrationDismissTask = nil
         declineFeedbackDismissTask?.cancel()
         declineFeedbackDismissTask = nil
         matchFoundCelebration = nil
+        matchActiveCelebration = nil
+        deferredMatchActiveCelebration = nil
         declineFeedbackOpponentName = nil
         repository.stopRealtimeSubscriptions()
         hasStartedRealtime = false
@@ -104,8 +106,8 @@ final class HomeViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        let hadSearchingUI = !searchingRequests.isEmpty
         let oldPendingIds = Set(pendingMatches.map(\.id))
+        let oldActiveIds = Set(activeMatches.map(\.id))
 
         async let snapshotTask = repository.loadSnapshot(
             for: userId,
@@ -129,37 +131,49 @@ final class HomeViewModel: ObservableObject {
         stats = Self.makeStats(from: completed)
 
         var celebration: HomePendingMatch?
-        if snapshot.searching.isEmpty, !newPendingMatchIds.isEmpty {
-            if hadSearchingUI,
-               let m = snapshot.pendingMatches.first(where: { newPendingMatchIds.contains($0.id) }),
-               !MatchFoundCelebrationStore.hasShown(profileId: userId, matchId: m.id) {
-                celebration = m
-            } else if !hadSearchingUI,
-                      let m = snapshot.pendingMatches.first(where: { pending in
-                          newPendingMatchIds.contains(pending.id)
-                              && pending.matchType == Self.publicMatchmakingMatchType
-                              && Self.isMatchCreationFreshForCelebration(pending)
-                      }),
-                      !MatchFoundCelebrationStore.hasShown(profileId: userId, matchId: m.id) {
-                celebration = m
-            }
+        if !newPendingMatchIds.isEmpty,
+           let m = snapshot.pendingMatches.first(where: { newPendingMatchIds.contains($0.id) && !MatchFoundCelebrationStore.hasShown(profileId: userId, matchId: $0.id) }) {
+            celebration = m
         }
 
-        if celebration == nil, snapshot.searching.isEmpty {
+        if celebration == nil {
             let pendingIds = Set(snapshot.pendingMatches.map(\.id))
             if let qid = sessionStore?.takePendingMatchFoundCelebrationIfPendingContains(pendingIds),
                let m = snapshot.pendingMatches.first(where: { $0.id == qid }),
-               m.matchType == Self.publicMatchmakingMatchType,
                !MatchFoundCelebrationStore.hasShown(profileId: userId, matchId: m.id) {
                 celebration = m
             }
         }
 
+        let newActiveIds = Set(snapshot.activeMatches.map(\.id))
+        let newActiveMatchIds = newActiveIds.subtracting(oldActiveIds)
+
+        var activeCelebration: HomeActiveMatch?
+        if let qid = sessionStore?.takePendingMatchActiveCelebrationIfActiveContains(newActiveIds),
+           let m = snapshot.activeMatches.first(where: { $0.id == qid }),
+           !MatchActiveCelebrationStore.hasShown(profileId: userId, matchId: m.id) {
+            activeCelebration = m
+        } else if !newActiveMatchIds.isEmpty,
+                  let m = snapshot.activeMatches.first(where: { newActiveMatchIds.contains($0.id) && !MatchActiveCelebrationStore.hasShown(profileId: userId, matchId: $0.id) }) {
+            activeCelebration = m
+        }
+
         if let celebration {
+            activeCelebrationDismissTask?.cancel()
+            activeCelebrationDismissTask = nil
             withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
+                matchActiveCelebration = nil
                 matchFoundCelebration = celebration
             }
             scheduleCelebrationDismiss()
+            deferredMatchActiveCelebration = activeCelebration
+        } else if let activeCelebration {
+            if matchFoundCelebration != nil {
+                deferredMatchActiveCelebration = activeCelebration
+            } else {
+                deferredMatchActiveCelebration = nil
+                presentMatchActiveCelebration(activeCelebration)
+            }
         }
 
         syncLiveActivity()
@@ -171,9 +185,34 @@ final class HomeViewModel: ObservableObject {
         if let id = matchFoundCelebration?.id, let profileId = userId {
             MatchFoundCelebrationStore.markShown(profileId: profileId, matchId: id)
         }
+        let deferred = deferredMatchActiveCelebration
+        deferredMatchActiveCelebration = nil
         withAnimation(.easeOut(duration: 0.22)) {
             matchFoundCelebration = nil
         }
+        if let deferred {
+            presentMatchActiveCelebration(deferred)
+        }
+    }
+
+    func dismissMatchActiveCelebration() {
+        activeCelebrationDismissTask?.cancel()
+        activeCelebrationDismissTask = nil
+        if let id = matchActiveCelebration?.id, let profileId = userId {
+            MatchActiveCelebrationStore.markShown(profileId: profileId, matchId: id)
+        }
+        withAnimation(.easeOut(duration: 0.22)) {
+            matchActiveCelebration = nil
+        }
+    }
+
+    private func presentMatchActiveCelebration(_ match: HomeActiveMatch) {
+        activeCelebrationDismissTask?.cancel()
+        activeCelebrationDismissTask = nil
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
+            matchActiveCelebration = match
+        }
+        scheduleActiveCelebrationDismiss()
     }
 
     private func scheduleCelebrationDismiss() {
@@ -182,6 +221,15 @@ final class HomeViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             guard !Task.isCancelled else { return }
             dismissMatchFoundCelebration()
+        }
+    }
+
+    private func scheduleActiveCelebrationDismiss() {
+        activeCelebrationDismissTask?.cancel()
+        activeCelebrationDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled else { return }
+            dismissMatchActiveCelebration()
         }
     }
 

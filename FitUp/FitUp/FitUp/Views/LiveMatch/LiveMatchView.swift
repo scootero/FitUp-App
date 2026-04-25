@@ -203,7 +203,7 @@ struct LiveMatchView: View {
 
     private var seriesCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("SERIES · \(viewModel.seriesLabel.uppercased())")
+            Text("MATCH LENGTH · \(viewModel.seriesLabel.uppercased())")
                 .font(FitUpFont.mono(11, weight: .bold))
                 .foregroundStyle(FitUpColors.Text.secondary)
                 .tracking(1)

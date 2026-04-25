@@ -36,7 +36,7 @@ struct SearchingSection: View {
                             Text("Finding opponent\(String(repeating: ".", count: dotCount))")
                                 .font(FitUpFont.body(13, weight: .bold))
                                 .foregroundStyle(FitUpColors.Text.primary)
-                            Text("\(sportLabel(for: request.metricType)) · \(seriesLabel(for: request.durationDays)) · \(waitTimeText(request))")
+                            Text("\(sportLabel(for: request.metricType)) · \(MatchDurationCopy.competitionLengthBadge(days: request.durationDays)) · \(waitTimeText(request))")
                                 .font(FitUpFont.body(11, weight: .medium))
                                 .foregroundStyle(FitUpColors.Text.secondary)
                         }
@@ -76,13 +76,4 @@ struct SearchingSection: View {
         metricType == "active_calories" ? "Calories" : "Steps"
     }
 
-    private func seriesLabel(for durationDays: Int) -> String {
-        switch durationDays {
-        case 1: return "Daily"
-        case 3: return "First to 3"
-        case 5: return "Best of 5"
-        case 7: return "Best of 7"
-        default: return "\(durationDays) days"
-        }
-    }
 }

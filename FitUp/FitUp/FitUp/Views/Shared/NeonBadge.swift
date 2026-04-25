@@ -33,7 +33,7 @@ struct NeonBadge: View {
     VStack(spacing: 12) {
         NeonBadge(label: "LIVE", color: FitUpColors.Neon.green)
         NeonBadge(label: "PRO", color: FitUpColors.Neon.yellow)
-        NeonBadge(label: "Best of 7", color: FitUpColors.Neon.cyan)
+        NeonBadge(label: "7-day match", color: FitUpColors.Neon.cyan)
     }
     .padding()
     .background { BackgroundGradientView() }

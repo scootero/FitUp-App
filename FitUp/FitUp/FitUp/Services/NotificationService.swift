@@ -30,7 +30,7 @@ final class NotificationService: NSObject, ObservableObject {
     /// Published so `ContentView` / `RootShellView` can react to tapped notifications.
     @Published private(set) var pendingDeepLink: NotificationDeepLink?
 
-    /// Wired from `FitUpApp` so `match_found` pushes can queue a Home celebration match id.
+    /// Wired from `FitUpApp` so `match_found` / `challenge_received` / `match_active` pushes can queue Home celebrations.
     weak var sessionStore: SessionStore?
 
     private override init() {
@@ -89,13 +89,25 @@ final class NotificationService: NSObject, ObservableObject {
 
     // MARK: - Private helpers
 
-    private func routeNotification(userInfo: [AnyHashable: Any]) {
+    /// Queues Home celebrations when a push arrives; safe for foreground banners (does not set `pendingDeepLink`).
+    private func applyCelebrationQueuesFromNotificationPayload(userInfo: [AnyHashable: Any]) {
         let eventType = userInfo["event_type"] as? String ?? ""
         let matchIdString = userInfo["match_id"] as? String ?? ""
-        if eventType == "match_found", let uuid = UUID(uuidString: matchIdString) {
+        guard let uuid = UUID(uuidString: matchIdString) else { return }
+        switch eventType {
+        case "match_found", "challenge_received":
             sessionStore?.queueMatchFoundCelebration(matchId: uuid)
+        case "match_active":
+            sessionStore?.queueMatchActiveCelebration(matchId: uuid)
+        default:
+            break
         }
+    }
 
+    private func routeNotification(userInfo: [AnyHashable: Any]) {
+        applyCelebrationQueuesFromNotificationPayload(userInfo: userInfo)
+
+        let matchIdString = userInfo["match_id"] as? String ?? ""
         let target = userInfo["deep_link_target"] as? String ?? ""
 
         switch target {
@@ -123,6 +135,10 @@ extension NotificationService: UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let userInfo = notification.request.content.userInfo
+        Task { @MainActor in
+            self.applyCelebrationQueuesFromNotificationPayload(userInfo: userInfo)
+        }
         completionHandler([.banner, .sound, .badge])
     }
 

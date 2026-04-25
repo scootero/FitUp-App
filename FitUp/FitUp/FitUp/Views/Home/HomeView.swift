@@ -111,6 +111,17 @@ struct HomeView: View {
                 .zIndex(1)
             }
 
+            if let liveMatch = viewModel.matchActiveCelebration {
+                MatchLiveCelebrationOverlay(
+                    opponentName: liveMatch.opponent.displayName,
+                    dayNumber: liveMatch.dayPips.first(where: { $0.state == .today })?.dayNumber ?? 1,
+                    durationDays: liveMatch.durationDays,
+                    onDismiss: { viewModel.dismissMatchActiveCelebration() }
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                .zIndex(2)
+            }
+
             if let declinedOpponent = viewModel.declineFeedbackOpponentName {
                 VStack {
                     Spacer()
@@ -125,6 +136,7 @@ struct HomeView: View {
             }
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: viewModel.declineFeedbackOpponentName)
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: viewModel.matchActiveCelebration?.id)
         .task(id: profile?.id) {
             viewModel.start(profile: profile, showOnboardingSearching: showOnboardingSearching, sessionStore: sessionStore)
         }
@@ -326,6 +338,106 @@ private struct ChallengeDeclinedToast: View {
                 appeared = true
             }
         }
+    }
+}
+
+// MARK: - Match live celebration (retro)
+
+private struct MatchLiveCelebrationOverlay: View {
+    let opponentName: String
+    let dayNumber: Int
+    let durationDays: Int
+    var onDismiss: () -> Void
+
+    @State private var cardAppeared = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.56)
+                .ignoresSafeArea()
+                .onTapGesture { onDismiss() }
+
+            scanlineField
+
+            VStack(spacing: 14) {
+                Text("MATCH INITIATED!")
+                    .font(FitUpFont.mono(17, weight: .heavy))
+                    .foregroundStyle(FitUpColors.Neon.cyan)
+                    .shadow(color: FitUpColors.Neon.cyan.opacity(0.5), radius: 10)
+                    .multilineTextAlignment(.center)
+
+                Text("GO GO GO")
+                    .font(FitUpFont.mono(15, weight: .heavy))
+                    .foregroundStyle(FitUpColors.Neon.green)
+                    .shadow(color: FitUpColors.Neon.green.opacity(0.45), radius: 8)
+
+                Text("VS \(opponentName.uppercased())")
+                    .font(FitUpFont.mono(13, weight: .semibold))
+                    .foregroundStyle(FitUpColors.Neon.yellow)
+                    .multilineTextAlignment(.center)
+
+                Text("DAY \(dayNumber) OF \(durationDays)")
+                    .font(FitUpFont.mono(11, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .padding(.top, 2)
+
+                Text("TAP TO CONTINUE")
+                    .font(FitUpFont.mono(10, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .padding(.top, 6)
+            }
+            .padding(28)
+            .frame(maxWidth: 320)
+            .background(
+                RoundedRectangle(cornerRadius: FitUpRadius.lg)
+                    .fill(Color(rgb: 0x0A1020).opacity(0.95))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: FitUpRadius.lg)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        FitUpColors.Neon.cyan,
+                                        FitUpColors.Neon.green,
+                                        FitUpColors.Neon.yellow,
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    )
+            )
+            .shadow(color: FitUpColors.Neon.green.opacity(0.22), radius: 22)
+            .scaleEffect(cardAppeared ? 1 : 0.9)
+            .opacity(cardAppeared ? 1 : 0)
+            .padding(.horizontal, 24)
+            .contentShape(Rectangle())
+            .onTapGesture { onDismiss() }
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.72)) {
+                cardAppeared = true
+            }
+        }
+    }
+
+    private var scanlineField: some View {
+        GeometryReader { geo in
+            Canvas { context, size in
+                let lineH: CGFloat = 1
+                let gap: CGFloat = 6
+                var y: CGFloat = 0
+                while y < size.height {
+                    let rect = CGRect(x: 0, y: y, width: size.width, height: lineH)
+                    context.fill(Path(rect), with: .color(Color.white.opacity(0.04)))
+                    y += gap + lineH
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .allowsHitTesting(false)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }
 

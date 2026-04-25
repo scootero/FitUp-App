@@ -20,8 +20,11 @@ final class SessionStore: ObservableObject {
     @Published private(set) var healthKitPromptCompleted = false
     @Published private(set) var showSearchingCardOnHome = false
 
-    /// Set by push handling (`match_found`); consumed when Home loads a pending card for this id.
+    /// Set by push handling (`match_found`, `challenge_received`); consumed when Home loads a pending card for this id.
     private var pendingMatchFoundCelebrationMatchId: UUID?
+
+    /// Set by push handling (`match_active`); consumed when Home loads an active card for this id.
+    private var pendingMatchActiveCelebrationMatchId: UUID?
 
     private let profileRepository = ProfileRepository()
 
@@ -82,6 +85,7 @@ final class SessionStore: ObservableObject {
                 currentProfile = nil
                 showSearchingCardOnHome = false
                 pendingMatchFoundCelebrationMatchId = nil
+                pendingMatchActiveCelebrationMatchId = nil
                 healthKitPromptCompleted = false
             }
         } catch {
@@ -89,6 +93,7 @@ final class SessionStore: ObservableObject {
             currentProfile = nil
             showSearchingCardOnHome = false
             pendingMatchFoundCelebrationMatchId = nil
+            pendingMatchActiveCelebrationMatchId = nil
             healthKitPromptCompleted = false
             AppLogger.log(category: "auth", level: .info, message: "no active session on launch")
         }
@@ -174,6 +179,7 @@ final class SessionStore: ObservableObject {
             currentProfile = nil
             showSearchingCardOnHome = false
             pendingMatchFoundCelebrationMatchId = nil
+            pendingMatchActiveCelebrationMatchId = nil
             healthKitPromptCompleted = false
             AppLogger.log(
                 category: "auth",
@@ -237,6 +243,17 @@ final class SessionStore: ObservableObject {
     func takePendingMatchFoundCelebrationIfPendingContains(_ pendingMatchIds: Set<UUID>) -> UUID? {
         guard let id = pendingMatchFoundCelebrationMatchId, pendingMatchIds.contains(id) else { return nil }
         pendingMatchFoundCelebrationMatchId = nil
+        return id
+    }
+
+    func queueMatchActiveCelebration(matchId: UUID) {
+        pendingMatchActiveCelebrationMatchId = matchId
+    }
+
+    /// Clears and returns the queued id only when it appears in the current active list (Home has synced).
+    func takePendingMatchActiveCelebrationIfActiveContains(_ activeMatchIds: Set<UUID>) -> UUID? {
+        guard let id = pendingMatchActiveCelebrationMatchId, activeMatchIds.contains(id) else { return nil }
+        pendingMatchActiveCelebrationMatchId = nil
         return id
     }
 

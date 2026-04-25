@@ -121,7 +121,7 @@ struct MatchCardView: View {
                 .font(FitUpFont.mono(8, weight: .heavy))
                 .tracking(1.0)
                 .foregroundStyle(accentColor.opacity(0.92))
-            Text("LEFT")
+            Text("TO WIN")
                 .font(FitUpFont.mono(8, weight: .heavy))
                 .tracking(1.0)
                 .foregroundStyle(accentColor.opacity(0.78))
