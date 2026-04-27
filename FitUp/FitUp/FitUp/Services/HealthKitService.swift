@@ -327,6 +327,32 @@ enum HealthKitService {
         return Int(total.rounded())
     }
 
+    /// Returns a cumulative metric total for an arbitrary absolute date range.
+    static func fetchMetricTotal(
+        metricType: HealthMetricType,
+        startDate: Date,
+        endDate: Date
+    ) async throws -> Int {
+        guard endDate > startDate else { return 0 }
+        let quantityIdentifier: HKQuantityTypeIdentifier
+        let unit: HKUnit
+        switch metricType {
+        case .steps:
+            quantityIdentifier = .stepCount
+            unit = .count()
+        case .activeCalories:
+            quantityIdentifier = .activeEnergyBurned
+            unit = .kilocalorie()
+        }
+        let total = try await fetchCumulativeTotal(
+            quantityIdentifier: quantityIdentifier,
+            unit: unit,
+            startDate: startDate,
+            endDate: endDate
+        )
+        return Int(total.rounded())
+    }
+
     /// Intraday **cumulative** series for `calendarDate` in `timeZone`, from midnight through the end of the visible window
     /// (`now` when that date is “today”, otherwise end of that calendar day). Uses 15-minute buckets, then reduces to at most
     /// `maxPoints`. The final sample matches `fetchCumulativeTotal` over the same `[dayStart, chartEnd]` window.

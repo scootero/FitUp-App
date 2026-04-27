@@ -7,8 +7,6 @@
 
 import SwiftUI
 
-private let weekDayLetters = ["S", "M", "T", "W", "T", "F", "S"]
-
 struct WeekChartCard: View {
     @Binding var statsTab: HealthViewModel.StatsTab
     let weekSteps: [Int]
@@ -17,12 +15,9 @@ struct WeekChartCard: View {
     let caloriesGoal: Int
     let todaySteps: Int
     let todayCalories: Int
-    let allTimeBests: HealthAllTimeBests
-    let winRateText: String
-    let winCount: Int
-    let matchCount: Int
 
     @State private var barAnim = false
+    @State private var selectedDayIndex = 6
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -34,6 +29,17 @@ struct WeekChartCard: View {
                 .tracking(2)
                 .foregroundStyle(FitUpColors.Text.tertiary)
                 .padding(.bottom, 8)
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(selectedDayLabel.uppercased())
+                    .font(FitUpFont.body(10, weight: .heavy))
+                    .tracking(1.2)
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+                Text(selectedDayValueLabel)
+                    .font(FitUpFont.display(22, weight: .bold))
+                    .foregroundStyle(goalColor)
+            }
+            .padding(.bottom, 10)
 
             miniBars
                 .padding(.bottom, 12)
@@ -76,40 +82,7 @@ struct WeekChartCard: View {
                 }
             }
             .frame(height: 5)
-            .padding(.bottom, 16)
-
-            Text("ALL-TIME BESTS")
-                .font(FitUpFont.body(10, weight: .heavy))
-                .tracking(2)
-                .foregroundStyle(FitUpColors.Text.tertiary)
-                .padding(.bottom, 12)
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                allTimeCell(
-                    title: "BEST SINGLE DAY",
-                    value: statsTab == .steps ? allTimeBests.stepsBestDay : allTimeBests.calsBestDay,
-                    sub: statsTab == .steps ? allTimeBests.stepsBestDaySub : allTimeBests.calsBestDaySub,
-                    accent: false
-                )
-                allTimeCell(
-                    title: "BEST WEEK TOTAL",
-                    value: statsTab == .steps ? allTimeBests.stepsBestWeek : allTimeBests.calsBestWeek,
-                    sub: statsTab == .steps ? allTimeBests.stepsBestWeekSub : allTimeBests.calsBestWeekSub,
-                    accent: false
-                )
-                allTimeCell(
-                    title: "BEST WIN STREAK",
-                    value: streakText,
-                    sub: "days · best",
-                    accent: false
-                )
-                allTimeCell(
-                    title: "BATTLE WIN RATE",
-                    value: winRateText,
-                    sub: "\(winCount) wins · \(max(0, matchCount - winCount)) losses",
-                    accent: true
-                )
-            }
+            .padding(.bottom, 4)
         }
         .padding(18)
         .glassCard(.base)
@@ -117,18 +90,15 @@ struct WeekChartCard: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                 barAnim = true
             }
+            selectedDayIndex = min(max(selectedDayIndex, 0), 6)
         }
         .onChange(of: statsTab) { _, _ in
             barAnim = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 barAnim = true
             }
+            selectedDayIndex = 6
         }
-    }
-
-    private var streakText: String {
-        if let d = allTimeBests.bestWinStreakDays, d > 0 { return "\(d)" }
-        return "—"
     }
 
     private var currentWeek: [Int] {
@@ -155,6 +125,46 @@ struct WeekChartCard: View {
     private var goalProgress: Double {
         guard valueGoal > 0 else { return 0 }
         return Double(valueToday) / Double(valueGoal)
+    }
+
+    private var safeSelectedDayIndex: Int {
+        min(max(selectedDayIndex, 0), max(0, currentWeek.count - 1))
+    }
+
+    private var selectedDayValue: Int {
+        guard !currentWeek.isEmpty else { return 0 }
+        return currentWeek[safeSelectedDayIndex]
+    }
+
+    private var selectedDayValueLabel: String {
+        statsTab == .steps
+            ? "\(selectedDayValue.formatted()) steps"
+            : "\(selectedDayValue.formatted()) cal"
+    }
+
+    private var bestDayIndex: Int? {
+        guard let maxValue = currentWeek.max(), maxValue > 0 else { return nil }
+        return currentWeek.lastIndex(of: maxValue)
+    }
+
+    private var selectedDayLabel: String {
+        guard currentWeek.count == 7 else { return "Selected Day" }
+        let labels = weekdayLabels
+        guard safeSelectedDayIndex < labels.count else { return "Selected Day" }
+        return labels[safeSelectedDayIndex]
+    }
+
+    private var weekdayLabels: [String] {
+        var calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = "EEE"
+        return (0..<7).compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: -(6 - offset), to: today) else { return nil }
+            return formatter.string(from: day).uppercased()
+        }
     }
 
     private var tabToggle: some View {
@@ -184,34 +194,54 @@ struct WeekChartCard: View {
 
     private var miniBars: some View {
         let goal = valueGoal
+        let labels = weekdayLabels
         return HStack(alignment: .bottom, spacing: 3) {
             ForEach(0..<7, id: \.self) { i in
                 let value = i < currentWeek.count ? currentWeek[i] : 0
                 let pct = peak > 0 ? Double(value) / peak : 0
                 let isToday = i == 6
+                let isBest = bestDayIndex == i
+                let isSelected = safeSelectedDayIndex == i
                 VStack(spacing: 3) {
                     ZStack(alignment: .bottom) {
                         Color.clear
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(barFill(value: value, isToday: isToday, goal: goal))
+                            .fill(barFill(value: value, isToday: isToday, goal: goal, isBest: isBest, isSelected: isSelected))
                             .frame(maxWidth: .infinity)
                             .frame(height: barAnim ? CGFloat(pct) * 56 : 0)
                             .animation(.easeOut(duration: 0.6).delay(Double(i) * 0.04), value: barAnim)
-                            .shadow(color: isToday ? goalColor.opacity(0.35) : .clear, radius: 6, y: 0)
+                            .shadow(color: (isToday || isBest || isSelected) ? goalColor.opacity(0.35) : .clear, radius: 6, y: 0)
                     }
-                    Text(weekDayLetters[i])
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(isSelected ? goalColor.opacity(0.7) : .clear, lineWidth: 1)
+                    }
+                    Text(i < labels.count ? labels[i] : "—")
                         .font(FitUpFont.body(9))
-                        .foregroundStyle(isToday ? FitUpColors.Neon.cyan : FitUpColors.Text.tertiary)
+                        .foregroundStyle(isSelected ? goalColor : (isToday ? FitUpColors.Neon.cyan : FitUpColors.Text.tertiary))
                 }
                 .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedDayIndex = i
+                }
             }
         }
         .frame(height: 56 + 18)
+        .onChange(of: currentWeek) { _, _ in
+            selectedDayIndex = min(max(selectedDayIndex, 0), 6)
+        }
     }
 
-    private func barFill(value: Int, isToday: Bool, goal: Int) -> some ShapeStyle {
+    private func barFill(
+        value: Int,
+        isToday: Bool,
+        goal: Int,
+        isBest: Bool,
+        isSelected: Bool
+    ) -> some ShapeStyle {
         if isToday {
             return AnyShapeStyle(
                 LinearGradient(
@@ -221,31 +251,16 @@ struct WeekChartCard: View {
                 )
             )
         }
+        if isBest {
+            return AnyShapeStyle(goalColor.opacity(0.4))
+        }
+        if isSelected {
+            return AnyShapeStyle(goalColor.opacity(0.34))
+        }
         if value >= goal {
             return AnyShapeStyle(goalColor.opacity(0.28))
         }
         return AnyShapeStyle(goalColor.opacity(0.13))
-    }
-
-    private func allTimeCell(title: String, value: String, sub: String, accent: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(FitUpFont.body(9, weight: .heavy))
-                .tracking(1.5)
-                .foregroundStyle(FitUpColors.Text.tertiary)
-            Text(value)
-                .font(FitUpFont.display(28, weight: .bold))
-                .foregroundStyle(accent ? FitUpColors.Neon.green : FitUpColors.Neon.cyan)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-            Text(sub)
-                .font(FitUpFont.body(11))
-                .foregroundStyle(FitUpColors.Text.tertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .glassCard(.base)
     }
 }
 
@@ -257,11 +272,7 @@ struct WeekChartCard: View {
         stepsGoal: 12_000,
         caloriesGoal: 650,
         todaySteps: 11_240,
-        todayCalories: 520,
-        allTimeBests: .empty,
-        winRateText: "71%",
-        winCount: 7,
-        matchCount: 9
+        todayCalories: 520
     )
     .padding()
     .background { BackgroundGradientView() }

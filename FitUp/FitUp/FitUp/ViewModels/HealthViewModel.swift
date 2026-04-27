@@ -9,6 +9,49 @@ import Combine
 import Foundation
 import HealthKit
 
+struct HealthWeekComparison: Equatable {
+    let metricType: HealthViewModel.StatsTab
+    let currentTotal: Int
+    let previousTotal: Int
+
+    var delta: Int { currentTotal - previousTotal }
+    var percentDelta: Int {
+        guard previousTotal > 0 else { return currentTotal > 0 ? 100 : 0 }
+        return Int((Double(delta) / Double(previousTotal) * 100).rounded())
+    }
+    var currentBarFraction: Double {
+        let maxValue = max(currentTotal, previousTotal, 1)
+        return Double(currentTotal) / Double(maxValue)
+    }
+    var previousBarFraction: Double {
+        let maxValue = max(currentTotal, previousTotal, 1)
+        return Double(previousTotal) / Double(maxValue)
+    }
+    var metricUnitLabel: String { metricType == .steps ? "steps" : "cal" }
+    var currentValueText: String { currentTotal.formatted() }
+    var previousValueText: String { previousTotal.formatted() }
+    var headline: String {
+        if delta == 0 { return "On pace with last week at this point." }
+        if delta > 0 { return "+\(percentDelta)% vs last week" }
+        return "\(percentDelta)% vs last week"
+    }
+}
+
+struct HealthGoalConsistency: Equatable {
+    let goalHitCount: Int
+    let dayStates: [Bool]
+    let currentStreakDays: Int
+
+    var summaryLabel: String {
+        "\(goalHitCount)/\(dayStates.count) goal-hit days this week"
+    }
+
+    var streakLabel: String {
+        if currentStreakDays == 1 { return "1 day" }
+        return "\(currentStreakDays) days"
+    }
+}
+
 @MainActor
 final class HealthViewModel: ObservableObject {
     enum StatsTab: String, CaseIterable, Identifiable {
@@ -41,10 +84,9 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var sleepSummary: HealthSleepSummary?
     @Published private(set) var hrZoneRows: [HealthHRZoneRow] = []
 
-    @Published private(set) var allTimeBests = HealthAllTimeBests.empty
-    @Published private(set) var winRateText = "0%"
-    @Published private(set) var winCount = 0
-    @Published private(set) var matchCount = 0
+    @Published private(set) var weekComparisonSteps: HealthWeekComparison?
+    @Published private(set) var weekComparisonCalories: HealthWeekComparison?
+    @Published private(set) var battleStats = HealthBattleStats.empty
 
     @Published private(set) var activeMatchEdges: [HomeActiveMatch] = []
 
@@ -57,12 +99,26 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var caloriesTodayValue = 0
     @Published private(set) var restingHRValue: Double?
 
-    private let healthRepository = HealthRepository()
+    private let battleStatsRepository = BattleStatsRepository()
     private let homeRepository = HomeRepository()
-    private let activityRepository = ActivityRepository()
 
     private var profileId: UUID?
     private var profileTimeZoneIdentifier: String?
+
+    var selectedWeekComparison: HealthWeekComparison? {
+        statsTab == .steps ? weekComparisonSteps : weekComparisonCalories
+    }
+
+    var goalConsistency: HealthGoalConsistency {
+        let dayStates = weekSteps.map { goals.stepsGoal > 0 && $0 >= goals.stepsGoal }
+        let hitCount = dayStates.filter { $0 }.count
+        var streak = 0
+        for hit in dayStates.reversed() {
+            guard hit else { break }
+            streak += 1
+        }
+        return HealthGoalConsistency(goalHitCount: hitCount, dayStates: dayStates, currentStreakDays: streak)
+    }
 
     func start(profile: Profile?) {
         profileId = profile?.id
@@ -226,21 +282,15 @@ final class HealthViewModel: ObservableObject {
         sleepSummary = sleepAgg
         hrZoneRows = zones
 
-        async let remoteBests = healthRepository.fetchAllTimeBests(userId: userId)
-        async let hkBestsTask = loadHealthKitAllTimeBests(userId: userId)
-        let remoteResolved = await remoteBests
-        let hkResolved = await hkBestsTask
-        allTimeBests = HealthAllTimeBests.merged(healthKit: hkResolved, remote: remoteResolved)
-        activeMatchEdges = await homeRepository.loadActiveMatches(for: userId, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
+        async let weekComparisonResult = buildWeekComparisons()
+        async let battleStatsResult = battleStatsRepository.fetchHealthBattleStats()
+        async let activeMatches = homeRepository.loadActiveMatches(for: userId, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
 
-        let completed = await activityRepository.loadCompletedMatches(currentUserId: userId)
-        matchCount = completed.count
-        winCount = completed.filter(\.myWon).count
-        if matchCount > 0 {
-            winRateText = "\(Int((Double(winCount) / Double(matchCount) * 100).rounded()))%"
-        } else {
-            winRateText = "0%"
-        }
+        let comparisonResolved = await weekComparisonResult
+        weekComparisonSteps = comparisonResolved.steps
+        weekComparisonCalories = comparisonResolved.calories
+        battleStats = await battleStatsResult
+        activeMatchEdges = await activeMatches
 
         lastLoadFinishedAt = Date()
 
@@ -262,8 +312,8 @@ final class HealthViewModel: ObservableObject {
         meta["duration_ms"] = "\(durationMs)"
         meta["load_finished_at"] = ISO8601DateFormatter().string(from: Date())
         meta["active_matches_count"] = "\(activeMatchEdges.count)"
-        meta["completed_matches"] = "\(matchCount)"
-        meta["wins"] = "\(winCount)"
+        meta["battle_matches_played"] = "\(battleStats.matchesPlayed)"
+        meta["battle_wins"] = "\(battleStats.wins)"
         meta["optional_resting_ok"] = "\(restingResult.ok)"
         meta["optional_sleep_ok"] = "\(sleepResult.ok)"
         meta["optional_week_steps_ok"] = "\(wStepsResult.ok)"
@@ -295,30 +345,10 @@ final class HealthViewModel: ObservableObject {
         caloriesTodayValue = 0
         restingHRValue = nil
         lastLoadFinishedAt = nil
-        allTimeBests = .empty
-        winRateText = "0%"
-        winCount = 0
-        matchCount = 0
+        weekComparisonSteps = nil
+        weekComparisonCalories = nil
+        battleStats = .empty
         activeMatchEdges = []
-    }
-
-    /// Best day / best 7-day totals from Apple Health; empty on failure (merge falls back to Supabase).
-    private func loadHealthKitAllTimeBests(userId: UUID) async -> HealthKitAllTimeBests {
-        do {
-            return try await HealthKitService.fetchAllTimeBestsFromHealth()
-        } catch {
-            AppLogger.log(
-                category: "healthkit_read",
-                level: .warning,
-                message: "all-time bests from HealthKit failed",
-                userId: userId,
-                metadata: [
-                    "error": error.localizedDescription,
-                    "error_type": String(describing: type(of: error)),
-                ]
-            )
-            return .empty
-        }
     }
 
     private func healthKitRead<T>(
@@ -437,6 +467,42 @@ final class HealthViewModel: ObservableObject {
             return String(format: "%.1fk", Double(n) / 1000)
         }
         return "\(n)"
+    }
+
+    private func buildWeekComparisons() async -> (steps: HealthWeekComparison?, calories: HealthWeekComparison?) {
+        let tz = profileTimeZoneIdentifier.flatMap(TimeZone.init(identifier:)) ?? .current
+        var calendar = Calendar.current
+        calendar.timeZone = tz
+        let now = Date()
+        let startOfToday = calendar.startOfDay(for: now)
+        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: startOfToday) else {
+            return (nil, nil)
+        }
+        let currentWeekStart = weekInterval.start
+        let elapsed = now.timeIntervalSince(currentWeekStart)
+        guard let lastWeekStart = calendar.date(byAdding: .day, value: -7, to: currentWeekStart) else {
+            return (nil, nil)
+        }
+        let lastWeekEnd = lastWeekStart.addingTimeInterval(max(0, elapsed))
+
+        async let currentSteps = try? HealthKitService.fetchMetricTotal(metricType: .steps, startDate: currentWeekStart, endDate: now)
+        async let previousSteps = try? HealthKitService.fetchMetricTotal(metricType: .steps, startDate: lastWeekStart, endDate: lastWeekEnd)
+        async let currentCals = try? HealthKitService.fetchMetricTotal(metricType: .activeCalories, startDate: currentWeekStart, endDate: now)
+        async let previousCals = try? HealthKitService.fetchMetricTotal(metricType: .activeCalories, startDate: lastWeekStart, endDate: lastWeekEnd)
+        let resolvedCurrentSteps = await currentSteps
+        let resolvedPreviousSteps = await previousSteps
+        let resolvedCurrentCals = await currentCals
+        let resolvedPreviousCals = await previousCals
+
+        let steps: HealthWeekComparison? = {
+            guard let current = resolvedCurrentSteps, let previous = resolvedPreviousSteps else { return nil }
+            return HealthWeekComparison(metricType: .steps, currentTotal: current, previousTotal: previous)
+        }()
+        let calories: HealthWeekComparison? = {
+            guard let current = resolvedCurrentCals, let previous = resolvedPreviousCals else { return nil }
+            return HealthWeekComparison(metricType: .calories, currentTotal: current, previousTotal: previous)
+        }()
+        return (steps, calories)
     }
 
 }

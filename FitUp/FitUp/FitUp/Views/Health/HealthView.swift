@@ -53,13 +53,18 @@ struct HealthView: View {
                     stepsGoal: viewModel.goals.stepsGoal,
                     caloriesGoal: viewModel.goals.calsGoal,
                     todaySteps: viewModel.stepsTodayValue,
-                    todayCalories: viewModel.caloriesTodayValue,
-                    allTimeBests: viewModel.allTimeBests,
-                    winRateText: viewModel.winRateText,
-                    winCount: viewModel.winCount,
-                    matchCount: viewModel.matchCount
+                    todayCalories: viewModel.caloriesTodayValue
                 )
                 .padding(.bottom, 14)
+
+                WeekComparisonCard(comparison: viewModel.selectedWeekComparison)
+                    .padding(.bottom, 14)
+
+                ConsistencyCard(consistency: viewModel.goalConsistency)
+                    .padding(.bottom, 14)
+
+                BattleStatsCard(stats: viewModel.battleStats)
+                    .padding(.bottom, 14)
 
                 healthSectionLabel("Sleep Quality")
                 HStack(alignment: .top, spacing: 10) {
