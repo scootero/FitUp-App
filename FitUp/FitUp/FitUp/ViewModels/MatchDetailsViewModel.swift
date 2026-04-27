@@ -254,6 +254,8 @@ final class MatchDetailsViewModel: ObservableObject {
     private let homeRepository: HomeRepository
     private let headToHeadRepository: HeadToHeadRepository
     private var hasStarted = false
+    private var pollingTask: Task<Void, Never>?
+    private let pollingIntervalNs: UInt64 = 180_000_000_000
 
     private let cacheKeyPrefix = "matchDetail.cache.v1."
 
@@ -296,17 +298,26 @@ final class MatchDetailsViewModel: ObservableObject {
         guard !hasStarted else { return }
         hasStarted = true
         Task { await initialLoad() }
-        detailsRepository.startLiveRefresh(matchId: matchId) { [weak self] in
-            guard let self else { return }
-            await self.refreshSupabaseOnly()
-        }
+        startPollingIfNeeded()
     }
 
     func stop() {
-        detailsRepository.stopLiveRefresh()
+        pollingTask?.cancel()
+        pollingTask = nil
         hasStarted = false
         headToHeadRepository.clearMemoryCache()
         intradaySeries = []
+    }
+
+    private func startPollingIfNeeded() {
+        guard pollingTask == nil else { return }
+        pollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                try? await Task.sleep(nanoseconds: self.pollingIntervalNs)
+                await self.refreshSupabaseOnly()
+            }
+        }
     }
 
     private func loadCacheSync() {

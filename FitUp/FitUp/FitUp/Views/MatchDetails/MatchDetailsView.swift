@@ -11,8 +11,8 @@ struct MatchDetailsView: View {
     var onClose: () -> Void
     var onRematch: (ChallengeLaunchContext) -> Void
 
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel: MatchDetailsViewModel
-    @State private var showingLiveMatch = false
     @State private var hoveredDayBreakdownDayNumber: Int?
     @State private var tappedDayBreakdownDayNumber: Int?
     @State private var didTrackMatchViewed = false
@@ -82,6 +82,9 @@ struct MatchDetailsView: View {
                 .padding(.bottom, 24)
             }
             .scrollIndicators(.hidden)
+            .refreshable {
+                await viewModel.refresh(showLoading: false)
+            }
         }
         .task {
             viewModel.start()
@@ -102,7 +105,7 @@ struct MatchDetailsView: View {
             if snap.state == .completed, !didTrackMatchCompleted {
                 didTrackMatchCompleted = true
                 ProductAnalytics.track(
-                    ProductAnalytics.Event.matchCompleted,
+                    ProductAnalytics.Event.completedMatchViewed,
                     userId: uid,
                     properties: [
                         "match_id": snap.matchId.uuidString,
@@ -114,13 +117,9 @@ struct MatchDetailsView: View {
         .onDisappear {
             viewModel.stop()
         }
-        .fullScreenCover(isPresented: $showingLiveMatch) {
-            LiveMatchView(
-                matchId: viewModel.matchId,
-                profile: profile
-            ) {
-                showingLiveMatch = false
-            }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task { await viewModel.refresh(showLoading: false) }
         }
         .screenTransition()
     }
@@ -1039,20 +1038,6 @@ struct MatchDetailsView: View {
 
     private func actionButtons(dm: MatchDetailDisplayModel) -> some View {
         HStack(spacing: 10) {
-            if dm.snapshot.state == .active {
-                Button {
-                    showingLiveMatch = true
-                } label: {
-                    Text(dm.primaryCTATitle)
-                        .font(FitUpFont.body(14, weight: .heavy))
-                        .foregroundStyle(FitUpColors.Text.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(.plain)
-                .solidButton(color: FitUpColors.Neon.cyan)
-            }
-
             if dm.snapshot.state == .completed {
                 Button {
                     if let context = viewModel.makeRematchLaunchContext() {

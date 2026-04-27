@@ -4,7 +4,7 @@
 //
 //  Intentional product events to `analytics_events`. Not mirrored from AppLogger.
 //  Pre-auth events allowed with `userId == nil` must match `preAuthAllowlistedEventNames`
-//  and server RLS on `analytics_events`.
+//  and server RLS on `analytics_events` (see `supabase/manual_sql/analytics_events_reset.sql`).
 //
 
 import Foundation
@@ -21,24 +21,20 @@ enum ProductAnalytics {
     private static let sessionLock = NSLock()
     private static var foregroundSessionId: UUID?
     private static var foregroundSessionStartedAt: Date?
+    /// Profile id that owns the current foreground session (`session_started`); used for `session_ended` after sign-out or background.
+    private static var foregroundSessionOwnerProfileId: UUID?
 
     private static var didTrackColdStart = false
 
-    /// Must stay in sync with `supabase/migrations/*analytics*` allowlist for `user_id is null`.
+    /// Must stay in sync with `supabase/manual_sql/analytics_events_reset.sql` anonymous allowlist.
     static let preAuthAllowlistedEventNames: Set<String> = [
         "app_cold_start",
         "auth_screen_view",
-        "app_opened",
-        "app_backgrounded",
-        "session_started",
-        "session_ended",
     ]
 
     enum Event {
         static let appColdStart = "app_cold_start"
         static let authScreenView = "auth_screen_view"
-        static let appOpened = "app_opened"
-        static let appBackgrounded = "app_backgrounded"
         static let sessionStarted = "session_started"
         static let sessionEnded = "session_ended"
 
@@ -60,8 +56,6 @@ enum ProductAnalytics {
         static let healthPermissionGranted = "health_permission_granted"
         static let healthPermissionDenied = "health_permission_denied"
 
-        static let healthSyncStarted = "health_sync_started"
-        static let healthSyncSucceeded = "health_sync_succeeded"
         static let healthSyncFailed = "health_sync_failed"
 
         static let matchmakingStarted = "matchmaking_started"
@@ -70,10 +64,9 @@ enum ProductAnalytics {
         static let matchViewed = "match_viewed"
         static let matchAccepted = "match_accepted"
         static let matchDeclined = "match_declined"
-        static let matchCompleted = "match_completed"
+        static let completedMatchViewed = "completed_match_viewed"
 
         static let opponentProfileViewed = "opponent_profile_viewed"
-        static let leaderboardViewed = "leaderboard_viewed"
 
         static let subscriptionScreenViewed = "subscription_screen_viewed"
         static let subscriptionPurchaseStarted = "subscription_purchase_started"
@@ -99,55 +92,79 @@ enum ProductAnalytics {
         )
     }
 
-    /// Foreground session: new UUID each time the app returns from `background` to `active`, or first launch.
+    /// Foreground session: start only when `profileId` is available (see `syncForegroundSessionWithProfile`).
     static func handleScenePhaseChange(_ phase: ScenePhase, userId: UUID?) {
         switch phase {
         case .active:
-            sessionLock.lock()
-            let needStart = foregroundSessionId == nil
-            let sid = needStart ? UUID() : (foregroundSessionId ?? UUID())
-            if needStart {
-                foregroundSessionId = sid
-                foregroundSessionStartedAt = Date()
-            }
-            sessionLock.unlock()
-
-            if needStart {
-                var props: [String: String] = ["debug": isDebugBuild ? "true" : "false"]
-                props["foreground_session_id"] = sid.uuidString
-                track(Event.sessionStarted, userId: userId, properties: props, sessionOverride: sid)
-                track(Event.appOpened, userId: userId, properties: props, sessionOverride: sid)
+            if let uid = userId {
+                syncForegroundSessionWithProfile(profileId: uid)
             }
 
         case .background:
-            sessionLock.lock()
-            let sid = foregroundSessionId
-            let startedAt = foregroundSessionStartedAt
-            foregroundSessionId = nil
-            foregroundSessionStartedAt = nil
-            sessionLock.unlock()
-
-            guard let sid else { return }
-
-            var props: [String: String] = [:]
-            if let startedAt {
-                props["duration_ms"] = String(Int(Date().timeIntervalSince(startedAt) * 1000))
-            }
-            props["debug"] = isDebugBuild ? "true" : "false"
-            track(Event.sessionEnded, userId: userId, properties: props, sessionOverride: sid)
-            track(Event.appBackgrounded, userId: userId, properties: props, sessionOverride: sid)
+            emitSessionEndedAndClear()
 
         default:
             break
         }
     }
 
-    private static var isDebugBuild: Bool {
-#if DEBUG
-        true
-#else
-        false
-#endif
+    /// When `currentProfile.id` becomes available while the app is active, start session analytics once per foreground stint.
+    static func syncForegroundSessionWithProfile(profileId: UUID?) {
+        guard let profileId else { return }
+        sessionLock.lock()
+        let alreadyOpen = foregroundSessionId != nil
+        sessionLock.unlock()
+        guard !alreadyOpen else { return }
+
+        sessionLock.lock()
+        let sid = UUID()
+        foregroundSessionId = sid
+        foregroundSessionStartedAt = Date()
+        foregroundSessionOwnerProfileId = profileId
+        sessionLock.unlock()
+
+        track(Event.sessionStarted, userId: profileId, properties: [:], sessionOverride: sid)
+    }
+
+    /// End tracked foreground session on sign-out (app may stay active; background may not fire).
+    static func endForegroundSessionForAuthChange(profileId: UUID) {
+        sessionLock.lock()
+        let owner = foregroundSessionOwnerProfileId
+        let sid = foregroundSessionId
+        let startedAt = foregroundSessionStartedAt
+        guard owner == profileId, sid != nil else {
+            sessionLock.unlock()
+            return
+        }
+        foregroundSessionId = nil
+        foregroundSessionStartedAt = nil
+        foregroundSessionOwnerProfileId = nil
+        sessionLock.unlock()
+
+        var props: [String: String] = [:]
+        if let startedAt {
+            props["duration_ms"] = String(Int(Date().timeIntervalSince(startedAt) * 1000))
+        }
+        track(Event.sessionEnded, userId: profileId, properties: props, sessionOverride: sid)
+    }
+
+    private static func emitSessionEndedAndClear() {
+        sessionLock.lock()
+        let sid = foregroundSessionId
+        let startedAt = foregroundSessionStartedAt
+        let owner = foregroundSessionOwnerProfileId
+        foregroundSessionId = nil
+        foregroundSessionStartedAt = nil
+        foregroundSessionOwnerProfileId = nil
+        sessionLock.unlock()
+
+        guard let sid, let owner else { return }
+
+        var props: [String: String] = [:]
+        if let startedAt {
+            props["duration_ms"] = String(Int(Date().timeIntervalSince(startedAt) * 1000))
+        }
+        track(Event.sessionEnded, userId: owner, properties: props, sessionOverride: sid)
     }
 
     static func currentForegroundSessionIdForDebug() -> UUID? {
@@ -176,21 +193,18 @@ enum ProductAnalytics {
         let sessionId = sessionOverride ?? foregroundSessionId
         sessionLock.unlock()
 
-        var merged = properties
-        if merged["debug"] == nil {
-            merged["debug"] = isDebugBuild ? "true" : "false"
-        }
-
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
 
         let row = AnalyticsEventInsert(
             userId: userId,
             eventName: name,
-            properties: merged,
+            properties: properties,
             appVersion: version,
             buildNumber: build,
             platform: "ios",
+            source: "ios_client",
+            eventSchemaVersion: 1,
             clientSessionId: clientSessionId,
             sessionId: sessionId,
             screenName: screenName
@@ -253,6 +267,8 @@ private struct AnalyticsEventInsert: Encodable {
     let appVersion: String?
     let buildNumber: String?
     let platform: String?
+    let source: String?
+    let eventSchemaVersion: Int?
     let clientSessionId: String?
     let sessionId: UUID?
     let screenName: String?
@@ -264,6 +280,8 @@ private struct AnalyticsEventInsert: Encodable {
         case appVersion = "app_version"
         case buildNumber = "build_number"
         case platform
+        case source
+        case eventSchemaVersion = "event_schema_version"
         case clientSessionId = "client_session_id"
         case sessionId = "session_id"
         case screenName = "screen_name"

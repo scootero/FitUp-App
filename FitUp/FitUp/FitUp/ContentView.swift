@@ -43,6 +43,11 @@ struct ContentView: View {
                 ProductAnalytics.trackAppColdStartIfNeeded(userId: sessionStore.currentProfile?.id)
             }
         }
+        .onChange(of: sessionStore.currentProfile?.id) { _, _ in
+            if scenePhase == .active, let pid = sessionStore.currentProfile?.id {
+                ProductAnalytics.syncForegroundSessionWithProfile(profileId: pid)
+            }
+        }
         .task(id: metricSyncLifecycleIdentity) {
             let eligible = sessionStore.isOnboardingComplete || sessionStore.healthKitPromptCompleted
             guard eligible else {
@@ -166,11 +171,6 @@ private struct RootShellView: View {
             guard let deepLink else { return }
             _ = notificationService.consumeDeepLink()
             handleDeepLink(deepLink)
-        }
-        .onChange(of: selectedTab) { _, tab in
-            if tab == .ranks, let uid = sessionStore.currentProfile?.id {
-                ProductAnalytics.track(ProductAnalytics.Event.leaderboardViewed, userId: uid)
-            }
         }
         .overlay(alignment: .topTrailing) {
             if let uid = sessionStore.currentProfile?.id {

@@ -18,6 +18,15 @@ enum LogLevel: String {
 enum AppLogger {
     private static let osLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FitUp", category: "app")
 
+    /// Release / TestFlight: only `warning` and `error` are sent to `app_logs`; `debug` / `info` stay local (OSLog).
+    private static func shouldSendRemoteLog(level: LogLevel) -> Bool {
+#if DEBUG
+        return true
+#else
+        return level == .warning || level == .error
+#endif
+    }
+
     /// Supabase PostgREST errors often omit `code`/`detail` from `localizedDescription` (it is only `message`).
     /// Use this for `metadata` so Dashboard `app_logs` and Xcode match what Postgres returned.
     static func supabaseErrorMetadata(_ error: Error) -> [String: String] {
@@ -51,7 +60,7 @@ enum AppLogger {
         case .error: osLog.error("\(line)")
         }
 
-        guard let client = SupabaseProvider.client else { return }
+        guard shouldSendRemoteLog(level: level), let client = SupabaseProvider.client else { return }
 
         Task {
             await insertRemote(

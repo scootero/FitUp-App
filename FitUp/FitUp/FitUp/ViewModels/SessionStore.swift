@@ -227,6 +227,9 @@ final class SessionStore: ObservableObject {
             let client = try requireClient()
             try await client.auth.signOut()
             let signedOutUserId = currentProfile?.id
+            if let signedOutUserId {
+                ProductAnalytics.endForegroundSessionForAuthChange(profileId: signedOutUserId)
+            }
             isAuthenticated = false
             currentProfile = nil
             showSearchingCardOnHome = false

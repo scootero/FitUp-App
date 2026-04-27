@@ -29,6 +29,6 @@ SELECT cron.schedule(
 
 SELECT cron.schedule(
   'matchmaking-retry-stale',
-  '* * * * *',
+  '*/5 * * * *',
   $$ SELECT public.matchmaking_retry_stale_searches(5, 30); $$
 );

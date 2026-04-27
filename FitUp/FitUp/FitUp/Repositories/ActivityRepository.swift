@@ -78,6 +78,7 @@ final class ActivityRepository {
                 ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast)
             }
         } catch {
+            if error is CancellationError { return [] }
             AppLogger.log(
                 category: "match_state",
                 level: .warning,

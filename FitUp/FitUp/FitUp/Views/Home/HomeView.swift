@@ -112,6 +112,9 @@ struct HomeView: View {
                 )
             }
             .scrollIndicators(.hidden)
+            .refreshable {
+                await viewModel.reload(force: true)
+            }
 
             if let celebration = viewModel.matchFoundCelebration {
                 MatchFoundCelebrationOverlay(
@@ -167,7 +170,7 @@ struct HomeView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active, profile?.id != nil else { return }
-            Task { await viewModel.refreshFriendIncomingPoll() }
+            Task { await viewModel.reload(force: true) }
         }
         .onDisappear {
             viewModel.stop()

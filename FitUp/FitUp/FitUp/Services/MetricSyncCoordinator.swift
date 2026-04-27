@@ -11,7 +11,6 @@ import UIKit
 enum MetricSyncTrigger: String {
     case foreground
     case observer
-    case liveMatchRead
     case manual
 }
 
@@ -38,8 +37,6 @@ actor MetricSyncCoordinator {
     private var lastObserverWakeAt: Date?
     private var lastSyncCompletedAt: Date?
 
-    private let minimumLiveSyncInterval: TimeInterval = 8
-
     func updateProfile(_ profile: Profile?) async {
         let previousProfileId = activeProfile?.id
         activeProfile = profile
@@ -63,10 +60,6 @@ actor MetricSyncCoordinator {
     }
 
     func requestSync(trigger: MetricSyncTrigger = .manual, force: Bool = false) async {
-        if !force, trigger == .liveMatchRead, shouldThrottleLiveSync() {
-            return
-        }
-
         if isSyncing {
             needsResync = true
             return
@@ -79,11 +72,6 @@ actor MetricSyncCoordinator {
             needsResync = false
             await performSync(trigger: trigger)
         } while needsResync
-    }
-
-    private func shouldThrottleLiveSync() -> Bool {
-        guard let lastSyncAt else { return false }
-        return Date().timeIntervalSince(lastSyncAt) < minimumLiveSyncInterval
     }
 
     private func handleObserverWake() async {
@@ -133,12 +121,6 @@ actor MetricSyncCoordinator {
                 "last_sync_completed_at": lastSyncCompletedAt.map { Self.iso8601.string(from: $0) } ?? "never",
                 "last_observer_wake_at": lastObserverWakeAt.map { Self.iso8601.string(from: $0) } ?? "never",
             ]
-        )
-
-        ProductAnalytics.track(
-            ProductAnalytics.Event.healthSyncStarted,
-            userId: profile.id,
-            properties: ["trigger": trigger.rawValue]
         )
 
         var healthSyncPipelineFailed = false
@@ -301,23 +283,17 @@ actor MetricSyncCoordinator {
             ]
         )
 
-        var analyticsProps: [String: String] = [
-            "trigger": trigger.rawValue,
-            "duration_ms": "\(durationMs)",
-            "snapshot_writes": "\(writes.count)",
-            "historical_targets": "\(historicalTargets.count)",
-        ]
         if healthSyncPipelineFailed {
+            let analyticsProps: [String: String] = [
+                "trigger": trigger.rawValue,
+                "duration_ms": "\(durationMs)",
+                "snapshot_writes": "\(writes.count)",
+                "historical_targets": "\(historicalTargets.count)",
+            ]
             ProductAnalytics.track(
                 ProductAnalytics.Event.healthSyncFailed,
                 userId: profile.id,
                 properties: analyticsProps.merging(["failure_stage": "public_daily_activity"], uniquingKeysWith: { _, new in new })
-            )
-        } else {
-            ProductAnalytics.track(
-                ProductAnalytics.Event.healthSyncSucceeded,
-                userId: profile.id,
-                properties: analyticsProps
             )
         }
     }

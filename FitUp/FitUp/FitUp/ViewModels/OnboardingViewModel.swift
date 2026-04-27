@@ -33,9 +33,10 @@ final class OnboardingViewModel: ObservableObject {
     var analyticsUserId: UUID?
 
     func logFlowStartIfNeeded() {
+        guard let uid = analyticsUserId else { return }
         guard !didLogStart else { return }
         didLogStart = true
-        ProductAnalytics.track(ProductAnalytics.Event.onboardingStarted, userId: analyticsUserId)
+        ProductAnalytics.track(ProductAnalytics.Event.onboardingStarted, userId: uid)
     }
 
     func completeTutorialStep() {

@@ -107,34 +107,44 @@ final class MatchDayRepository {
                         }
                     }
 
-                    try await updateMetricTotal(
+                    let existingTotal = try await fetchParticipantMetricTotal(
                         matchDayId: targetDay.id,
-                        userId: currentUserId,
-                        metricTotal: resolvedTotal
+                        userId: currentUserId
                     )
-                    try await markDayProvisional(matchDayId: targetDay.id)
-                    writes.append(
-                        MatchDaySyncWrite(
-                            matchId: match.id,
-                            metricType: match.metricType,
-                            value: resolvedTotal,
-                            sourceDate: targetDay.calendarDate
+                    let participantTotalChanged = existingTotal.map { $0 != resolvedTotal } ?? true
+
+                    if participantTotalChanged {
+                        try await updateMetricTotal(
+                            matchDayId: targetDay.id,
+                            userId: currentUserId,
+                            metricTotal: resolvedTotal
                         )
-                    )
-                    AppLogger.log(
-                        category: "match_debug",
-                        level: .debug,
-                        message: "active match metric_total sync",
-                        userId: currentUserId,
-                        metadata: [
-                            "match_id": match.id.uuidString,
-                            "match_day_id": targetDay.id.uuidString,
-                            "calendar_date": targetDay.calendarDate,
-                            "query_source": querySource,
-                            "metric_total": "\(resolvedTotal)",
-                            "metric_type": match.metricType.rawValue,
-                        ]
-                    )
+                    }
+                    try await markDayProvisional(matchDayId: targetDay.id)
+                    if participantTotalChanged {
+                        writes.append(
+                            MatchDaySyncWrite(
+                                matchId: match.id,
+                                metricType: match.metricType,
+                                value: resolvedTotal,
+                                sourceDate: targetDay.calendarDate
+                            )
+                        )
+                        AppLogger.log(
+                            category: "match_debug",
+                            level: .debug,
+                            message: "active match metric_total sync",
+                            userId: currentUserId,
+                            metadata: [
+                                "match_id": match.id.uuidString,
+                                "match_day_id": targetDay.id.uuidString,
+                                "calendar_date": targetDay.calendarDate,
+                                "query_source": querySource,
+                                "metric_total": "\(resolvedTotal)",
+                                "metric_type": match.metricType.rawValue,
+                            ]
+                        )
+                    }
                 } catch {
                     AppLogger.log(
                         category: "healthkit_sync",
@@ -430,6 +440,17 @@ final class MatchDayRepository {
             .limit(1)
             .execute()
         return jsonRows(from: response.data).first.flatMap { string(from: $0["data_status"]) }
+    }
+
+    private func fetchParticipantMetricTotal(matchDayId: UUID, userId: UUID) async throws -> Int? {
+        let response = try await client
+            .from("match_day_participants")
+            .select("metric_total")
+            .eq("match_day_id", value: matchDayId.uuidString)
+            .eq("user_id", value: userId.uuidString)
+            .limit(1)
+            .execute()
+        return jsonRows(from: response.data).first.flatMap { int(from: $0["metric_total"]) }
     }
 
     private func jsonRows(from data: Data) -> [[String: Any]] {

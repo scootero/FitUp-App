@@ -110,15 +110,6 @@ struct MatchDetailBundle: Equatable {
 }
 
 final class MatchDetailsRepository {
-    private var realtimeChannel: RealtimeChannelV2?
-    private var participantUpdateTask: Task<Void, Never>?
-    private var participantInsertTask: Task<Void, Never>?
-    private var matchStateTask: Task<Void, Never>?
-
-    deinit {
-        stopLiveRefresh()
-    }
-
     private var client: SupabaseClient {
         get throws {
             guard let client = SupabaseProvider.client else {
@@ -202,84 +193,6 @@ final class MatchDetailsRepository {
             endsAt: endsAt,
             matchTimezone: matchTimezone
         )
-    }
-
-    func startLiveRefresh(matchId: UUID, onChange: @escaping @Sendable () async -> Void) {
-        stopLiveRefresh()
-        guard let client = SupabaseProvider.client else { return }
-
-        let channel = client.channel("match-details-\(matchId.uuidString)")
-        realtimeChannel = channel
-
-        let participantUpdateStream = channel.postgresChange(
-            UpdateAction.self,
-            schema: "public",
-            table: "match_day_participants"
-        )
-        let participantInsertStream = channel.postgresChange(
-            InsertAction.self,
-            schema: "public",
-            table: "match_day_participants"
-        )
-        let matchUpdateStream = channel.postgresChange(
-            UpdateAction.self,
-            schema: "public",
-            table: "matches",
-            filter: .eq("id", value: matchId)
-        )
-
-        Task {
-            do {
-                try await channel.subscribeWithError()
-                AppLogger.log(
-                    category: "match_state",
-                    level: .debug,
-                    message: "match details realtime subscribed",
-                    metadata: ["match_id": matchId.uuidString]
-                )
-            } catch {
-                AppLogger.log(
-                    category: "match_state",
-                    level: .warning,
-                    message: "match details realtime subscribe failed",
-                    metadata: ["error": error.localizedDescription]
-                )
-            }
-        }
-
-        participantUpdateTask = Task {
-            for await _ in participantUpdateStream {
-                await onChange()
-            }
-        }
-        participantInsertTask = Task {
-            for await _ in participantInsertStream {
-                await onChange()
-            }
-        }
-        matchStateTask = Task {
-            for await _ in matchUpdateStream {
-                await onChange()
-            }
-        }
-    }
-
-    func stopLiveRefresh() {
-        participantUpdateTask?.cancel()
-        participantUpdateTask = nil
-        participantInsertTask?.cancel()
-        participantInsertTask = nil
-        matchStateTask?.cancel()
-        matchStateTask = nil
-
-        guard let channel = realtimeChannel else { return }
-        realtimeChannel = nil
-
-        guard let client = SupabaseProvider.client else { return }
-        Task {
-            await client.removeChannel(channel)
-            AppLogger.log(category: "match_state", level: .debug, message: "match details realtime unsubscribed")
-        }
     }
 
     private func fetchMatchRow(matchId: UUID) async throws -> [String: Any]? {

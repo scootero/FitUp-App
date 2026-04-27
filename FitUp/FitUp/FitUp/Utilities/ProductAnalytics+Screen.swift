@@ -29,7 +29,7 @@ private struct ProductScreenTrackingModifier: ViewModifier {
                     ProductAnalytics.Event.screenViewed,
                     userId: userId,
                     screenName: screenKey,
-                    properties: ["screen": screenKey]
+                    properties: [:]
                 )
             }
             .onDisappear {
@@ -37,7 +37,7 @@ private struct ProductScreenTrackingModifier: ViewModifier {
                     appearedAt = nil
                     return
                 }
-                var props: [String: String] = ["screen": screenKey]
+                var props: [String: String] = [:]
                 if let appearedAt {
                     props["duration_ms"] = String(Int(Date().timeIntervalSince(appearedAt) * 1000))
                 }

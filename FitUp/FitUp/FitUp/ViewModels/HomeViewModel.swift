@@ -52,7 +52,10 @@ final class HomeViewModel: ObservableObject {
     private var myDisplayName: String = "You"
     private var waitTimerCancellable: AnyCancellable?
     private var shouldShowOnboardingPlaceholder = false
-    private var hasStartedRealtime = false
+    private var pollingTask: Task<Void, Never>?
+    private let pollingIntervalNs: UInt64 = 90_000_000_000
+    private var isReloadInFlight = false
+    private var hasPendingForcedReload = false
     private var celebrationDismissTask: Task<Void, Never>?
     private var activeCelebrationDismissTask: Task<Void, Never>?
     private var declineFeedbackDismissTask: Task<Void, Never>?
@@ -71,13 +74,7 @@ final class HomeViewModel: ObservableObject {
             userId = profileId
         }
 
-        if !hasStartedRealtime {
-            hasStartedRealtime = true
-            repository.startRealtimeSubscriptions(for: profileId) { [weak self] in
-                guard let self else { return }
-                await self.reload(force: true)
-            }
-        }
+        startPollingIfNeeded()
 
         if showOnboardingSearching {
             shouldShowOnboardingPlaceholder = true
@@ -100,14 +97,31 @@ final class HomeViewModel: ObservableObject {
         matchActiveCelebration = nil
         deferredMatchActiveCelebration = nil
         declineFeedbackOpponentName = nil
-        repository.stopRealtimeSubscriptions()
-        hasStartedRealtime = false
+        pollingTask?.cancel()
+        pollingTask = nil
     }
 
     func reload(force: Bool) async {
         guard let userId else { return }
-        if isLoading && !force { return }
+        if isReloadInFlight {
+            if force { hasPendingForcedReload = true }
+            return
+        }
 
+        isReloadInFlight = true
+        defer {
+            isReloadInFlight = false
+            hasPendingForcedReload = false
+        }
+
+        repeat {
+            hasPendingForcedReload = false
+            let finished = await performReload(userId: userId)
+            if !finished { return }
+        } while hasPendingForcedReload
+    }
+
+    private func performReload(userId: UUID) async -> Bool {
         isLoading = true
         defer { isLoading = false }
 
@@ -123,6 +137,11 @@ final class HomeViewModel: ObservableObject {
 
         let snapshot = await snapshotTask
         let completed = await completedTask
+
+        guard !Task.isCancelled else {
+            return false
+        }
+
         shouldShowOnboardingPlaceholder = false
 
         let newPendingIds = Set(snapshot.pendingMatches.map(\.id))
@@ -190,8 +209,19 @@ final class HomeViewModel: ObservableObject {
         }
 
         await refreshFriendIncomingPoll()
-
         syncLiveActivity()
+        return true
+    }
+
+    private func startPollingIfNeeded() {
+        guard pollingTask == nil else { return }
+        pollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                try? await Task.sleep(nanoseconds: self.pollingIntervalNs)
+                await self.reload(force: true)
+            }
+        }
     }
 
     // MARK: - Friend request poll (in-app when push missed)

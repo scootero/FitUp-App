@@ -23,6 +23,10 @@ struct OnboardingView: View {
             viewModel.analyticsUserId = sessionStore.currentProfile?.id
             viewModel.logFlowStartIfNeeded()
         }
+        .onChange(of: sessionStore.currentProfile?.id) { _, _ in
+            viewModel.analyticsUserId = sessionStore.currentProfile?.id
+            viewModel.logFlowStartIfNeeded()
+        }
         .onChange(of: viewModel.step) { _, step in
             let stepKey: String
             switch step {
