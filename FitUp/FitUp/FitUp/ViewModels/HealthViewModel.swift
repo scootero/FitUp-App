@@ -93,13 +93,9 @@ final class HealthViewModel: ObservableObject {
         await HealthKitService.requestAuthorizationIfNeeded(analyticsUserId: userId)
 
         let stepsToday: Int
-        let calsToday: Int
         do {
-            stepsToday = try await healthKitStep("today_steps", userId: userId) {
+            stepsToday = try await healthKitRead("today_steps", userId: userId) {
                 try await HealthKitService.fetchTodayStepCount()
-            }
-            calsToday = try await healthKitStep("today_active_calories", userId: userId) {
-                try await HealthKitService.fetchTodayActiveCalories()
             }
         } catch {
             showSyncedBadge = false
@@ -125,8 +121,37 @@ final class HealthViewModel: ObservableObject {
             return
         }
 
-        showHealthAccessBanner = false
-        errorMessage = nil
+        let calsToday: Int
+        var caloriesAuthorizationDenied = false
+        do {
+            calsToday = try await healthKitRead("today_active_calories", userId: userId) {
+                try await HealthKitService.fetchTodayActiveCalories()
+            }
+        } catch {
+            calsToday = 0
+            if let hk = error as? HealthKitError, case .authorizationDenied = hk {
+                caloriesAuthorizationDenied = true
+                errorMessage = error.localizedDescription
+            } else {
+                AppLogger.log(
+                    category: "healthkit_read",
+                    level: .warning,
+                    message: "health screen active calories unavailable; using 0",
+                    userId: userId,
+                    metadata: [
+                        "source": source,
+                        "pipeline": "HealthViewModel.reload",
+                        "error": error.localizedDescription,
+                        "error_type": String(describing: type(of: error)),
+                    ]
+                )
+            }
+        }
+
+        showHealthAccessBanner = caloriesAuthorizationDenied
+        if !caloriesAuthorizationDenied {
+            errorMessage = nil
+        }
 
         stepsTodayValue = stepsToday
         caloriesTodayValue = calsToday
@@ -296,7 +321,7 @@ final class HealthViewModel: ObservableObject {
         }
     }
 
-    private func healthKitStep<T>(
+    private func healthKitRead<T>(
         _ step: String,
         userId: UUID,
         _ operation: () async throws -> T
@@ -307,7 +332,7 @@ final class HealthViewModel: ObservableObject {
             AppLogger.log(
                 category: "healthkit_read",
                 level: .warning,
-                message: "health screen HK step failed [\(step)]",
+                message: "health screen HK read failed [\(step)]",
                 userId: userId,
                 metadata: [
                     "step": step,
@@ -340,7 +365,7 @@ final class HealthViewModel: ObservableObject {
             AppLogger.log(
                 category: "healthkit_read",
                 level: .warning,
-                message: "health screen HK step failed [\(step)]",
+                message: "health screen HK read failed [\(step)]",
                 userId: userId,
                 metadata: metadata
             )

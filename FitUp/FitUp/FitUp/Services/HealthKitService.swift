@@ -1556,6 +1556,10 @@ enum HealthKitService {
                 options: [.cumulativeSum]
             ) { _, statistics, error in
                 if let error {
+                    if let hk = error as? HKError, hk.code == .errorNoData {
+                        continuation.resume(returning: 0)
+                        return
+                    }
                     continuation.resume(throwing: mapHealthKitError(error, context: "fetchCumulativeTotal"))
                     return
                 }
