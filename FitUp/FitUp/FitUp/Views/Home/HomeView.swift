@@ -14,6 +14,7 @@ struct HomeView: View {
     var onOpenMatchDetails: (UUID, String) -> Void
 
     @EnvironmentObject private var sessionStore: SessionStore
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel = HomeViewModel()
 
     var body: some View {
@@ -83,6 +84,16 @@ struct HomeView: View {
                         DiscoverSection(
                             users: viewModel.discoverUsers,
                             onChallenge: { user in
+                                if let uid = sessionStore.currentProfile?.id {
+                                    ProductAnalytics.track(
+                                        ProductAnalytics.Event.opponentProfileViewed,
+                                        userId: uid,
+                                        properties: [
+                                            "opponent_user_id": user.id.uuidString,
+                                            "source": "discover",
+                                        ]
+                                    )
+                                }
                                 onOpenChallenge(prefillOpponent(from: user))
                             }
                         )
@@ -134,9 +145,14 @@ struct HomeView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(2)
             }
+
+            friendNotificationTopStack
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: viewModel.declineFeedbackOpponentName)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: viewModel.matchActiveCelebration?.id)
+        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: sessionStore.friendRequestBannerFromPush?.0)
+        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: viewModel.polledIncomingFriend?.peerId)
+        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: sessionStore.friendAcceptedYourRequestBanner?.0)
         .task(id: profile?.id) {
             viewModel.start(profile: profile, showOnboardingSearching: showOnboardingSearching, sessionStore: sessionStore)
         }
@@ -149,9 +165,70 @@ struct HomeView: View {
         .onChange(of: viewModel.activeMatches.count) { _, _ in
             clearSearchingFlagIfHasMatch()
         }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active, profile?.id != nil else { return }
+            Task { await viewModel.refreshFriendIncomingPoll() }
+        }
         .onDisappear {
             viewModel.stop()
         }
+    }
+
+    @ViewBuilder
+    private var friendNotificationTopStack: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let incoming = activeIncomingFriendRequest {
+                FriendRequestRetroCard(
+                    fromName: incoming.fromName,
+                    isLoading: viewModel.isFriendRequestActionLoading,
+                    onAccept: {
+                        Task {
+                            if let prefill = await viewModel.acceptFriendRequestBackground(peerId: incoming.peerId) {
+                                sessionStore.setBecameFriendsChallenge(prefill)
+                            }
+                        }
+                    },
+                    onLater: {
+                        if let p = sessionStore.friendRequestBannerFromPush {
+                            sessionStore.dismissFriendRequestFromPush()
+                            viewModel.markFriendPeerDismissedForLater(peerId: p.0)
+                        } else {
+                            viewModel.markFriendPeerDismissedForLater(peerId: incoming.peerId)
+                        }
+                    },
+                    onOpenFriends: { sessionStore.requestOpenFriendsListSheet() }
+                )
+            }
+
+            if let accepted = sessionStore.friendAcceptedYourRequestBanner {
+                FriendAcceptedRetroBanner(
+                    accepterName: accepted.1,
+                    onCompete: {
+                        Task {
+                            if let prefill = await viewModel.makePrefillForPeer(accepted.0) {
+                                sessionStore.dismissFriendAcceptedYourRequestBanner()
+                                onOpenChallenge(prefill)
+                            }
+                        }
+                    },
+                    onDismiss: { sessionStore.dismissFriendAcceptedYourRequestBanner() }
+                )
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .zIndex(5)
+    }
+
+    private var activeIncomingFriendRequest: (peerId: UUID, fromName: String)? {
+        if let push = sessionStore.friendRequestBannerFromPush {
+            return (push.0, push.1)
+        }
+        if let poll = viewModel.polledIncomingFriend {
+            return (poll.peerId, poll.fromName)
+        }
+        return nil
     }
 
     private func clearSearchingFlagIfHasMatch() {

@@ -2,7 +2,7 @@
 //  LeaderboardRepository.swift
 //  FitUp
 //
-//  Slice 11 — Weekly leaderboard reads (global + friends filter).
+//  Slice 11 — Weekly leaderboard reads (global + friends: accepted `friendships` peers).
 //
 
 import Combine
@@ -130,6 +130,25 @@ final class LeaderboardRepository {
             opponents.insert(uid)
         }
         return opponents
+    }
+
+    /// Accepted app friends: the other profile id in each `friendships` row for the current user with `status = 'accepted'`.
+    func fetchAcceptedFriendProfileIds(currentProfileId: UUID) async throws -> Set<UUID> {
+        let c = try client
+        let response = try await c
+            .from("friendships")
+            .select("a_id, b_id")
+            .eq("status", value: "accepted")
+            .or("a_id.eq.\(currentProfileId.uuidString),b_id.eq.\(currentProfileId.uuidString)")
+            .execute()
+
+        var peers = Set<UUID>()
+        for row in jsonRows(from: response.data) {
+            guard let a = uuid(from: row["a_id"]), let b = uuid(from: row["b_id"]) else { continue }
+            let peer = a == currentProfileId ? b : a
+            peers.insert(peer)
+        }
+        return peers
     }
 
     // MARK: - JSON helpers

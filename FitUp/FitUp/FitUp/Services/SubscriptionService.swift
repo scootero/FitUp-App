@@ -98,24 +98,12 @@ final class SubscriptionService: ObservableObject {
     func purchase(package: RevenueCat.Package) async throws {
         let result = try await Purchases.shared.purchase(package: package)
         tier = result.customerInfo.entitlements["pro"]?.isActive == true ? .premium : .free
-        AppLogger.log(
-            category: "paywall",
-            level: .info,
-            message: "purchase completed",
-            metadata: ["package": package.identifier, "tier": tier == .premium ? "premium" : "free"]
-        )
     }
 
     /// Restores previous purchases and refreshes the tier.
     func restorePurchases() async throws {
         let info = try await Purchases.shared.restorePurchases()
         tier = info.entitlements["pro"]?.isActive == true ? .premium : .free
-        AppLogger.log(
-            category: "paywall",
-            level: .info,
-            message: "restore completed",
-            metadata: ["tier": tier == .premium ? "premium" : "free"]
-        )
     }
 
     // MARK: - Private init (singleton)

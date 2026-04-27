@@ -15,6 +15,8 @@ struct MatchDetailsView: View {
     @State private var showingLiveMatch = false
     @State private var hoveredDayBreakdownDayNumber: Int?
     @State private var tappedDayBreakdownDayNumber: Int?
+    @State private var didTrackMatchViewed = false
+    @State private var didTrackMatchCompleted = false
     private let profile: Profile?
 
     private var activeBreakdownDayNumber: Int? {
@@ -83,6 +85,31 @@ struct MatchDetailsView: View {
         }
         .task {
             viewModel.start()
+        }
+        .onChange(of: viewModel.snapshot) { _, snap in
+            guard let snap, let uid = profile?.id else { return }
+            if !didTrackMatchViewed {
+                didTrackMatchViewed = true
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.matchViewed,
+                    userId: uid,
+                    properties: [
+                        "match_id": snap.matchId.uuidString,
+                        "state": snap.state.rawValue,
+                    ]
+                )
+            }
+            if snap.state == .completed, !didTrackMatchCompleted {
+                didTrackMatchCompleted = true
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.matchCompleted,
+                    userId: uid,
+                    properties: [
+                        "match_id": snap.matchId.uuidString,
+                        "won": snap.isWinning ? "true" : "false",
+                    ]
+                )
+            }
         }
         .onDisappear {
             viewModel.stop()

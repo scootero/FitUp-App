@@ -20,6 +20,13 @@ SELECT cron.schedule(
   $$ SELECT private.invoke_edge_function('send-morning-checkins', '{}'::jsonb); $$
 );
 
+-- Hourly: evening check-in nudge (7pm in each user’s profile timezone) via send-evening-checkins.
+SELECT cron.schedule(
+  'send-evening-checkins',
+  '0 * * * *',
+  $$ SELECT private.invoke_edge_function('send-evening-checkins', '{}'::jsonb); $$
+);
+
 SELECT cron.schedule(
   'matchmaking-retry-stale',
   '* * * * *',

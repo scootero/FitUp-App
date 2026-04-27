@@ -12,6 +12,7 @@ import Foundation
 final class LeaderboardViewModel: ObservableObject {
     enum LeaderboardTab: String, CaseIterable {
         case global
+        /// Weekly ranks among accepted `friendships` peers (same week as Global).
         case friends
 
         var title: String {
@@ -34,8 +35,8 @@ final class LeaderboardViewModel: ObservableObject {
     @Published private(set) var weekRangeLabel: String = ""
     @Published private(set) var podiumRows: [LeaderboardDisplayRow] = []
     @Published private(set) var listRows: [LeaderboardDisplayRow] = []
-    /// True when Friends tab has no past opponents to show.
-    @Published private(set) var friendsHasNoOpponents = false
+    /// True when the Friends tab has no accepted friends to show.
+    @Published private(set) var friendsHasNoFriends = false
 
     /// Set by the view when the current user’s main list row intersects the scroll viewport.
     @Published var isCurrentUserListRowVisible = true
@@ -57,7 +58,7 @@ final class LeaderboardViewModel: ObservableObject {
             podiumRows = []
             listRows = []
             weekRangeLabel = ""
-            friendsHasNoOpponents = false
+            friendsHasNoFriends = false
             return
         }
 
@@ -70,16 +71,16 @@ final class LeaderboardViewModel: ObservableObject {
 
         do {
             if tab == .friends {
-                let opponents = try await repository.fetchOpponentProfileIds(currentUserId: profile.id)
-                friendsHasNoOpponents = opponents.isEmpty
-                if opponents.isEmpty {
+                let friendIds = try await repository.fetchAcceptedFriendProfileIds(currentProfileId: profile.id)
+                friendsHasNoFriends = friendIds.isEmpty
+                if friendIds.isEmpty {
                     podiumRows = []
                     listRows = []
                     return
                 }
 
                 var entries = try await repository.fetchGlobalLeaderboard(weekStart: weekStart)
-                let allowed = opponents.union([profile.id])
+                let allowed = friendIds.union([profile.id])
                 entries = entries.filter { allowed.contains($0.userId) }
                 if !entries.contains(where: { $0.userId == profile.id }) {
                     entries.append(
@@ -97,11 +98,11 @@ final class LeaderboardViewModel: ObservableObject {
                 let shaped = try await mapToDisplayRows(
                     entries: entries,
                     currentUserId: profile.id,
-                    friendsMode: true
+                    reRankedFilterMode: true
                 )
                 splitPodiumAndList(shaped)
             } else {
-                friendsHasNoOpponents = false
+                friendsHasNoFriends = false
                 var entries = try await repository.fetchGlobalLeaderboard(weekStart: weekStart)
                 if !entries.contains(where: { $0.userId == profile.id }) {
                     entries.append(
@@ -119,7 +120,7 @@ final class LeaderboardViewModel: ObservableObject {
                 let shaped = try await mapToDisplayRows(
                     entries: entries,
                     currentUserId: profile.id,
-                    friendsMode: false
+                    reRankedFilterMode: false
                 )
                 splitPodiumAndList(shaped)
             }
@@ -149,7 +150,7 @@ final class LeaderboardViewModel: ObservableObject {
     private func mapToDisplayRows(
         entries: [LeaderboardEntryRecord],
         currentUserId: UUID,
-        friendsMode: Bool
+        reRankedFilterMode: Bool
     ) async throws -> [LeaderboardDisplayRow] {
         let ids = entries.map(\.userId)
         var profiles = try await repository.fetchProfiles(userIds: ids)
@@ -164,7 +165,7 @@ final class LeaderboardViewModel: ObservableObject {
 
         var rows: [LeaderboardDisplayRow] = []
         for (index, entry) in entries.enumerated() {
-            let rank = friendsMode ? (index + 1) : (entry.rank ?? (index + 1))
+            let rank = reRankedFilterMode ? (index + 1) : (entry.rank ?? (index + 1))
             let summary = profiles[entry.userId]
             let displayName = summary?.displayName ?? "Player"
             let initials = summary?.initials ?? Self.initials(from: displayName)

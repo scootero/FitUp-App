@@ -135,6 +135,13 @@ actor MetricSyncCoordinator {
             ]
         )
 
+        ProductAnalytics.track(
+            ProductAnalytics.Event.healthSyncStarted,
+            userId: profile.id,
+            properties: ["trigger": trigger.rawValue]
+        )
+
+        var healthSyncPipelineFailed = false
         var stepsTotal: Int?
         var caloriesTotal: Int?
 
@@ -158,6 +165,7 @@ actor MetricSyncCoordinator {
                 activeCalories: caloriesTotal
             )
         } catch {
+            healthSyncPipelineFailed = true
             AppLogger.log(
                 category: "healthkit_sync",
                 level: .warning,
@@ -292,6 +300,26 @@ actor MetricSyncCoordinator {
                 "snapshot_writes": "\(writes.count)",
             ]
         )
+
+        var analyticsProps: [String: String] = [
+            "trigger": trigger.rawValue,
+            "duration_ms": "\(durationMs)",
+            "snapshot_writes": "\(writes.count)",
+            "historical_targets": "\(historicalTargets.count)",
+        ]
+        if healthSyncPipelineFailed {
+            ProductAnalytics.track(
+                ProductAnalytics.Event.healthSyncFailed,
+                userId: profile.id,
+                properties: analyticsProps.merging(["failure_stage": "public_daily_activity"], uniquingKeysWith: { _, new in new })
+            )
+        } else {
+            ProductAnalytics.track(
+                ProductAnalytics.Event.healthSyncSucceeded,
+                userId: profile.id,
+                properties: analyticsProps
+            )
+        }
     }
 
     private func handleHealthReadError(

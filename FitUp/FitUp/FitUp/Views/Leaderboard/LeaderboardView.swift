@@ -35,7 +35,7 @@ struct LeaderboardView: View {
                                 .tint(FitUpColors.Neon.cyan)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 24)
-                        } else if viewModel.tab == .friends && viewModel.friendsHasNoOpponents {
+                        } else if viewModel.tab == .friends && viewModel.friendsHasNoFriends {
                             friendsEmptyState
                         } else if viewModel.podiumRows.isEmpty && viewModel.listRows.isEmpty {
                             emptyLeaderboardState
@@ -45,6 +45,16 @@ struct LeaderboardView: View {
 
                             ForEach(viewModel.listRows) { row in
                                 RankedRowView(row: row, scrollGeo: scrollGeo) {
+                                    if let uid = profile?.id {
+                                        ProductAnalytics.track(
+                                            ProductAnalytics.Event.opponentProfileViewed,
+                                            userId: uid,
+                                            properties: [
+                                                "opponent_user_id": row.id.uuidString,
+                                                "source": "leaderboard",
+                                            ]
+                                        )
+                                    }
                                     onChallengeUser(
                                         ChallengePrefillOpponent(
                                             id: row.id,
@@ -119,7 +129,7 @@ struct LeaderboardView: View {
     }
 
     private var friendsEmptyState: some View {
-        Text("Play matches to see friends on this board.")
+        Text("Add friends from Profile to see them ranked here for this week.")
             .font(FitUpFont.body(14, weight: .medium))
             .foregroundStyle(FitUpColors.Text.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)

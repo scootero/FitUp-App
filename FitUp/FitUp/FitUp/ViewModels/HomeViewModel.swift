@@ -34,6 +34,9 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var matchActiveCelebration: HomeActiveMatch?
     /// Short retro banner after successfully declining a pending match from Home.
     @Published private(set) var declineFeedbackOpponentName: String?
+    /// Incoming friend request from DB poll (not from push) — shown when not dismissed and no duplicate push banner.
+    @Published private(set) var polledIncomingFriend: (peerId: UUID, fromName: String)?
+    @Published private(set) var isFriendRequestActionLoading = false
 
     var hasAnyContent: Bool {
         !searchingRequests.isEmpty || !activeMatches.isEmpty || !pendingMatches.isEmpty
@@ -42,6 +45,8 @@ final class HomeViewModel: ObservableObject {
 
     private let repository = HomeRepository()
     private let activityRepository = ActivityRepository()
+    private let friendshipRepository = FriendshipRepository()
+    private let leaderboardRepository = LeaderboardRepository()
     private var userId: UUID?
     private var profileTimeZoneIdentifier: String?
     private var myDisplayName: String = "You"
@@ -123,6 +128,14 @@ final class HomeViewModel: ObservableObject {
         let newPendingIds = Set(snapshot.pendingMatches.map(\.id))
         let newPendingMatchIds = newPendingIds.subtracting(oldPendingIds)
 
+        for mid in newPendingMatchIds {
+            ProductAnalytics.track(
+                ProductAnalytics.Event.matchCreated,
+                userId: userId,
+                properties: ["match_id": mid.uuidString, "source": "pending_row"]
+            )
+        }
+
         searchingRequests = snapshot.searching
         activeMatches = snapshot.activeMatches
         pendingMatches = snapshot.pendingMatches
@@ -176,7 +189,87 @@ final class HomeViewModel: ObservableObject {
             }
         }
 
+        await refreshFriendIncomingPoll()
+
         syncLiveActivity()
+    }
+
+    // MARK: - Friend request poll (in-app when push missed)
+
+    func refreshFriendIncomingPoll() async {
+        guard let userId else { return }
+        do {
+            let rows = try await friendshipRepository.fetchFriendshipRows(currentProfileId: userId)
+            let incoming = rows.first { $0.status == "pending" && $0.requestedBy != userId }
+            guard let row = incoming else {
+                polledIncomingFriend = nil
+                return
+            }
+            let peer = row.aId == userId ? row.bId : row.aId
+            if isFriendPeerDismissed(peerId: peer, for: userId) {
+                polledIncomingFriend = nil
+                return
+            }
+            if sessionStore?.friendRequestBannerFromPush?.0 == peer {
+                polledIncomingFriend = nil
+                return
+            }
+            let map = try await leaderboardRepository.fetchProfiles(userIds: [peer])
+            let name = map[peer]?.displayName ?? "Player"
+            polledIncomingFriend = (peer, name)
+        } catch {
+            polledIncomingFriend = nil
+        }
+    }
+
+    func markFriendPeerDismissedForLater(peerId: UUID) {
+        guard let userId else { return }
+        var set = Set<String>(UserDefaults.standard.stringArray(forKey: Self.dismissedFriendPeersKey(for: userId)) ?? [])
+        set.insert(peerId.uuidString)
+        UserDefaults.standard.set(Array(set), forKey: Self.dismissedFriendPeersKey(for: userId))
+        if polledIncomingFriend?.peerId == peerId { polledIncomingFriend = nil }
+    }
+
+    func makePrefillForPeer(_ peerId: UUID) async -> ChallengePrefillOpponent? {
+        do {
+            let map = try await leaderboardRepository.fetchProfiles(userIds: [peerId])
+            let s = map[peerId]
+            let name = s?.displayName ?? "Player"
+            let ini = s?.initials ?? String(name.prefix(2)).uppercased()
+            return ChallengePrefillOpponent(
+                id: peerId,
+                displayName: name,
+                initials: ini,
+                colorHex: ProfileAccentColor.hex(for: peerId)
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    func acceptFriendRequestBackground(peerId: UUID) async -> ChallengePrefillOpponent? {
+        guard let userId else { return nil }
+        isFriendRequestActionLoading = true
+        defer { isFriendRequestActionLoading = false }
+        do {
+            let (a, b) = FriendshipRepository.orderedPair(userId, peerId)
+            try await friendshipRepository.acceptRequest(aId: a, bId: b)
+            if polledIncomingFriend?.peerId == peerId { polledIncomingFriend = nil }
+            sessionStore?.dismissFriendRequestFromPush()
+            return await makePrefillForPeer(peerId)
+        } catch {
+            errorMessage = "Could not accept friend request."
+            return nil
+        }
+    }
+
+    private static func dismissedFriendPeersKey(for profileId: UUID) -> String {
+        "fitup.dismissedFriendRequestPeers.\(profileId.uuidString)"
+    }
+
+    private func isFriendPeerDismissed(peerId: UUID, for profileId: UUID) -> Bool {
+        let list = UserDefaults.standard.stringArray(forKey: Self.dismissedFriendPeersKey(for: profileId)) ?? []
+        return list.contains(peerId.uuidString)
     }
 
     func dismissMatchFoundCelebration() {
@@ -293,6 +386,13 @@ final class HomeViewModel: ObservableObject {
 
         do {
             try await repository.cancelSearchRequest(searchId: searchId)
+            if let userId {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.matchmakingCancelled,
+                    userId: userId,
+                    properties: ["search_request_id": searchId.uuidString]
+                )
+            }
             await reload(force: true)
         } catch {
             errorMessage = "Could not cancel search right now."
@@ -307,6 +407,14 @@ final class HomeViewModel: ObservableObject {
 
         do {
             try await repository.acceptPendingMatch(matchId: pendingMatch.id, userId: userId)
+            ProductAnalytics.track(
+                ProductAnalytics.Event.matchAccepted,
+                userId: userId,
+                properties: [
+                    "match_id": pendingMatch.id.uuidString,
+                    "opponent_user_id": pendingMatch.opponent.id.uuidString,
+                ]
+            )
             await reload(force: true)
         } catch {
             errorMessage = "Could not accept challenge right now."
@@ -321,6 +429,16 @@ final class HomeViewModel: ObservableObject {
         let opponentName = pendingMatch.opponent.displayName
         do {
             try await repository.declinePendingMatch(challengeId: pendingMatch.challengeId, matchId: pendingMatch.id)
+            if let userId {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.matchDeclined,
+                    userId: userId,
+                    properties: [
+                        "match_id": pendingMatch.id.uuidString,
+                        "opponent_user_id": pendingMatch.opponent.id.uuidString,
+                    ]
+                )
+            }
             await reload(force: true)
             showDeclineFeedback(opponentName: opponentName)
         } catch {

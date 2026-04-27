@@ -20,8 +20,24 @@ struct OnboardingView: View {
                 .padding(.bottom, 28)
         }
         .onAppear {
+            viewModel.analyticsUserId = sessionStore.currentProfile?.id
             viewModel.logFlowStartIfNeeded()
         }
+        .onChange(of: viewModel.step) { _, step in
+            let stepKey: String
+            switch step {
+            case .tutorial: stepKey = "tutorial"
+            case .healthExplainer: stepKey = "health_explainer"
+            case .notificationExplainer: stepKey = "notification_explainer"
+            case .findFirstMatch: stepKey = "find_first_match"
+            }
+            ProductAnalytics.track(
+                ProductAnalytics.Event.onboardingStepViewed,
+                userId: sessionStore.currentProfile?.id,
+                properties: ["step": stepKey]
+            )
+        }
+        .trackProductScreen("onboarding", userId: sessionStore.currentProfile?.id)
         .screenTransition()
     }
 

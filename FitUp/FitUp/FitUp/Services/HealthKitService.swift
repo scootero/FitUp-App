@@ -118,12 +118,40 @@ enum HealthKitService {
     }
 
     /// Calls `requestAuthorization()` only when at least one read type is `notDetermined`, to avoid redundant prompts after denial.
-    static func requestAuthorizationIfNeeded() async {
+    static func requestAuthorizationIfNeeded(analyticsUserId: UUID? = nil) async {
         guard isHealthDataAvailable else { return }
         guard anyReadTypeIsNotDetermined() else { return }
+        if let uid = analyticsUserId {
+            ProductAnalytics.track(
+                ProductAnalytics.Event.healthPermissionRequested,
+                userId: uid,
+                properties: ["source": "health_tab"]
+            )
+        }
         do {
             try await requestAuthorization()
+            if let uid = analyticsUserId {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.healthPermissionGranted,
+                    userId: uid,
+                    properties: ["source": "health_tab"]
+                )
+            }
         } catch {
+            if let uid = analyticsUserId {
+                let denied = (error as? HealthKitError).map {
+                    if case .authorizationDenied = $0 { return true }
+                    return false
+                } ?? false
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.healthPermissionDenied,
+                    userId: uid,
+                    properties: [
+                        "source": "health_tab",
+                        "reason": denied ? "authorization_denied" : "error",
+                    ]
+                )
+            }
             // Denied, unavailable, or other; Health screen / banner handle recovery.
         }
     }

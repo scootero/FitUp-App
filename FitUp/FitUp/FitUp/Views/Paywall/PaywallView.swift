@@ -14,6 +14,7 @@ import SwiftUI
 struct PaywallView: View {
     var onDismiss: () -> Void
 
+    @EnvironmentObject private var sessionStore: SessionStore
     @StateObject private var vm = PaywallViewModel()
 
     var body: some View {
@@ -33,7 +34,15 @@ struct PaywallView: View {
                 .padding(.bottom, 40)
             }
         }
-        .task { await vm.load() }
+        .task {
+            await vm.load()
+        }
+        .onAppear {
+            ProductAnalytics.track(
+                ProductAnalytics.Event.subscriptionScreenViewed,
+                userId: sessionStore.currentProfile?.id
+            )
+        }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .alert("Something went wrong", isPresented: $vm.showError) {
@@ -97,7 +106,11 @@ struct PaywallView: View {
                 .foregroundStyle(FitUpColors.Text.secondary)
 
             Button {
-                Task { await vm.purchaseAnnual(); if vm.didPurchase { onDismiss() } }
+                Task {
+                    let pid = sessionStore.currentProfile?.id
+                    await vm.purchaseAnnual(profileId: pid)
+                    if vm.didPurchase { onDismiss() }
+                }
             } label: {
                 HStack(spacing: 8) {
                     if vm.isPurchasingAnnual {
@@ -130,7 +143,11 @@ struct PaywallView: View {
                 .foregroundStyle(FitUpColors.Text.secondary)
 
             Button {
-                Task { await vm.purchaseMonthly(); if vm.didPurchase { onDismiss() } }
+                Task {
+                    let pid = sessionStore.currentProfile?.id
+                    await vm.purchaseMonthly(profileId: pid)
+                    if vm.didPurchase { onDismiss() }
+                }
             } label: {
                 HStack(spacing: 8) {
                     if vm.isPurchasingMonthly {
@@ -156,7 +173,11 @@ struct PaywallView: View {
 
     private var restoreButton: some View {
         Button {
-            Task { await vm.restore(); if vm.didPurchase { onDismiss() } }
+            Task {
+                let pid = sessionStore.currentProfile?.id
+                await vm.restore(profileId: pid)
+                if vm.didPurchase { onDismiss() }
+            }
         } label: {
             HStack(spacing: 6) {
                 if vm.isRestoring {
@@ -234,7 +255,7 @@ private final class PaywallViewModel: ObservableObject {
         }
     }
 
-    func purchaseAnnual() async {
+    func purchaseAnnual(profileId: UUID?) async {
         guard let pkg = annualPackage else {
             showError = true
             errorMessage = "Annual plan not available right now."
@@ -242,18 +263,40 @@ private final class PaywallViewModel: ObservableObject {
         }
         isPurchasingAnnual = true
         defer { isPurchasingAnnual = false }
+        if let profileId {
+            ProductAnalytics.track(
+                ProductAnalytics.Event.subscriptionPurchaseStarted,
+                userId: profileId,
+                properties: ["package": "annual"]
+            )
+        }
         do {
             try await SubscriptionService.shared.purchase(package: pkg)
             didPurchase = SubscriptionService.shared.isPremium
+            if let profileId, didPurchase {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.subscriptionPurchaseSucceeded,
+                    userId: profileId,
+                    properties: ["package": "annual"]
+                )
+            }
         } catch {
-            if (error as NSError).code != -128 {
+            let ns = error as NSError
+            if let profileId, ns.code != -128 {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.subscriptionPurchaseFailed,
+                    userId: profileId,
+                    properties: ["package": "annual", "code": "\(ns.code)"]
+                )
+            }
+            if ns.code != -128 {
                 showError = true
                 errorMessage = error.localizedDescription
             }
         }
     }
 
-    func purchaseMonthly() async {
+    func purchaseMonthly(profileId: UUID?) async {
         guard let pkg = monthlyPackage else {
             showError = true
             errorMessage = "Monthly plan not available right now."
@@ -261,23 +304,52 @@ private final class PaywallViewModel: ObservableObject {
         }
         isPurchasingMonthly = true
         defer { isPurchasingMonthly = false }
+        if let profileId {
+            ProductAnalytics.track(
+                ProductAnalytics.Event.subscriptionPurchaseStarted,
+                userId: profileId,
+                properties: ["package": "monthly"]
+            )
+        }
         do {
             try await SubscriptionService.shared.purchase(package: pkg)
             didPurchase = SubscriptionService.shared.isPremium
+            if let profileId, didPurchase {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.subscriptionPurchaseSucceeded,
+                    userId: profileId,
+                    properties: ["package": "monthly"]
+                )
+            }
         } catch {
-            if (error as NSError).code != -128 {
+            let ns = error as NSError
+            if let profileId, ns.code != -128 {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.subscriptionPurchaseFailed,
+                    userId: profileId,
+                    properties: ["package": "monthly", "code": "\(ns.code)"]
+                )
+            }
+            if ns.code != -128 {
                 showError = true
                 errorMessage = error.localizedDescription
             }
         }
     }
 
-    func restore() async {
+    func restore(profileId: UUID?) async {
         isRestoring = true
         defer { isRestoring = false }
         do {
             try await SubscriptionService.shared.restorePurchases()
             didPurchase = SubscriptionService.shared.isPremium
+            if let profileId, didPurchase {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.subscriptionRestoreSucceeded,
+                    userId: profileId,
+                    properties: ["tier": SubscriptionService.shared.isPremium ? "premium" : "free"]
+                )
+            }
         } catch {
             showError = true
             errorMessage = error.localizedDescription
@@ -289,4 +361,5 @@ private final class PaywallViewModel: ObservableObject {
 
 #Preview {
     PaywallView { }
+        .environmentObject(SessionStore())
 }

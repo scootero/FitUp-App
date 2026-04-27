@@ -14,19 +14,14 @@ struct TutorialCardsView: View {
 
     private let cards: [TutorialCard] = [
         .init(
-            title: "Challenge Friends",
-            body: "Pick steps or active calories, choose a format, and get matched in seconds.",
-            icon: "figure.run"
+            title: "Create a challenge",
+            body: "Choose steps or active calories, set how long the match runs, then open match details to see scores and a day-by-day breakdown.",
+            icon: "list.bullet.rectangle"
         ),
         .init(
-            title: "Compete Daily",
-            body: "Your HealthKit data powers live score updates and day-by-day battle results.",
-            icon: "chart.bar.fill"
-        ),
-        .init(
-            title: "Climb The Ranks",
-            body: "Win matches, build streaks, and rise on the weekly FitUp leaderboard.",
-            icon: "trophy.fill"
+            title: "Add friends, compete",
+            body: "Add friends from your profile, send them a challenge, and see how you stack up on the FitUp leaderboard.",
+            icon: "person.2.fill"
         ),
     ]
 
@@ -58,7 +53,7 @@ struct TutorialCardsView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 250)
+            .frame(height: 270)
 
             HStack(spacing: 6) {
                 ForEach(cards.indices, id: \.self) { index in

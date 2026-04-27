@@ -21,6 +21,8 @@ struct ContentView: View {
                     .tint(FitUpColors.Neon.cyan)
             } else if !sessionStore.isAuthenticated {
                 AuthView()
+            } else if !sessionStore.postAuthDisplayNameStepComplete {
+                PostAuthDisplayNameView()
             } else if !sessionStore.isOnboardingComplete {
                 OnboardingView()
             } else {
@@ -31,6 +33,16 @@ struct ContentView: View {
             }
         }
         .screenTransition()
+        .onAppear {
+            if !sessionStore.isLoadingSession {
+                ProductAnalytics.trackAppColdStartIfNeeded(userId: sessionStore.currentProfile?.id)
+            }
+        }
+        .onChange(of: sessionStore.isLoadingSession) { _, loading in
+            if !loading {
+                ProductAnalytics.trackAppColdStartIfNeeded(userId: sessionStore.currentProfile?.id)
+            }
+        }
         .task(id: metricSyncLifecycleIdentity) {
             let eligible = sessionStore.isOnboardingComplete || sessionStore.healthKitPromptCompleted
             guard eligible else {
@@ -44,6 +56,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
+            ProductAnalytics.handleScenePhaseChange(newPhase, userId: sessionStore.currentProfile?.id)
             guard newPhase == .active else { return }
             guard sessionStore.isOnboardingComplete || sessionStore.healthKitPromptCompleted else { return }
             Task {
@@ -55,7 +68,7 @@ struct ContentView: View {
     /// Re-runs metric sync lifecycle when profile, Health onboarding prompt, or full onboarding completion changes.
     private var metricSyncLifecycleIdentity: String {
         let pid = sessionStore.currentProfile?.id.uuidString ?? "nil"
-        return "\(pid)-hk:\(sessionStore.healthKitPromptCompleted)-ob:\(sessionStore.isOnboardingComplete)"
+        return "\(pid)-name:\(sessionStore.postAuthDisplayNameStepComplete)-hk:\(sessionStore.healthKitPromptCompleted)-ob:\(sessionStore.isOnboardingComplete)"
     }
 }
 
@@ -70,6 +83,7 @@ private struct RootShellView: View {
     @State private var challengeLaunchContext: ChallengeLaunchContext?
     @State private var matchDetailsContext: MatchDetailsContext?
     @State private var showingPaywall = false
+    @State private var showTesterFeedback = false
 
     var body: some View {
         ZStack {
@@ -88,6 +102,8 @@ private struct RootShellView: View {
             ) {
                 challengeLaunchContext = nil
             }
+            .environmentObject(sessionStore)
+            .trackProductScreen("challenge_flow", userId: sessionStore.currentProfile?.id)
         }
         .fullScreenCover(item: $matchDetailsContext) { context in
             MatchDetailsView(
@@ -101,14 +117,87 @@ private struct RootShellView: View {
                     challengeLaunchContext = launchContext
                 }
             }
+            .trackProductScreen("match_detail", userId: sessionStore.currentProfile?.id)
         }
         .sheet(isPresented: $showingPaywall) {
             PaywallView { showingPaywall = false }
+                .environmentObject(sessionStore)
+                .trackProductScreen("subscription_paywall", userId: sessionStore.currentProfile?.id)
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { sessionStore.presentFriendsListSheet },
+                set: { new in
+                    if !new { sessionStore.dismissFriendsListSheet() }
+                }
+            )
+        ) {
+            NavigationStack {
+                FriendsListView(profile: profile)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { sessionStore.dismissFriendsListSheet() }
+                        }
+                    }
+            }
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { sessionStore.becameFriendsChallenge != nil },
+                set: { if !$0 { sessionStore.clearBecameFriendsChallenge() } }
+            )
+        ) {
+            ZStack {
+                if let opponent = sessionStore.becameFriendsChallenge {
+                    FriendConnectedCelebrationView(
+                        opponent: opponent,
+                        onCompete: {
+                            let o = opponent
+                            sessionStore.clearBecameFriendsChallenge()
+                            challengeLaunchContext = .prefilled(opponent: o)
+                        },
+                        onDismiss: { sessionStore.clearBecameFriendsChallenge() }
+                    )
+                }
+            }
+            .presentationDetents([.medium])
         }
         .onChange(of: notificationService.pendingDeepLink) { _, deepLink in
             guard let deepLink else { return }
             _ = notificationService.consumeDeepLink()
             handleDeepLink(deepLink)
+        }
+        .onChange(of: selectedTab) { _, tab in
+            if tab == .ranks, let uid = sessionStore.currentProfile?.id {
+                ProductAnalytics.track(ProductAnalytics.Event.leaderboardViewed, userId: uid)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if let uid = sessionStore.currentProfile?.id {
+                Button {
+                    ProductAnalytics.track(
+                        ProductAnalytics.Event.feedbackOpened,
+                        userId: uid,
+                        properties: ["source": "root_overlay", "tab": selectedTab.rawValue]
+                    )
+                    showTesterFeedback = true
+                } label: {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Neon.cyan)
+                        .padding(10)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .padding(.top, 8)
+                .padding(.trailing, 12)
+                .accessibilityLabel("Send feedback")
+                .sheet(isPresented: $showTesterFeedback) {
+                    TesterFeedbackSheet(
+                        userId: uid,
+                        screenName: "tab:\(selectedTab.rawValue)"
+                    )
+                }
+            }
         }
     }
 
@@ -120,6 +209,9 @@ private struct RootShellView: View {
             matchDetailsContext = MatchDetailsContext(matchId: matchId)
         case .activity:
             selectedTab = .home
+        case .friends:
+            selectedTab = .profile
+            sessionStore.requestOpenFriendsListSheet()
         }
     }
 
@@ -141,23 +233,27 @@ private struct RootShellView: View {
                     matchDetailsContext = MatchDetailsContext(matchId: matchId)
                 }
             )
+            .trackProductScreen("home", userId: sessionStore.currentProfile?.id)
         case .health:
             HealthView(profile: profile)
+                .trackProductScreen("health", userId: sessionStore.currentProfile?.id)
         case .profile:
             ProfileView(
                 profile: profile,
                 onSignOut: { Task { await sessionStore.signOut() } },
                 onOpenPaywall: { showingPaywall = true }
             )
+            .trackProductScreen("profile", userId: sessionStore.currentProfile?.id)
         case .ranks:
             LeaderboardView(profile: profile) { opponent in
                 challengeLaunchContext = .prefilled(opponent: opponent)
             }
+            .trackProductScreen("leaderboard", userId: sessionStore.currentProfile?.id)
         }
     }
 }
 
-private struct MatchDetailsContext: Identifiable {
+private struct MatchDetailsContext: Identifiable, Equatable {
     let matchId: UUID
 
     var id: UUID { matchId }

@@ -28,6 +28,7 @@ struct ProfileView: View {
     @State private var showEditDisplayName = false
     @State private var editDisplayNameDraft = ""
     @State private var isSavingDisplayName = false
+    @State private var showFeedback = false
 
 #if DEBUG
     @AppStorage("devMode") private var devMode = false
@@ -64,6 +65,12 @@ struct ProfileView: View {
             }
             .sheet(isPresented: $showPaywall) {
                 PaywallView { showPaywall = false }
+                    .environmentObject(sessionStore)
+            }
+            .sheet(isPresented: $showFeedback) {
+                if let userId = profile?.id {
+                    TesterFeedbackSheet(userId: userId, onSuccess: nil)
+                }
             }
             .sheet(isPresented: $showEditDisplayName) {
                 editDisplayNameSheet
@@ -183,6 +190,43 @@ struct ProfileView: View {
                     showEditDisplayName = true
                 }
             )
+            NavigationLink {
+                FriendsListView(profile: profile)
+            } label: {
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.07))
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "person.2")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Text.secondary)
+                        }
+                        Text("Friends")
+                            .font(FitUpFont.body(14))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 13)
+                    .contentShape(Rectangle())
+                    Rectangle()
+                        .fill(Color.white.opacity(0.05))
+                        .frame(height: 1)
+                        .padding(.leading, 54)
+                }
+            }
+            .buttonStyle(.plain)
+            SettingsRowView(
+                sfSymbol: "bubble.left.and.bubble.right",
+                label: "Send feedback",
+                showSeparator: true,
+                action: .chevron { showFeedback = true }
+            )
             SettingsRowView(
                 sfSymbol: "bell",
                 label: "Notifications",
@@ -287,10 +331,30 @@ struct ProfileView: View {
                     .padding(.leading, 4)
                     .padding(.bottom, 4)
 
+                NavigationLink {
+                    AnalyticsDebugView()
+                } label: {
+                    HStack {
+                        Text("Analytics (recent events)")
+                            .font(FitUpFont.body(14, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                    }
+                    .padding(14)
+                    .glassCard(.base)
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 8)
+
                 LogViewerView(viewModel: viewModel, profile: profile)
                     .padding(.top, 8)
             }
         }
+#else
+        EmptyView()
 #endif
     }
 

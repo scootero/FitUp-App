@@ -18,6 +18,7 @@ enum NotificationDeepLink: Equatable {
     case home
     case matchDetails(matchId: UUID)
     case activity
+    case friends
 }
 
 // MARK: - Service
@@ -92,6 +93,23 @@ final class NotificationService: NSObject, ObservableObject {
     /// Queues Home celebrations when a push arrives; safe for foreground banners (does not set `pendingDeepLink`).
     private func applyCelebrationQueuesFromNotificationPayload(userInfo: [AnyHashable: Any]) {
         let eventType = userInfo["event_type"] as? String ?? ""
+        if eventType == "friend_request_received" {
+            if let peerStr = userInfo["peer_profile_id"] as? String, let peerId = UUID(uuidString: peerStr) {
+                let name = (userInfo["from_display_name"] as? String)
+                    ?? (userInfo["opponent_display_name"] as? String) ?? "Player"
+                sessionStore?.queueFriendRequestFromPush(peerId: peerId, fromName: name)
+            }
+            return
+        }
+        if eventType == "friend_request_accepted" {
+            if let peerStr = userInfo["peer_profile_id"] as? String, let peerId = UUID(uuidString: peerStr) {
+                let name = (userInfo["accepter_display_name"] as? String)
+                    ?? (userInfo["opponent_display_name"] as? String) ?? "Player"
+                sessionStore?.queueFriendAcceptedFromPush(accepterName: name, peerId: peerId)
+            }
+            return
+        }
+
         let matchIdString = userInfo["match_id"] as? String ?? ""
         guard let uuid = UUID(uuidString: matchIdString) else { return }
         switch eventType {
@@ -107,6 +125,16 @@ final class NotificationService: NSObject, ObservableObject {
     private func routeNotification(userInfo: [AnyHashable: Any]) {
         applyCelebrationQueuesFromNotificationPayload(userInfo: userInfo)
 
+        let eventType = userInfo["event_type"] as? String ?? ""
+        if eventType == "friend_request_received" {
+            pendingDeepLink = .friends
+            return
+        }
+        if eventType == "friend_request_accepted" {
+            pendingDeepLink = .home
+            return
+        }
+
         let matchIdString = userInfo["match_id"] as? String ?? ""
         let target = userInfo["deep_link_target"] as? String ?? ""
 
@@ -119,6 +147,8 @@ final class NotificationService: NSObject, ObservableObject {
             }
         case "activity":
             pendingDeepLink = .activity
+        case "friends":
+            pendingDeepLink = .friends
         default:
             pendingDeepLink = .home
         }

@@ -15,6 +15,10 @@ final class SessionStore: ObservableObject {
     @Published private(set) var isAuthenticated = false
     @Published private(set) var isLoadingSession = true
     @Published var authErrorMessage: String?
+    /// In-session prefill for the post-auth name step (set on email sign up / Sign in with Apple). Cleared on completion or sign out.
+    @Published private(set) var postAuthNameFieldPrefill: String?
+    /// When `true`, the post-auth display name step is done (or not applicable). When `false` and authenticated, show `PostAuthDisplayNameView`.
+    @Published private(set) var postAuthDisplayNameStepComplete: Bool = true
     @Published private(set) var isOnboardingComplete = UserDefaults.standard.bool(forKey: "onboardingComplete")
     /// Per-profile: user finished the onboarding Health authorization step (sheet dismissed).
     @Published private(set) var healthKitPromptCompleted = false
@@ -26,9 +30,27 @@ final class SessionStore: ObservableObject {
     /// Set by push handling (`match_active`); consumed when Home loads an active card for this id.
     private var pendingMatchActiveCelebrationMatchId: UUID?
 
+    // MARK: - Friend notifications (push + Home UI)
+
+    /// Incoming friend request: requester profile id + display name (from APNs foreground/tap).
+    @Published var friendRequestBannerFromPush: (peerId: UUID, fromName: String)?
+
+    /// Original requester sees this when the other user accepts (from APNs).
+    @Published var friendAcceptedYourRequestBanner: (peerId: UUID, accepterName: String)?
+
+    /// Deep link / notification: show Friends list on root.
+    @Published var presentFriendsListSheet: Bool = false
+
+    /// After accepting a friend request: optional sheet with "Compete?"
+    @Published var becameFriendsChallenge: ChallengePrefillOpponent?
+
     private let profileRepository = ProfileRepository()
 
     private static let onboardingKey = "onboardingComplete"
+
+    private static func postAuthDisplayNameKey(profileId: UUID) -> String {
+        "fitup.postAuthDisplayNameComplete.\(profileId.uuidString)"
+    }
 
     private static func healthKitPromptKey(profileId: UUID) -> String {
         "fitup.healthKitOnboardingPromptCompleted.\(profileId.uuidString)"
@@ -45,6 +67,8 @@ final class SessionStore: ObservableObject {
         guard let client = SupabaseProvider.client else {
             isAuthenticated = false
             currentProfile = nil
+            postAuthNameFieldPrefill = nil
+            postAuthDisplayNameStepComplete = true
             isLoadingSession = false
             AppLogger.log(category: "auth", level: .warning, message: "session restore skipped: Supabase client missing")
             return
@@ -59,10 +83,9 @@ final class SessionStore: ObservableObject {
                 isAuthenticated = true
                 showSearchingCardOnHome = false
                 syncHealthKitPromptCompletedFromDefaults()
-                AppLogger.log(
-                    category: "auth",
-                    level: .info,
-                    message: "session restored",
+                applyPostAuthDisplayNameStateAfterRestore(profile: profile)
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.sessionRestored,
                     userId: currentProfile?.id
                 )
             } else {
@@ -86,7 +109,10 @@ final class SessionStore: ObservableObject {
                 showSearchingCardOnHome = false
                 pendingMatchFoundCelebrationMatchId = nil
                 pendingMatchActiveCelebrationMatchId = nil
+                clearFriendNotificationUI()
                 healthKitPromptCompleted = false
+                postAuthNameFieldPrefill = nil
+                postAuthDisplayNameStepComplete = true
             }
         } catch {
             isAuthenticated = false
@@ -94,8 +120,11 @@ final class SessionStore: ObservableObject {
             showSearchingCardOnHome = false
             pendingMatchFoundCelebrationMatchId = nil
             pendingMatchActiveCelebrationMatchId = nil
+            clearFriendNotificationUI()
             healthKitPromptCompleted = false
-            AppLogger.log(category: "auth", level: .info, message: "no active session on launch")
+            postAuthNameFieldPrefill = nil
+            postAuthDisplayNameStepComplete = true
+            AppLogger.log(category: "auth", level: .debug, message: "no active session on launch")
         }
 
         isLoadingSession = false
@@ -107,12 +136,13 @@ final class SessionStore: ObservableObject {
             let client = try requireClient()
             _ = try await client.auth.signIn(email: email, password: password)
             await restoreSession()
-            AppLogger.log(
-                category: "auth",
-                level: .info,
-                message: "email sign-in success",
-                userId: currentProfile?.id
-            )
+            if let id = currentProfile?.id {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.authSignIn,
+                    userId: id,
+                    properties: ["method": "email"]
+                )
+            }
         } catch {
             authErrorMessage = error.localizedDescription
             AppLogger.log(category: "auth", level: .error, message: "email sign-in failed", metadata: ["error": error.localizedDescription])
@@ -129,15 +159,24 @@ final class SessionStore: ObservableObject {
             currentProfile = try await profileRepository.createProfileIfNeeded(authUserId: authUserId, displayName: displayName)
             isAuthenticated = true
             syncHealthKitPromptCompletedFromDefaults()
-            AppLogger.log(
-                category: "auth",
-                level: .info,
-                message: "email sign-up success",
-                userId: currentProfile?.id
-            )
+            if let profile = currentProfile {
+                requirePostAuthDisplayNameConfirmation(
+                    for: profile,
+                    prefill: displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
+            if let id = currentProfile?.id {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.authSignIn,
+                    userId: id,
+                    properties: ["method": "email_sign_up"]
+                )
+            }
         } catch {
             authErrorMessage = error.localizedDescription
             isAuthenticated = false
+            postAuthNameFieldPrefill = nil
+            postAuthDisplayNameStepComplete = true
             AppLogger.log(category: "auth", level: .error, message: "email sign-up failed", metadata: ["error": error.localizedDescription])
         }
     }
@@ -151,18 +190,31 @@ final class SessionStore: ObservableObject {
             )
             let session = try await client.auth.session
             let authUserId = try Self.resolveAuthUserId(from: session.user.id)
+            let profileExistedBefore = (try? await profileRepository.fetchProfile(authUserId: authUserId)) != nil
             currentProfile = try await profileRepository.createProfileIfNeeded(
                 authUserId: authUserId,
                 displayName: preferredDisplayName
             )
             isAuthenticated = true
             syncHealthKitPromptCompletedFromDefaults()
-            AppLogger.log(
-                category: "auth",
-                level: .info,
-                message: "apple sign-in success",
-                userId: currentProfile?.id
-            )
+            if let profile = currentProfile {
+                if profileExistedBefore {
+                    applyPostAuthDisplayNameStateAfterRestore(profile: profile)
+                } else {
+                    let trimmed = preferredDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    requirePostAuthDisplayNameConfirmation(
+                        for: profile,
+                        prefill: trimmed.isEmpty ? nil : trimmed
+                    )
+                }
+            }
+            if let id = currentProfile?.id {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.authSignIn,
+                    userId: id,
+                    properties: ["method": "apple"]
+                )
+            }
         } catch {
             authErrorMessage = error.localizedDescription
             AppLogger.log(category: "auth", level: .error, message: "apple sign-in failed", metadata: ["error": error.localizedDescription])
@@ -180,13 +232,13 @@ final class SessionStore: ObservableObject {
             showSearchingCardOnHome = false
             pendingMatchFoundCelebrationMatchId = nil
             pendingMatchActiveCelebrationMatchId = nil
+            clearFriendNotificationUI()
             healthKitPromptCompleted = false
-            AppLogger.log(
-                category: "auth",
-                level: .info,
-                message: "sign-out success",
-                userId: signedOutUserId
-            )
+            postAuthNameFieldPrefill = nil
+            postAuthDisplayNameStepComplete = true
+            if let signedOutUserId {
+                ProductAnalytics.track(ProductAnalytics.Event.authSignOut, userId: signedOutUserId)
+            }
         } catch {
             authErrorMessage = error.localizedDescription
             AppLogger.log(category: "auth", level: .error, message: "sign-out failed", metadata: ["error": error.localizedDescription])
@@ -196,7 +248,9 @@ final class SessionStore: ObservableObject {
     func markOnboardingComplete() {
         UserDefaults.standard.set(true, forKey: Self.onboardingKey)
         isOnboardingComplete = true
-        AppLogger.log(category: "auth", level: .info, message: "onboarding flag set complete")
+        if let id = currentProfile?.id {
+            ProductAnalytics.track(ProductAnalytics.Event.onboardingCompleted, userId: id)
+        }
     }
 
     func resetOnboardingForDebug() {
@@ -213,7 +267,6 @@ final class SessionStore: ObservableObject {
         guard let profileId = currentProfile?.id else { return }
         UserDefaults.standard.set(true, forKey: Self.healthKitPromptKey(profileId: profileId))
         healthKitPromptCompleted = true
-        AppLogger.log(category: "onboarding", level: .info, message: "health onboarding prompt completed (metric sync may start)")
     }
 
     private func syncHealthKitPromptCompletedFromDefaults() {
@@ -226,13 +279,11 @@ final class SessionStore: ObservableObject {
 
     func markOnboardingSearchVisible() {
         showSearchingCardOnHome = true
-        AppLogger.log(category: "onboarding", level: .info, message: "home searching card flagged visible")
     }
 
     func clearSearchingCardOnHomeFlag() {
         guard showSearchingCardOnHome else { return }
         showSearchingCardOnHome = false
-        AppLogger.log(category: "onboarding", level: .info, message: "home searching card flag cleared")
     }
 
     func queueMatchFoundCelebration(matchId: UUID) {
@@ -257,17 +308,52 @@ final class SessionStore: ObservableObject {
         return id
     }
 
+    // MARK: - Friends / push
+
+    func queueFriendRequestFromPush(peerId: UUID, fromName: String) {
+        friendRequestBannerFromPush = (peerId, fromName)
+    }
+
+    func queueFriendAcceptedFromPush(accepterName: String, peerId: UUID) {
+        friendAcceptedYourRequestBanner = (peerId, accepterName)
+    }
+
+    func dismissFriendRequestFromPush() {
+        friendRequestBannerFromPush = nil
+    }
+
+    func dismissFriendAcceptedYourRequestBanner() {
+        friendAcceptedYourRequestBanner = nil
+    }
+
+    func requestOpenFriendsListSheet() {
+        presentFriendsListSheet = true
+    }
+
+    func dismissFriendsListSheet() {
+        presentFriendsListSheet = false
+    }
+
+    func setBecameFriendsChallenge(_ opponent: ChallengePrefillOpponent) {
+        becameFriendsChallenge = opponent
+    }
+
+    func clearBecameFriendsChallenge() {
+        becameFriendsChallenge = nil
+    }
+
+    private func clearFriendNotificationUI() {
+        friendRequestBannerFromPush = nil
+        friendAcceptedYourRequestBanner = nil
+        presentFriendsListSheet = false
+        becameFriendsChallenge = nil
+    }
+
     func updateDisplayName(_ name: String) async {
         guard let authUserId = currentProfile?.authUserId else { return }
         authErrorMessage = nil
         do {
             currentProfile = try await profileRepository.updateDisplayName(name, authUserId: authUserId)
-            AppLogger.log(
-                category: "auth",
-                level: .info,
-                message: "display name updated",
-                userId: currentProfile?.id
-            )
         } catch {
             authErrorMessage = error.localizedDescription
             AppLogger.log(
@@ -276,6 +362,45 @@ final class SessionStore: ObservableObject {
                 message: "display name update failed",
                 metadata: ["error": error.localizedDescription]
             )
+        }
+    }
+
+    /// Initial `TextField` value for the post-auth name step (session prefill, then non-placeholder profile name, else empty for placeholders).
+    var postAuthNameInitialValue: String {
+        if let p = postAuthNameFieldPrefill, !p.isEmpty { return p }
+        if let profile = currentProfile, profile.isAutoGeneratedDisplayName { return "" }
+        return currentProfile?.displayName ?? ""
+    }
+
+    func markPostAuthDisplayNameComplete() {
+        guard let profile = currentProfile else { return }
+        let key = Self.postAuthDisplayNameKey(profileId: profile.id)
+        UserDefaults.standard.set(true, forKey: key)
+        postAuthDisplayNameStepComplete = true
+        postAuthNameFieldPrefill = nil
+        ProductAnalytics.track(
+            ProductAnalytics.Event.postAuthDisplayNameCompleted,
+            userId: profile.id
+        )
+    }
+
+    private func applyPostAuthDisplayNameStateAfterRestore(profile: Profile) {
+        let key = Self.postAuthDisplayNameKey(profileId: profile.id)
+        if UserDefaults.standard.object(forKey: key) == nil {
+            // First launch with this key: treat auto-generated "FitUp …" as incomplete; real names as complete (app upgrade / existing users).
+            UserDefaults.standard.set(!profile.isAutoGeneratedDisplayName, forKey: key)
+        }
+        postAuthDisplayNameStepComplete = UserDefaults.standard.bool(forKey: key)
+    }
+
+    private func requirePostAuthDisplayNameConfirmation(for profile: Profile, prefill: String?) {
+        let key = Self.postAuthDisplayNameKey(profileId: profile.id)
+        UserDefaults.standard.set(false, forKey: key)
+        postAuthDisplayNameStepComplete = false
+        if let p = prefill, !p.isEmpty {
+            postAuthNameFieldPrefill = p
+        } else {
+            postAuthNameFieldPrefill = nil
         }
     }
 

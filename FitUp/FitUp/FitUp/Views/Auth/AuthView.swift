@@ -40,6 +40,9 @@ struct AuthView: View {
             }
         }
         .screenTransition()
+        .onAppear {
+            ProductAnalytics.track(ProductAnalytics.Event.authScreenView, userId: nil)
+        }
     }
 
     private var header: some View {

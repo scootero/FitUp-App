@@ -29,14 +29,20 @@ final class OnboardingViewModel: ObservableObject {
     private let matchSearchRepository = MatchSearchRepository()
     private var didLogStart = false
 
+    /// Profile id for product analytics (set from `OnboardingView` when the flow is shown).
+    var analyticsUserId: UUID?
+
     func logFlowStartIfNeeded() {
         guard !didLogStart else { return }
         didLogStart = true
-        AppLogger.log(category: "onboarding", level: .info, message: "onboarding started")
+        ProductAnalytics.track(ProductAnalytics.Event.onboardingStarted, userId: analyticsUserId)
     }
 
     func completeTutorialStep() {
-        AppLogger.log(category: "onboarding", level: .info, message: "tutorial completed")
+        ProductAnalytics.track(
+            ProductAnalytics.Event.onboardingTutorialCompleted,
+            userId: analyticsUserId
+        )
         step = .healthExplainer
         errorMessage = nil
     }
@@ -44,13 +50,38 @@ final class OnboardingViewModel: ObservableObject {
     func requestHealthPermission() async {
         isAuthorizingHealth = true
         errorMessage = nil
-        AppLogger.log(category: "onboarding", level: .info, message: "health permission explainer shown")
         defer { isAuthorizingHealth = false }
+
+        ProductAnalytics.track(
+            ProductAnalytics.Event.healthPermissionRequested,
+            userId: analyticsUserId,
+            properties: ["source": "onboarding"]
+        )
 
         do {
             try await HealthKitService.requestAuthorization()
-            AppLogger.log(category: "onboarding", level: .info, message: "health authorization request completed")
+            ProductAnalytics.track(
+                ProductAnalytics.Event.healthPermissionGranted,
+                userId: analyticsUserId,
+                properties: ["source": "onboarding"]
+            )
+            ProductAnalytics.track(
+                ProductAnalytics.Event.onboardingHealthPromptCompleted,
+                userId: analyticsUserId
+            )
         } catch {
+            let denied = (error as? HealthKitError).map {
+                if case .authorizationDenied = $0 { return true }
+                return false
+            } ?? false
+            ProductAnalytics.track(
+                ProductAnalytics.Event.healthPermissionDenied,
+                userId: analyticsUserId,
+                properties: [
+                    "source": "onboarding",
+                    "reason": denied ? "authorization_denied" : "error",
+                ]
+            )
             AppLogger.log(
                 category: "onboarding",
                 level: .warning,
@@ -66,15 +97,13 @@ final class OnboardingViewModel: ObservableObject {
     func requestNotificationPermission() async {
         isAuthorizingNotifications = true
         errorMessage = nil
-        AppLogger.log(category: "onboarding", level: .info, message: "notification permission explainer shown")
         defer { isAuthorizingNotifications = false }
 
         do {
-            let granted = try await NotificationService.requestAuthorization()
-            AppLogger.log(
-                category: "onboarding",
-                level: .info,
-                message: granted ? "notification permission granted" : "notification permission denied"
+            _ = try await NotificationService.requestAuthorization()
+            ProductAnalytics.track(
+                ProductAnalytics.Event.onboardingNotificationPromptCompleted,
+                userId: analyticsUserId
             )
         } catch {
             AppLogger.log(
@@ -96,12 +125,6 @@ final class OnboardingViewModel: ObservableObject {
         do {
             let value = try await HealthKitService.fetchSevenDayStepAverage()
             sevenDayStepAverage = value
-            AppLogger.log(
-                category: "onboarding",
-                level: .info,
-                message: "7-day step average loaded",
-                metadata: ["value": String(Int(value.rounded()))]
-            )
         } catch {
             sevenDayStepAverage = nil
             errorMessage = "Could not read your step average right now."
@@ -124,7 +147,6 @@ final class OnboardingViewModel: ObservableObject {
         isSubmittingSearch = true
         statusMessage = "Finding opponent..."
         errorMessage = nil
-        AppLogger.log(category: "onboarding", level: .info, message: "find opponent tapped", userId: profileId)
         defer { isSubmittingSearch = false }
 
         do {
@@ -132,7 +154,10 @@ final class OnboardingViewModel: ObservableObject {
                 creatorId: profileId,
                 creatorBaseline: sevenDayStepAverage
             )
-            AppLogger.log(category: "onboarding", level: .info, message: "match_search_requests row created", userId: profileId)
+            ProductAnalytics.track(
+                ProductAnalytics.Event.onboardingFindOpponentSubmitted,
+                userId: profileId
+            )
 
             statusMessage = "We'll notify you when your match is found."
             try await Task.sleep(nanoseconds: 3_000_000_000)

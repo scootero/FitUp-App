@@ -2,7 +2,8 @@
 //  AppLogger.swift
 //  FitUp
 //
-//  Structured logs to Supabase `app_logs` when configured; otherwise os.Logger.
+//  Technical / diagnostic logs to Supabase `app_logs` when configured; otherwise os.Logger.
+//  Product usage and funnels go through `ProductAnalytics` → `analytics_events`, not this type.
 //
 
 import Combine

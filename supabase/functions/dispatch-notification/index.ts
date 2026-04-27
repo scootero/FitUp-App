@@ -45,7 +45,7 @@ serve(async (request)=>{
       const userId = String(row.user_id);
       const rowPayload = normalizePayload(row.payload);
       try {
-        const enforceCap = eventType !== "live_activity_update";
+        const enforceCap = eventType !== "live_activity_update" && !isFriendRequestEventType(eventType);
         if (enforceCap) {
           const capReached = await reachedDailyCap(userId);
           if (capReached) {
@@ -193,6 +193,33 @@ function buildMessage(eventType, payload, explicitTitle, explicitBody) {
         title: "FitUp",
         body: `Day ${dayNumber} of ${durationDays} - you're ${morningState}. Today matters.`
       };
+    case "evening_checkin": {
+      const matchIdForEvening = stringFromPayload(payload, "match_id", "");
+      if (!matchIdForEvening) {
+        return {
+          title: "FitUp",
+          body: "Time to check in—open FitUp to sync today’s stats."
+        };
+      }
+      const mType = stringFromPayload(payload, "metric_type", "steps");
+      const unitShort = mType === "active_calories" ? "cal" : "steps";
+      const myD = numberFromPayload(payload, "my_day_total", 0);
+      const thD = numberFromPayload(payload, "their_day_total", 0);
+      const st = stringFromPayload(payload, "standing_label", "tied");
+      let dayPart = "tied today";
+      if (st !== "tied" && myD !== thD) {
+        const gap = Math.abs(myD - thD);
+        if (st === "ahead") {
+          dayPart = `${gap} ${unitShort} ahead today`;
+        } else {
+          dayPart = `${gap} ${unitShort} behind today`;
+        }
+      }
+      return {
+        title: "FitUp",
+        body: `vs ${opponent} · ${myScore}-${theirScore} · ${dayPart} — open to sync.`
+      };
+    }
     case "pending_reminder":
       return {
         title: "FitUp",
@@ -223,12 +250,37 @@ function buildMessage(eventType, payload, explicitTitle, explicitBody) {
         title: "FitUp",
         body: `${opponent} won ${theirScore}-${myScore}. Rematch?`
       };
+    case "friend_request_received": {
+      const fromName = stringFromPayload(
+        payload,
+        "from_display_name",
+        stringFromPayload(payload, "opponent_display_name", "Someone")
+      );
+      return {
+        title: "FitUp",
+        body: `${fromName} sent you a friend request`
+      };
+    }
+    case "friend_request_accepted": {
+      const accepter = stringFromPayload(
+        payload,
+        "accepter_display_name",
+        stringFromPayload(payload, "opponent_display_name", "Your friend")
+      );
+      return {
+        title: "FitUp",
+        body: `${accepter} accepted your friend request`
+      };
+    }
     default:
       return {
         title: "FitUp",
         body: "You have a new FitUp update."
       };
   }
+}
+function isFriendRequestEventType(eventType) {
+  return eventType === "friend_request_received" || eventType === "friend_request_accepted";
 }
 function buildLiveActivityPayload(payload) {
   return {

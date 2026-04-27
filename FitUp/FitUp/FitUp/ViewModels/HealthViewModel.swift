@@ -90,7 +90,7 @@ final class HealthViewModel: ObservableObject {
 
         goals = ReadinessGoals.loadFromUserDefaults()
 
-        await HealthKitService.requestAuthorizationIfNeeded()
+        await HealthKitService.requestAuthorizationIfNeeded(analyticsUserId: userId)
 
         let stepsToday: Int
         let calsToday: Int

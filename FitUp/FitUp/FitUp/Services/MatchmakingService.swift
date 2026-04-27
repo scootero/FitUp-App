@@ -184,6 +184,17 @@ final class MatchmakingService {
             ]
         )
 
+        ProductAnalytics.track(
+            ProductAnalytics.Event.matchmakingStarted,
+            userId: currentUserId,
+            properties: [
+                "request_id": requestId.uuidString,
+                "metric_type": metricType.rawValue,
+                "duration_days": String(format.durationDays),
+                "start_mode": startMode.rawValue,
+            ]
+        )
+
         scheduleMatchmakingRetries(repository: repository, requestId: requestId)
 
         return requestId

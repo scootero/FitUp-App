@@ -53,6 +53,8 @@ struct ChallengeLaunchContext: Identifiable, Equatable {
 }
 
 struct ChallengeFlowView: View {
+    @EnvironmentObject private var sessionStore: SessionStore
+
     let profile: Profile?
     let launchContext: ChallengeLaunchContext
     var onClose: () -> Void
@@ -114,6 +116,7 @@ struct ChallengeFlowView: View {
             PaywallView {
                 showingPaywallSheet = false
             }
+            .environmentObject(sessionStore)
         }
         .task {
             await prepareFlow()
