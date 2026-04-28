@@ -144,7 +144,7 @@ private struct PendingMatchRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .glassCard(.pending)
+        .homeLiquidGlassCard(.pending)
         .disabled(activeActionMatchID == match.id)
         .opacity(activeActionMatchID == match.id ? 0.6 : 1)
         .animation(.spring(response: 0.45, dampingFraction: 0.78), value: match.hasAcceptedByMe)

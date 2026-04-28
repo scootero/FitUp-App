@@ -38,7 +38,7 @@ struct ActiveSection: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 14)
-                    .glassCard(.base)
+                    .homeLiquidGlassCard(.base)
             } else {
                 ForEach(Array(displayedMatches.enumerated()), id: \.element.id) { index, match in
                     MatchCardView(match: match, index: index) {
@@ -69,7 +69,7 @@ struct ActiveSection: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
-            .glassCard(.base)
+            .homeLiquidGlassCard(.base)
         }
         .buttonStyle(.plain)
     }

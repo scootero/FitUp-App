@@ -185,9 +185,83 @@ struct GlassCardModifier: ViewModifier {
     }
 }
 
+struct HomeLiquidGlassCardModifier: ViewModifier {
+    let variant: GlassCardVariant
+
+    private var baseTintGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 0.79, green: 0.78, blue: 0.84, opacity: 0.16),
+                Color(red: 0.70, green: 0.68, blue: 0.78, opacity: 0.08),
+                Color(red: 0.52, green: 0.50, blue: 0.61, opacity: 0.05),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var crystalHighlight: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(0.20),
+                Color.white.opacity(0.06),
+                Color.clear,
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
+                            .fill(baseTintGradient)
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
+                            .fill(variant.fillGradient)
+                            .opacity(0.42)
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
+                            .fill(crystalHighlight)
+                    }
+                    .overlay(alignment: .topLeading) {
+                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.26), lineWidth: 0.55)
+                            .blur(radius: 0.2)
+                            .mask(
+                                RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Color.white, Color.clear],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            )
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
+                            .strokeBorder(variant.borderColor.opacity(0.92), lineWidth: 0.95)
+                    }
+                    .shadow(color: variant.shadowColor.opacity(0.72), radius: 17, x: 0, y: 9)
+                    .shadow(color: Color.black.opacity(0.24), radius: 9, x: 0, y: 4)
+            }
+    }
+}
+
 extension View {
     func glassCard(_ variant: GlassCardVariant) -> some View {
         modifier(GlassCardModifier(variant: variant))
+    }
+
+    func homeLiquidGlassCard(_ variant: GlassCardVariant) -> some View {
+        modifier(HomeLiquidGlassCardModifier(variant: variant))
     }
 }
 

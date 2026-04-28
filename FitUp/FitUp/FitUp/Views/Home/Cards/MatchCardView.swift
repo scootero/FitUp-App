@@ -47,7 +47,7 @@ struct MatchCardView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
             }
-            .glassCard(match.isWinning ? .win : .lose)
+            .homeLiquidGlassCard(match.isWinning ? .win : .lose)
             .opacity(isVisible ? 1 : 0)
             .offset(y: isVisible ? 0 : 14)
             .animation(.easeOut(duration: 0.32).delay(Double(index) * 0.08), value: isVisible)

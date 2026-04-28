@@ -16,7 +16,6 @@ struct HomeView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel = HomeViewModel()
-    @State private var heroMetric: HomeBattleHeroCard.HeroMetric = .steps
 
     var body: some View {
         ZStack {
@@ -26,7 +25,16 @@ struct HomeView: View {
 
                     HomeBattleHeroCard(
                         matches: viewModel.activeMatches,
-                        selectedMetric: $heroMetric
+                        selectedMetric: $viewModel.heroMetric
+                    )
+
+                    HomeBattleMarginChart(
+                        points: viewModel.dailyBattleMargins,
+                        unitLabel: viewModel.heroMetric.unitLabel,
+                        dayCount: viewModel.marginChartDayCount,
+                        onDayCountSelected: { n in
+                            Task { await viewModel.setMarginChartDayCount(n) }
+                        }
                     )
 
                     statsRow
@@ -164,11 +172,11 @@ struct HomeView: View {
         .animation(.spring(response: 0.45, dampingFraction: 0.85), value: sessionStore.friendAcceptedYourRequestBanner?.0)
         .task(id: profile?.id) {
             viewModel.start(profile: profile, showOnboardingSearching: showOnboardingSearching, sessionStore: sessionStore)
-            syncHeroMetricWithActiveMatches()
+            viewModel.syncHeroMetricWithActiveMatches()
         }
         .onAppear {
             clearSearchingFlagIfHasMatch()
-            syncHeroMetricWithActiveMatches()
+            viewModel.syncHeroMetricWithActiveMatches()
         }
         .onChange(of: viewModel.pendingMatches.count) { _, _ in
             clearSearchingFlagIfHasMatch()
@@ -177,7 +185,10 @@ struct HomeView: View {
             clearSearchingFlagIfHasMatch()
         }
         .onChange(of: viewModel.activeMatches.map(\.metricType)) { _, _ in
-            syncHeroMetricWithActiveMatches()
+            viewModel.syncHeroMetricWithActiveMatches()
+        }
+        .onChange(of: viewModel.heroMetric) { _, _ in
+            Task { await viewModel.refreshBattleMargins() }
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active, profile?.id != nil else { return }
@@ -251,20 +262,6 @@ struct HomeView: View {
         }
     }
 
-    private func syncHeroMetricWithActiveMatches() {
-        let hasSteps = viewModel.activeMatches.contains { $0.metricType != "active_calories" }
-        let hasCalories = viewModel.activeMatches.contains { $0.metricType == "active_calories" }
-
-        if hasSteps, hasCalories { return }
-        if hasSteps {
-            heroMetric = .steps
-        } else if hasCalories {
-            heroMetric = .calories
-        } else {
-            heroMetric = .steps
-        }
-    }
-
     private var statsRow: some View {
         HStack(spacing: 10) {
             statCell(value: "\(viewModel.stats.matchCount)", label: "Matches")
@@ -287,18 +284,53 @@ struct HomeView: View {
         VStack(spacing: 5) {
             Text(value)
                 .font(FitUpFont.display(28, weight: .black))
-                .foregroundStyle(accentColor ?? FitUpColors.Text.primary)
+                .foregroundStyle(statValueGradient(label: label, accentColor: accentColor))
+                .shadow(color: statGlowColor(label: label).opacity(0.32), radius: 8)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(label.uppercased())
                 .font(FitUpFont.body(10, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [FitUpColors.Text.tertiary, FitUpColors.Neon.blue.opacity(0.72)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
                 .tracking(0.5)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
         .padding(.horizontal, 8)
-        .glassCard(variant)
+        .homeLiquidGlassCard(variant)
+    }
+
+    private func statValueGradient(label: String, accentColor: Color?) -> LinearGradient {
+        if let accentColor {
+            return LinearGradient(
+                colors: [accentColor, FitUpColors.Neon.blue.opacity(0.92)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        if label == "Wins" {
+            return LinearGradient(
+                colors: [FitUpColors.Neon.green, FitUpColors.Neon.cyan],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        return LinearGradient(
+            colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private func statGlowColor(label: String) -> Color {
+        if label == "Wins" { return FitUpColors.Neon.green }
+        if label == "Win Rate" { return FitUpColors.Neon.cyan }
+        return FitUpColors.Neon.blue
     }
 
     private var header: some View {
@@ -338,7 +370,7 @@ struct HomeView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(FitUpColors.Text.secondary)
                         .frame(width: 36, height: 36)
-                        .glassCard(.base)
+                        .homeLiquidGlassCard(.base)
                 }
                 .buttonStyle(.plain)
 
@@ -374,7 +406,7 @@ struct HomeView: View {
             .solidButton(color: FitUpColors.Neon.cyan)
         }
         .padding(20)
-        .glassCard(.base)
+        .homeLiquidGlassCard(.base)
     }
 
     private var firstName: String {

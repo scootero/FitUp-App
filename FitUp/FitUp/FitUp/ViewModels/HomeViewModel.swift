@@ -37,6 +37,11 @@ final class HomeViewModel: ObservableObject {
     /// Incoming friend request from DB poll (not from push) — shown when not dismissed and no duplicate push banner.
     @Published private(set) var polledIncomingFriend: (peerId: UUID, fromName: String)?
     @Published private(set) var isFriendRequestActionLoading = false
+    /// Steps vs calories for the home hero and margin chart (bound to `HomeBattleHeroCard`).
+    @Published var heroMetric: HomeBattleHeroCard.HeroMetric = .steps
+    @Published private(set) var dailyBattleMargins: [DailyBattleMargin] = []
+    /// 7 or 10 calendar days for the signed margin chart.
+    @Published var marginChartDayCount: Int = 7
 
     var hasAnyContent: Bool {
         !searchingRequests.isEmpty || !activeMatches.isEmpty || !pendingMatches.isEmpty
@@ -209,8 +214,44 @@ final class HomeViewModel: ObservableObject {
         }
 
         await refreshFriendIncomingPoll()
+        syncHeroMetricWithActiveMatches()
         syncLiveActivity()
+        await refreshBattleMargins()
         return true
+    }
+
+    func syncHeroMetricWithActiveMatches() {
+        let hasSteps = activeMatches.contains { $0.metricType != "active_calories" }
+        let hasCalories = activeMatches.contains { $0.metricType == "active_calories" }
+        if hasSteps, hasCalories { return }
+        if hasSteps {
+            heroMetric = .steps
+        } else if hasCalories {
+            heroMetric = .calories
+        } else {
+            heroMetric = .steps
+        }
+    }
+
+    func setMarginChartDayCount(_ n: Int) async {
+        let clamped = n >= 10 ? 10 : 7
+        guard marginChartDayCount != clamped else { return }
+        marginChartDayCount = clamped
+        await refreshBattleMargins()
+    }
+
+    func refreshBattleMargins() async {
+        guard userId != nil else {
+            dailyBattleMargins = []
+            return
+        }
+        let rows = await repository.fetchDailyBattleMargins(
+            endDate: Date(),
+            dayCount: marginChartDayCount,
+            metricType: heroMetric.metricType,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
+        dailyBattleMargins = rows
     }
 
     private func startPollingIfNeeded() {

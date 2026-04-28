@@ -46,7 +46,7 @@ struct DiscoverSection: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .glassCard(.base)
+                .homeLiquidGlassCard(.base)
             }
         }
     }

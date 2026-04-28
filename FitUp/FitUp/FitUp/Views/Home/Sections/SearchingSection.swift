@@ -62,7 +62,7 @@ struct SearchingSection: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                 }
-                .glassCard(.base)
+                .homeLiquidGlassCard(.base)
             }
         }
         .onReceive(

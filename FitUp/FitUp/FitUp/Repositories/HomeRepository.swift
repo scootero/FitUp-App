@@ -47,6 +47,15 @@ struct HomeDayPip: Identifiable, Equatable {
     var id: Int { dayNumber }
 }
 
+struct DailyBattleMargin: Identifiable, Equatable, Sendable {
+    /// `yyyy-MM-dd` (match calendar date from server).
+    let calendarDate: String
+    /// Sum of (viewer − opponent) metric totals for that date across qualifying matches.
+    let margin: Int
+
+    var id: String { calendarDate }
+}
+
 struct HomeActiveMatch: Identifiable, Equatable {
     let id: UUID
     let metricType: String
@@ -128,6 +137,57 @@ final class HomeRepository {
     func loadActiveMatches(for currentUserId: UUID, profileTimeZoneIdentifier: String? = nil) async -> [HomeActiveMatch] {
         let (activeMatches, _) = await fetchActiveAndPendingCards(currentUserId: currentUserId, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
         return activeMatches
+    }
+
+    /// End date should be “today” in the user’s profile timezone when available (same convention as live match days).
+    func fetchDailyBattleMargins(
+        endDate: Date,
+        dayCount: Int,
+        metricType: String,
+        profileTimeZoneIdentifier: String?
+    ) async -> [DailyBattleMargin] {
+        guard let client = SupabaseProvider.client else { return [] }
+        let endStr = Self.formatProfileCalendarDate(endDate, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
+        let params = HomeDailyBattleMarginsRPCParams(
+            p_end_date: endStr,
+            p_day_count: dayCount,
+            p_metric_type: metricType
+        )
+        do {
+            let response: PostgrestResponse<[HomeDailyBattleMarginsRow]> = try await client
+                .rpc("home_daily_battle_margins", params: params)
+                .execute()
+            return response.value.map {
+                DailyBattleMargin(calendarDate: $0.date, margin: Self.safeInt(from: $0.margin))
+            }
+        } catch {
+            if error is CancellationError { return [] }
+            AppLogger.log(
+                category: "matchmaking",
+                level: .warning,
+                message: "home_daily_battle_margins rpc failed",
+                metadata: ["error": error.localizedDescription]
+            )
+            return []
+        }
+    }
+
+    private static func safeInt(from int64: Int64) -> Int {
+        if int64 >= Int64(Int.max) { return Int.max }
+        if int64 <= Int64(Int.min) { return Int.min }
+        return Int(int64)
+    }
+
+    static func formatProfileCalendarDate(_ date: Date, profileTimeZoneIdentifier: String?) -> String {
+        let tz = profileTimeZoneIdentifier.flatMap { TimeZone(identifier: $0) } ?? .current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+        let formatter = DateFormatter()
+        formatter.calendar = cal
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = tz
+        return formatter.string(from: date)
     }
 
     // MARK: Actions
@@ -700,6 +760,34 @@ final class HomeRepository {
         }
         return String(displayName.prefix(2)).uppercased()
     }
+}
+
+// MARK: - home_daily_battle_margins RPC (see supabase/scripts/sql-editor/04_home_daily_battle_margins_rpc.sql)
+
+private struct HomeDailyBattleMarginsRPCParams: Sendable {
+    let p_end_date: String
+    let p_day_count: Int
+    let p_metric_type: String
+}
+
+extension HomeDailyBattleMarginsRPCParams: Encodable {
+    nonisolated func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(p_end_date, forKey: .p_end_date)
+        try c.encode(p_day_count, forKey: .p_day_count)
+        try c.encode(p_metric_type, forKey: .p_metric_type)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case p_end_date
+        case p_day_count
+        case p_metric_type
+    }
+}
+
+private struct HomeDailyBattleMarginsRow: Decodable, Sendable {
+    let date: String
+    let margin: Int64
 }
 
 // MARK: - decline_pending_match RPC (see supabase/sql/slice4e-decline-pending-match.sql)
