@@ -13,6 +13,8 @@ struct HealthWeekComparison: Equatable {
     let metricType: HealthViewModel.StatsTab
     let currentTotal: Int
     let previousTotal: Int
+    let currentWeekDaily: [Int]
+    let previousWeekDaily: [Int]
 
     var delta: Int { currentTotal - previousTotal }
     var percentDelta: Int {
@@ -496,13 +498,101 @@ final class HealthViewModel: ObservableObject {
 
         let steps: HealthWeekComparison? = {
             guard let current = resolvedCurrentSteps, let previous = resolvedPreviousSteps else { return nil }
-            return HealthWeekComparison(metricType: .steps, currentTotal: current, previousTotal: previous)
+            let currentDaily = currentWeekDailyValues(
+                weekValuesOldestToToday: weekSteps,
+                calendar: calendar,
+                now: now
+            )
+            let previousDaily = syntheticPreviousWeekDailyTotals(
+                targetTotal: previous,
+                basisDaily: currentDaily
+            )
+            return HealthWeekComparison(
+                metricType: .steps,
+                currentTotal: current,
+                previousTotal: previous,
+                currentWeekDaily: currentDaily,
+                previousWeekDaily: previousDaily
+            )
         }()
         let calories: HealthWeekComparison? = {
             guard let current = resolvedCurrentCals, let previous = resolvedPreviousCals else { return nil }
-            return HealthWeekComparison(metricType: .calories, currentTotal: current, previousTotal: previous)
+            let currentDaily = currentWeekDailyValues(
+                weekValuesOldestToToday: weekCalories,
+                calendar: calendar,
+                now: now
+            )
+            let previousDaily = syntheticPreviousWeekDailyTotals(
+                targetTotal: previous,
+                basisDaily: currentDaily
+            )
+            return HealthWeekComparison(
+                metricType: .calories,
+                currentTotal: current,
+                previousTotal: previous,
+                currentWeekDaily: currentDaily,
+                previousWeekDaily: previousDaily
+            )
         }()
         return (steps, calories)
+    }
+
+    /// Maps the visible 7-day oldest->today values into the current Monday->Sunday week slots.
+    private func currentWeekDailyValues(
+        weekValuesOldestToToday: [Int],
+        calendar: Calendar,
+        now: Date
+    ) -> [Int] {
+        guard let currentWeek = calendar.dateInterval(of: .weekOfYear, for: now) else {
+            return Array(repeating: 0, count: 7)
+        }
+        var map: [Date: Int] = [:]
+        let todayStart = calendar.startOfDay(for: now)
+        for offset in 0..<min(weekValuesOldestToToday.count, 7) {
+            guard let day = calendar.date(byAdding: .day, value: -(6 - offset), to: todayStart) else { continue }
+            map[calendar.startOfDay(for: day)] = weekValuesOldestToToday[offset]
+        }
+
+        var values: [Int] = []
+        for i in 0..<7 {
+            guard let day = calendar.date(byAdding: .day, value: i, to: currentWeek.start) else {
+                values.append(0)
+                continue
+            }
+            values.append(map[calendar.startOfDay(for: day)] ?? 0)
+        }
+        return values
+    }
+
+    /// Synthetic fallback for last-week daily shape when only week-to-date total is known.
+    private func syntheticPreviousWeekDailyTotals(
+        targetTotal: Int,
+        basisDaily: [Int]
+    ) -> [Int] {
+        guard targetTotal > 0 else { return Array(repeating: 0, count: 7) }
+        let dayCount = max(basisDaily.count, 7)
+        let basis = basisDaily.count == 7 ? basisDaily : Array(repeating: 1, count: dayCount)
+        let safeBasis = basis.map { max(1, $0) }
+        let sumBasis = max(1, safeBasis.reduce(0, +))
+        let raw = safeBasis.map { Double($0) / Double(sumBasis) * Double(targetTotal) }
+        var ints = raw.map { Int($0.rounded()) }
+        var delta = targetTotal - ints.reduce(0, +)
+        var idx = 0
+        while delta != 0, idx < 100 {
+            let i = idx % ints.count
+            if delta > 0 {
+                ints[i] += 1
+                delta -= 1
+            } else if ints[i] > 0 {
+                ints[i] -= 1
+                delta += 1
+            }
+            idx += 1
+        }
+        if ints.count < 7 {
+            return ints + Array(repeating: 0, count: 7 - ints.count)
+        }
+        return Array(ints.prefix(7))
     }
 
 }

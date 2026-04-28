@@ -16,12 +16,18 @@ struct HomeView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel = HomeViewModel()
+    @State private var heroMetric: HomeBattleHeroCard.HeroMetric = .steps
 
     var body: some View {
         ZStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
+
+                    HomeBattleHeroCard(
+                        matches: viewModel.activeMatches,
+                        selectedMetric: $heroMetric
+                    )
 
                     statsRow
 
@@ -158,15 +164,20 @@ struct HomeView: View {
         .animation(.spring(response: 0.45, dampingFraction: 0.85), value: sessionStore.friendAcceptedYourRequestBanner?.0)
         .task(id: profile?.id) {
             viewModel.start(profile: profile, showOnboardingSearching: showOnboardingSearching, sessionStore: sessionStore)
+            syncHeroMetricWithActiveMatches()
         }
         .onAppear {
             clearSearchingFlagIfHasMatch()
+            syncHeroMetricWithActiveMatches()
         }
         .onChange(of: viewModel.pendingMatches.count) { _, _ in
             clearSearchingFlagIfHasMatch()
         }
         .onChange(of: viewModel.activeMatches.count) { _, _ in
             clearSearchingFlagIfHasMatch()
+        }
+        .onChange(of: viewModel.activeMatches.map(\.metricType)) { _, _ in
+            syncHeroMetricWithActiveMatches()
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active, profile?.id != nil else { return }
@@ -237,6 +248,20 @@ struct HomeView: View {
     private func clearSearchingFlagIfHasMatch() {
         if !viewModel.pendingMatches.isEmpty || !viewModel.activeMatches.isEmpty {
             sessionStore.clearSearchingCardOnHomeFlag()
+        }
+    }
+
+    private func syncHeroMetricWithActiveMatches() {
+        let hasSteps = viewModel.activeMatches.contains { $0.metricType != "active_calories" }
+        let hasCalories = viewModel.activeMatches.contains { $0.metricType == "active_calories" }
+
+        if hasSteps, hasCalories { return }
+        if hasSteps {
+            heroMetric = .steps
+        } else if hasCalories {
+            heroMetric = .calories
+        } else {
+            heroMetric = .steps
         }
     }
 
