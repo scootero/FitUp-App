@@ -14,7 +14,7 @@ struct HomeBattleMarginChart: View {
     let dayCount: Int
     var onDayCountSelected: (Int) -> Void
 
-    private let barWidth: CGFloat = 14
+    private let barWidth: CGFloat = 17
     private let chartHeight: CGFloat = 168
 
     private var maxAbsMargin: CGFloat {
@@ -31,15 +31,8 @@ struct HomeBattleMarginChart: View {
             HStack {
                 Text("BATTLE MARGIN")
                     .font(FitUpFont.mono(11, weight: .bold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue, FitUpColors.Neon.yellow.opacity(0.92)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
+                    .fitUpGlobalTitleStyle(weight: .bold, tracking: 0.9)
                     .shadow(color: FitUpColors.Neon.blue.opacity(0.32), radius: 7)
-                    .tracking(0.9)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
                     .background(
@@ -82,6 +75,21 @@ struct HomeBattleMarginChart: View {
             } else {
                 Chart {
                     ForEach(points) { point in
+                        if point.calendarDate == highlightedDayKey {
+                            BarMark(
+                                x: .value("Day", point.calendarDate),
+                                y: .value("Margin Highlight", point.margin),
+                                width: .fixed(barWidth + 6)
+                            )
+                            .foregroundStyle(
+                                point.margin >= 0
+                                    ? FitUpColors.Neon.cyan.opacity(0.22)
+                                    : FitUpColors.Neon.orange.opacity(0.24)
+                            )
+                            .cornerRadius(5)
+                            .shadow(color: barGlow(for: point.margin).opacity(0.62), radius: 10, x: 0, y: 0)
+                        }
+
                         BarMark(
                             x: .value("Day", point.calendarDate),
                             y: .value("Margin", point.margin),
@@ -195,21 +203,21 @@ struct HomeBattleMarginChart: View {
     private func barGradient(for margin: Int) -> LinearGradient {
         let t = normalizedT(margin)
         if t >= 0 {
-            let c0 = FitUpColors.Neon.purple
-            let c1 = t >= 0.35 ? FitUpColors.Neon.blue : FitUpColors.Neon.purple
+            let c0 = FitUpColors.Neon.blue
+            let c1 = t >= 0.35 ? FitUpColors.Neon.cyan : FitUpColors.Neon.blue
             let c2 = t >= 0.65 ? FitUpColors.Neon.green : c1
             return LinearGradient(
-                colors: [c0.opacity(0.85), c1, c2.opacity(0.95)],
+                colors: [c0.opacity(0.86), c1.opacity(0.97), c2],
                 startPoint: .bottom,
                 endPoint: .top
             )
         } else {
             let u = -t
-            let c0 = FitUpColors.Neon.purple
-            let c1 = u >= 0.35 ? FitUpColors.Neon.orange : FitUpColors.Neon.purple
+            let c0 = FitUpColors.Neon.orange
+            let c1 = u >= 0.35 ? FitUpColors.Neon.red : FitUpColors.Neon.orange
             let c2 = u >= 0.65 ? FitUpColors.Neon.red : c1
             return LinearGradient(
-                colors: [c0.opacity(0.85), c1, c2.opacity(0.95)],
+                colors: [c0.opacity(0.9), c1, c2.opacity(0.96)],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -218,11 +226,11 @@ struct HomeBattleMarginChart: View {
 
     private func barGlow(for margin: Int) -> Color {
         let t = normalizedT(margin)
-        if t >= 0.5 { return FitUpColors.Neon.green.opacity(0.45) }
-        if t >= 0.15 { return FitUpColors.Neon.blue.opacity(0.4) }
-        if t > -0.15 { return FitUpColors.Neon.purple.opacity(0.35) }
-        if t > -0.5 { return FitUpColors.Neon.orange.opacity(0.45) }
-        return FitUpColors.Neon.red.opacity(0.5)
+        if t >= 0.5 { return FitUpColors.Neon.green.opacity(0.56) }
+        if t >= 0.15 { return FitUpColors.Neon.cyan.opacity(0.52) }
+        if t > -0.15 { return FitUpColors.Neon.purple.opacity(0.32) }
+        if t > -0.5 { return FitUpColors.Neon.orange.opacity(0.56) }
+        return FitUpColors.Neon.red.opacity(0.6)
     }
 }
 

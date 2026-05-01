@@ -16,7 +16,7 @@ struct SectionHeader: View {
         HStack(alignment: .center) {
             Text(title)
                 .font(FitUpFont.display(16, weight: .bold))
-                .foregroundStyle(FitUpColors.Text.primary)
+                .fitUpGlobalTitleStyle(weight: .bold, tracking: 0.35)
 
             Spacer(minLength: 0)
 

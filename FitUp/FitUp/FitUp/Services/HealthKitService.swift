@@ -63,13 +63,6 @@ struct HealthSleepSummary: Equatable {
     var lastNightSleepRatio: SleepRatioBreakdown?
 }
 
-struct HealthHRZoneRow: Identifiable, Equatable {
-    let id: Int
-    let label: String
-    let valueLabel: String
-    let percent: Double
-}
-
 enum HealthMetricType: String {
     case steps
     case activeCalories = "active_calories"
@@ -101,9 +94,7 @@ enum HealthKitService {
             HKObjectType.quantityType(forIdentifier: .stepCount)!,
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
             HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
-            HKObjectType.quantityType(forIdentifier: .heartRate)!,
             HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
-            HKObjectType.workoutType(),
         ]
     }
 
@@ -1093,141 +1084,6 @@ enum HealthKitService {
         sleepPipelineLogger.debug("\(finalParts.joined(separator: " "), privacy: .public)")
     }
     #endif
-
-    /// Heart-rate zone distribution from the most recent workout (percent of samples in each zone). Never throws; returns `emptyHRZoneRows` on failure or no data.
-    static func fetchHRZoneRows(defaultMaxHeartRate: Double = 190) async -> [HealthHRZoneRow] {
-        guard isHealthDataAvailable else {
-            AppLogger.log(
-                category: "healthkit_read",
-                level: .warning,
-                message: "fetchHRZoneRows: Health data not available",
-                metadata: ["pipeline": "HealthKitService.fetchHRZoneRows"]
-            )
-            return Self.emptyHRZoneRows
-        }
-        guard let hrType = HKObjectType.quantityType(forIdentifier: .heartRate) else {
-            AppLogger.log(
-                category: "healthkit_read",
-                level: .warning,
-                message: "fetchHRZoneRows: heart rate type unavailable",
-                metadata: ["pipeline": "HealthKitService.fetchHRZoneRows"]
-            )
-            return Self.emptyHRZoneRows
-        }
-
-        let workout: HKWorkout?
-        do {
-            workout = try await fetchMostRecentWorkout()
-        } catch {
-            logHealthKitQueryFailure(error, context: "fetchHRZoneRows.fetchMostRecentWorkout")
-            return Self.emptyHRZoneRows
-        }
-        guard let workout else {
-            return Self.emptyHRZoneRows
-        }
-
-        let samples: [HKQuantitySample]
-        do {
-            samples = try await fetchQuantitySamples(
-                type: hrType,
-                start: workout.startDate,
-                end: workout.endDate
-            )
-        } catch {
-            logHealthKitQueryFailure(error, context: "fetchHRZoneRows.fetchQuantitySamples")
-            return Self.emptyHRZoneRows
-        }
-
-        guard !samples.isEmpty else {
-            return Self.emptyHRZoneRows
-        }
-
-        var buckets = [Int: Int]()
-        for s in samples {
-            let bpm = s.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
-            let z = zoneIndex(bpm: bpm, maxHR: defaultMaxHeartRate)
-            buckets[z, default: 0] += 1
-        }
-
-        let total = max(samples.count, 1)
-        let labels = [
-            "Zone 1 · Rest",
-            "Zone 2 · Fat burn",
-            "Zone 3 · Cardio",
-            "Zone 4 · Peak",
-            "Zone 5 · Max",
-        ]
-        return (0..<5).map { i in
-            let c = buckets[i] ?? 0
-            let p = Double(c) / Double(total) * 100
-            return HealthHRZoneRow(
-                id: i,
-                label: labels[i],
-                valueLabel: "\(Int(p.rounded()))%",
-                percent: p
-            )
-        }
-    }
-
-    /// Placeholder rows when no workout / samples or when the Health screen uses a non-throwing fallback.
-    static let emptyHRZoneRows: [HealthHRZoneRow] = [
-        HealthHRZoneRow(id: 0, label: "Zone 1 · Rest", valueLabel: "0%", percent: 0),
-        HealthHRZoneRow(id: 1, label: "Zone 2 · Fat burn", valueLabel: "0%", percent: 0),
-        HealthHRZoneRow(id: 2, label: "Zone 3 · Cardio", valueLabel: "0%", percent: 0),
-        HealthHRZoneRow(id: 3, label: "Zone 4 · Peak", valueLabel: "0%", percent: 0),
-        HealthHRZoneRow(id: 4, label: "Zone 5 · Max", valueLabel: "0%", percent: 0),
-    ]
-
-    private static func zoneIndex(bpm: Double, maxHR: Double) -> Int {
-        let pct = bpm / maxHR
-        if pct < 0.6 { return 0 }
-        if pct < 0.7 { return 1 }
-        if pct < 0.8 { return 2 }
-        if pct < 0.9 { return 3 }
-        return 4
-    }
-
-    private static func fetchMostRecentWorkout() async throws -> HKWorkout? {
-        let type = HKObjectType.workoutType()
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
-            let query = HKSampleQuery(
-                sampleType: type,
-                predicate: nil,
-                limit: 1,
-                sortDescriptors: [sort]
-            ) { _, samples, error in
-                if let error {
-                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchMostRecentWorkout"))
-                    return
-                }
-                continuation.resume(returning: samples?.first as? HKWorkout)
-            }
-            store.execute(query)
-        }
-    }
-
-    private static func fetchQuantitySamples(type: HKQuantityType, start: Date, end: Date) async throws -> [HKQuantitySample] {
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKSampleQuery(
-                sampleType: type,
-                predicate: predicate,
-                limit: HKObjectQueryNoLimit,
-                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
-            ) { _, samples, error in
-                if let error {
-                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchQuantitySamples"))
-                    return
-                }
-                let qs = (samples as? [HKQuantitySample]) ?? []
-                continuation.resume(returning: qs)
-            }
-            store.execute(query)
-        }
-    }
 
     private static func fetchCategorySamples(type: HKCategoryType, start: Date, end: Date) async throws -> [HKCategorySample] {
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)

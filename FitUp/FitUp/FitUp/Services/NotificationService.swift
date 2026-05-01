@@ -21,6 +21,17 @@ enum NotificationDeepLink: Equatable {
     case friends
 }
 
+struct InAppNotificationItem: Identifiable, Equatable, Codable {
+    let id: UUID
+    let title: String
+    let body: String
+    let eventType: String
+    let deepLinkTarget: String?
+    let matchId: UUID?
+    let createdAt: Date
+    var isRead: Bool
+}
+
 // MARK: - Service
 
 @MainActor
@@ -30,13 +41,18 @@ final class NotificationService: NSObject, ObservableObject {
 
     /// Published so `ContentView` / `RootShellView` can react to tapped notifications.
     @Published private(set) var pendingDeepLink: NotificationDeepLink?
+    @Published private(set) var inboxItems: [InAppNotificationItem] = []
+    @Published private(set) var shouldPresentHomeInbox: Bool = false
 
     /// Wired from `FitUpApp` so `match_found` / `challenge_received` / `match_active` pushes can queue Home celebrations.
     weak var sessionStore: SessionStore?
 
+    private let inboxStorageKey = "fitup.notification.inbox.items"
+
     private override init() {
         super.init()
         UNUserNotificationCenter.current().delegate = self
+        loadInboxFromDefaults()
     }
 
     // MARK: - Permission
@@ -84,6 +100,38 @@ final class NotificationService: NSObject, ObservableObject {
         return pendingDeepLink
     }
 
+    func requestPresentHomeInbox() {
+        shouldPresentHomeInbox = true
+    }
+
+    func consumePresentHomeInbox() -> Bool {
+        let shouldPresent = shouldPresentHomeInbox
+        shouldPresentHomeInbox = false
+        return shouldPresent
+    }
+
+    func markAllInboxItemsRead() {
+        guard inboxItems.contains(where: { !$0.isRead }) else { return }
+        inboxItems = inboxItems.map { item in
+            var next = item
+            next.isRead = true
+            return next
+        }
+        saveInboxToDefaults()
+    }
+
+    func markInboxItemRead(_ itemId: UUID) {
+        guard let idx = inboxItems.firstIndex(where: { $0.id == itemId }), inboxItems[idx].isRead == false else { return }
+        inboxItems[idx].isRead = true
+        saveInboxToDefaults()
+    }
+
+    var unreadInboxCount: Int {
+        inboxItems.reduce(into: 0) { acc, item in
+            if !item.isRead { acc += 1 }
+        }
+    }
+
     func attachSessionStore(_ store: SessionStore) {
         sessionStore = store
     }
@@ -123,6 +171,7 @@ final class NotificationService: NSObject, ObservableObject {
     }
 
     private func routeNotification(userInfo: [AnyHashable: Any]) {
+        recordInboxItem(from: userInfo)
         applyCelebrationQueuesFromNotificationPayload(userInfo: userInfo)
 
         let eventType = userInfo["event_type"] as? String ?? ""
@@ -132,6 +181,7 @@ final class NotificationService: NSObject, ObservableObject {
         }
         if eventType == "friend_request_accepted" {
             pendingDeepLink = .home
+            shouldPresentHomeInbox = true
             return
         }
 
@@ -151,6 +201,77 @@ final class NotificationService: NSObject, ObservableObject {
             pendingDeepLink = .friends
         default:
             pendingDeepLink = .home
+            shouldPresentHomeInbox = true
+        }
+    }
+
+    private func recordInboxItem(from userInfo: [AnyHashable: Any], providedTitle: String? = nil, providedBody: String? = nil) {
+        let eventType = userInfo["event_type"] as? String ?? "general"
+        let title = providedTitle ?? (userInfo["title"] as? String) ?? defaultTitle(for: eventType)
+        let body = providedBody ?? (userInfo["message"] as? String) ?? (userInfo["aps.alert.body"] as? String) ?? defaultBody(for: eventType)
+        let deepLinkTarget = userInfo["deep_link_target"] as? String
+        let matchId: UUID? = {
+            guard let raw = userInfo["match_id"] as? String else { return nil }
+            return UUID(uuidString: raw)
+        }()
+        let item = InAppNotificationItem(
+            id: UUID(),
+            title: title,
+            body: body,
+            eventType: eventType,
+            deepLinkTarget: deepLinkTarget,
+            matchId: matchId,
+            createdAt: Date(),
+            isRead: false
+        )
+        inboxItems.insert(item, at: 0)
+        if inboxItems.count > 50 {
+            inboxItems = Array(inboxItems.prefix(50))
+        }
+        saveInboxToDefaults()
+    }
+
+    private func defaultTitle(for eventType: String) -> String {
+        switch eventType {
+        case "match_found", "challenge_received":
+            return "New Challenge"
+        case "match_active":
+            return "Battle Is Live"
+        case "friend_request_received":
+            return "Friend Request"
+        case "friend_request_accepted":
+            return "Friend Request Accepted"
+        default:
+            return "FitUp Alert"
+        }
+    }
+
+    private func defaultBody(for eventType: String) -> String {
+        switch eventType {
+        case "match_found", "challenge_received":
+            return "You have a new matchup waiting."
+        case "match_active":
+            return "Your battle has started."
+        case "friend_request_received":
+            return "You received a new friend request."
+        case "friend_request_accepted":
+            return "You are connected. Time to compete."
+        default:
+            return "Open FitUp to view details."
+        }
+    }
+
+    private func saveInboxToDefaults() {
+        let encoder = JSONEncoder()
+        guard let data = try? encoder.encode(inboxItems) else { return }
+        UserDefaults.standard.set(data, forKey: inboxStorageKey)
+    }
+
+    private func loadInboxFromDefaults() {
+        guard let data = UserDefaults.standard.data(forKey: inboxStorageKey) else { return }
+        let decoder = JSONDecoder()
+        if let items = try? decoder.decode([InAppNotificationItem].self, from: data) {
+            inboxItems = items
         }
     }
 }
@@ -167,6 +288,11 @@ extension NotificationService: UNUserNotificationCenterDelegate {
     ) {
         let userInfo = notification.request.content.userInfo
         Task { @MainActor in
+            self.recordInboxItem(
+                from: userInfo,
+                providedTitle: notification.request.content.title,
+                providedBody: notification.request.content.body
+            )
             self.applyCelebrationQueuesFromNotificationPayload(userInfo: userInfo)
         }
         completionHandler([.banner, .sound, .badge])

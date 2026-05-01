@@ -101,8 +101,7 @@ struct SettingsGroupView<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(FitUpFont.body(11, weight: .bold))
-                .foregroundStyle(FitUpColors.Text.tertiary)
-                .kerning(1.5)
+                .fitUpGlobalTitleStyle(weight: .bold, tracking: 1.5)
                 .padding(.bottom, 8)
                 .padding(.leading, 2)
 

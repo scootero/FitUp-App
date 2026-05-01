@@ -41,7 +41,7 @@ struct FloatingTabBar: View {
 
     private let barHeight: CGFloat = 68
     private let horizontalPadding: CGFloat = 12
-    private let bottomPadding: CGFloat = 10
+    private let bottomPadding: CGFloat = 2
     private let battleCorner: CGFloat = 16
 
     var body: some View {
@@ -56,28 +56,50 @@ struct FloatingTabBar: View {
         .frame(maxWidth: .infinity)
         .background { barBackground }
         .clipShape(RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous))
-        .shadow(color: .black.opacity(0.6), radius: 20, x: 0, y: -4)
-        .shadow(color: Color.black.opacity(0.4), radius: 16, x: 0, y: 8)
+        .shadow(color: FitUpColors.Neon.cyan.opacity(0.24), radius: 18, x: 0, y: 2)
+        .shadow(color: .black.opacity(0.55), radius: 20, x: 0, y: 10)
         .padding(.horizontal, horizontalPadding)
         .padding(.bottom, bottomPadding)
     }
 
     private var barBackground: some View {
-        RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous)
-            .fill(Color(red: 5 / 255, green: 5 / 255, blue: 10 / 255, opacity: 0.92))
-            .background {
-                RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
-                    .padding(-1)
-            }
+        TimelineView(.animation(minimumInterval: 1 / 28, paused: false)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            let angle = Angle(degrees: (t * 5).truncatingRemainder(dividingBy: 360))
+
+            RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous)
+                .fill(Color(red: 16 / 255, green: 24 / 255, blue: 34 / 255, opacity: 0.70))
+                .background {
+                    RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous)
+                        .fill(
+                            AngularGradient(
+                                colors: [
+                                    FitUpColors.Neon.cyan.opacity(0.40),
+                                    FitUpColors.Neon.blue.opacity(0.35),
+                                    FitUpColors.Neon.purple.opacity(0.32),
+                                    FitUpColors.Neon.green.opacity(0.28),
+                                    FitUpColors.Neon.cyan.opacity(0.40),
+                                ],
+                                center: .center,
+                                angle: angle
+                            )
+                        )
+                        .blendMode(.screen)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous)
+                        .strokeBorder(FitUpColors.Neon.cyan.opacity(0.18), lineWidth: 1)
+                        .padding(-1)
+                }
+        }
     }
 
     private var battleColumn: some View {
@@ -93,16 +115,31 @@ struct FloatingTabBar: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
             .padding(.horizontal, 4)
+            .offset(y: -1)
+            .scaleEffect(1.03)
             .background {
                 RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
+                            colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue, FitUpColors.Neon.purple.opacity(0.92)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-                    .shadow(color: FitUpColors.Neon.cyan.opacity(0.35), radius: 10, x: 0, y: 2)
+                    .shadow(color: FitUpColors.Neon.cyan.opacity(0.48), radius: 14, x: 0, y: 3)
+                    .shadow(color: FitUpColors.Neon.blue.opacity(0.34), radius: 18, x: 0, y: 6)
+                    .overlay(alignment: .top) {
+                        RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.36), lineWidth: 0.7)
+                            .blur(radius: 0.2)
+                            .mask(
+                                LinearGradient(
+                                    colors: [Color.white, Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    }
                     .overlay {
                         RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
                             .strokeBorder(Color(red: 5 / 255, green: 5 / 255, blue: 10 / 255, opacity: 0.92), lineWidth: 2)
@@ -121,14 +158,14 @@ struct FloatingTabBar: View {
                 Image(systemName: tab.systemImage)
                     .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
                     .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(isSelected ? FitUpColors.Neon.cyan : Color.white.opacity(0.55))
-                    .opacity(isSelected ? 1 : 0.35)
+                    .foregroundStyle(isSelected ? FitUpColors.Neon.cyan : Color(red: 0.78, green: 0.88, blue: 1.0))
+                    .opacity(isSelected ? 1 : 0.82)
                     .shadow(color: isSelected ? FitUpColors.Neon.cyan.opacity(0.45) : .clear, radius: 6, x: 0, y: 0)
 
                 Text(tab.label)
                     .font(FitUpFont.body(9, weight: .bold))
                     .tracking(0.5)
-                    .foregroundStyle(isSelected ? FitUpColors.Neon.cyan : FitUpColors.Text.tertiary)
+                    .foregroundStyle(isSelected ? FitUpColors.Neon.cyan : Color(red: 0.78, green: 0.88, blue: 1.0).opacity(0.90))
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 2)

@@ -13,7 +13,6 @@ struct MatchCardView: View {
     var onTap: () -> Void
 
     @State private var isVisible = false
-    @State private var todayPipPulse = false
 
     var body: some View {
         Button {
@@ -50,18 +49,10 @@ struct MatchCardView: View {
             .homeLiquidGlassCard(match.isWinning ? .win : .lose)
             .opacity(isVisible ? 1 : 0)
             .offset(y: isVisible ? 0 : 14)
-            .animation(.easeOut(duration: 0.32).delay(Double(index) * 0.08), value: isVisible)
         }
         .buttonStyle(.plain)
         .onAppear {
             isVisible = true
-            todayPipPulse = false
-            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-                todayPipPulse = true
-            }
-        }
-        .onDisappear {
-            todayPipPulse = false
         }
     }
 
@@ -239,12 +230,12 @@ struct MatchCardView: View {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .fill(pipColor(for: pip.state))
                     .frame(width: pip.state == .today ? 22 : 16, height: 5)
-                    .opacity(pip.state == .today ? (todayPipPulse ? 1 : 0.68) : 1)
+                    .opacity(pip.state == .today ? 0.92 : 1)
                     .shadow(
                         color: pip.state == .today
-                            ? FitUpColors.Neon.cyan.opacity(todayPipPulse ? 0.9 : 0.45)
+                            ? FitUpColors.Neon.cyan.opacity(0.62)
                             : .clear,
-                        radius: pip.state == .today ? (todayPipPulse ? 7 : 3) : 0,
+                        radius: pip.state == .today ? 5 : 0,
                         x: 0,
                         y: 0
                     )

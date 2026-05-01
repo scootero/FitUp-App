@@ -47,6 +47,7 @@ enum FitUpColors {
         static let primary = Color.white
         static let secondary = Color.white.opacity(0.52)
         static let tertiary = Color.white.opacity(0.27)
+        static let title = Color(red: 0.70, green: 0.95, blue: 1.0)
     }
 
     /// Sleep stage segment colors — `HealthScreen` / `HEALTH_MOCK` in FitUp_Final_Mockup.jsx
@@ -188,12 +189,36 @@ struct GlassCardModifier: ViewModifier {
 struct HomeLiquidGlassCardModifier: ViewModifier {
     let variant: GlassCardVariant
 
+    private var darkFrostTint: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.black.opacity(0.36),
+                Color.black.opacity(0.24),
+                Color.black.opacity(0.14),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
     private var baseTintGradient: LinearGradient {
         LinearGradient(
             colors: [
-                Color(red: 0.79, green: 0.78, blue: 0.84, opacity: 0.16),
-                Color(red: 0.70, green: 0.68, blue: 0.78, opacity: 0.08),
-                Color(red: 0.52, green: 0.50, blue: 0.61, opacity: 0.05),
+                Color.white.opacity(0.06),
+                Color.white.opacity(0.028),
+                Color.clear,
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var liquidSheen: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(0.18),
+                Color.white.opacity(0.07),
+                Color.clear,
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -203,8 +228,8 @@ struct HomeLiquidGlassCardModifier: ViewModifier {
     private var crystalHighlight: LinearGradient {
         LinearGradient(
             colors: [
-                Color.white.opacity(0.20),
-                Color.white.opacity(0.06),
+                Color.white.opacity(0.30),
+                Color.white.opacity(0.08),
                 Color.clear,
             ],
             startPoint: .topLeading,
@@ -219,21 +244,53 @@ struct HomeLiquidGlassCardModifier: ViewModifier {
                     .fill(.ultraThinMaterial)
                     .overlay {
                         RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
+                            .fill(darkFrostTint)
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
                             .fill(baseTintGradient)
                     }
                     .overlay {
                         RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
                             .fill(variant.fillGradient)
-                            .opacity(0.42)
+                            .opacity(0.22)
+                    }
+                    .overlay(alignment: .topLeading) {
+                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
+                            .fill(liquidSheen)
+                            .opacity(0.75)
+                            .blur(radius: 0.2)
+                            .mask(
+                                RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Color.white, Color.white.opacity(0.2), Color.clear],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            )
                     }
                     .overlay {
                         RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
                             .fill(crystalHighlight)
                     }
+                    .overlay(alignment: .top) {
+                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.55)
+                            .blur(radius: 0.3)
+                            .mask(
+                                LinearGradient(
+                                    colors: [Color.white, Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    }
                     .overlay(alignment: .topLeading) {
                         RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.26), lineWidth: 0.55)
-                            .blur(radius: 0.2)
+                            .strokeBorder(Color.white.opacity(0.42), lineWidth: 0.65)
+                            .blur(radius: 0.28)
                             .mask(
                                 RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
                                     .fill(
@@ -247,10 +304,10 @@ struct HomeLiquidGlassCardModifier: ViewModifier {
                     }
                     .overlay {
                         RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                            .strokeBorder(variant.borderColor.opacity(0.92), lineWidth: 0.95)
+                            .strokeBorder(variant.borderColor.opacity(0.68), lineWidth: 0.9)
                     }
-                    .shadow(color: variant.shadowColor.opacity(0.72), radius: 17, x: 0, y: 9)
-                    .shadow(color: Color.black.opacity(0.24), radius: 9, x: 0, y: 4)
+                    .shadow(color: variant.shadowColor.opacity(0.6), radius: 18, x: 0, y: 10)
+                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 4)
             }
     }
 }
@@ -321,6 +378,21 @@ extension View {
 
     func ghostButton(color accent: Color) -> some View {
         modifier(GhostButtonModifier(accent: accent))
+    }
+}
+
+// MARK: - Global title text styling
+
+extension Text {
+    /// Shared title treatment for Home/Health/Profile heading labels.
+    func fitUpGlobalTitleStyle(
+        weight: Font.Weight = .semibold,
+        tracking: CGFloat = 0.7
+    ) -> some View {
+        self
+            .fontWeight(weight)
+            .tracking(tracking)
+            .foregroundStyle(FitUpColors.Text.title)
     }
 }
 

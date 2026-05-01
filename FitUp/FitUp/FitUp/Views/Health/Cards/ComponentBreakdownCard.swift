@@ -18,8 +18,7 @@ struct ComponentBreakdownCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("COMPONENT BREAKDOWN")
                 .font(FitUpFont.body(10, weight: .heavy))
-                .tracking(2)
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .fitUpGlobalTitleStyle(weight: .heavy, tracking: 2)
                 .padding(.bottom, 16)
 
             Text("How the readiness score is built for competition context.")

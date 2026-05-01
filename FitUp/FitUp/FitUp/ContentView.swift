@@ -205,10 +205,12 @@ private struct RootShellView: View {
         switch deepLink {
         case .home:
             selectedTab = .home
+            notificationService.requestPresentHomeInbox()
         case .matchDetails(let matchId):
             matchDetailsContext = MatchDetailsContext(matchId: matchId)
         case .activity:
             selectedTab = .home
+            notificationService.requestPresentHomeInbox()
         case .friends:
             selectedTab = .profile
             sessionStore.requestOpenFriendsListSheet()

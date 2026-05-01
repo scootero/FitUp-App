@@ -75,15 +75,7 @@ struct HealthView: View {
                 SevenNightSleepAverageCard(summary: viewModel.sleepSummary)
                     .padding(.bottom, 14)
 
-                healthSectionLabel("HR Zones")
-                HRZonesCard(
-                    restingHRText: viewModel.restingHRDisplay == "—" ? "—" : viewModel.restingHRDisplay,
-                    zones: viewModel.hrZoneRows
-                )
-                .padding(.bottom, 14)
-
-                healthSectionLabel("Competition Edge Today")
-                competitionEdgeCard
+                CompetitionEdgeTodaySection(matches: viewModel.activeMatchEdges)
                     .padding(.bottom, 20)
 
                 if let err = viewModel.errorMessage {
@@ -143,7 +135,7 @@ struct HealthView: View {
         HStack {
             Text("Health")
                 .font(FitUpFont.display(22, weight: .heavy))
-                .foregroundStyle(FitUpColors.Text.primary)
+                .fitUpGlobalTitleStyle(weight: .heavy, tracking: 0.3)
             Spacer()
             if viewModel.showSyncedBadge {
                 NeonBadge(label: "SYNCED", color: FitUpColors.Neon.green)
@@ -156,60 +148,13 @@ struct HealthView: View {
         HStack {
             Text(text.uppercased())
                 .font(FitUpFont.body(11, weight: .heavy))
-                .tracking(2)
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .fitUpGlobalTitleStyle(weight: .heavy, tracking: 2)
             Spacer()
         }
         .padding(.top, 4)
         .padding(.bottom, 10)
     }
 
-    private var competitionEdgeCard: some View {
-        VStack(spacing: 0) {
-            if viewModel.activeMatchEdges.isEmpty {
-                Text("No active battles right now.")
-                    .font(FitUpFont.body(12))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-            } else {
-                ForEach(Array(viewModel.activeMatchEdges.enumerated()), id: \.element.id) { index, match in
-                    competitionRow(match: match)
-                    if index < viewModel.activeMatchEdges.count - 1 {
-                        Divider()
-                            .background(Color.white.opacity(0.06))
-                    }
-                }
-            }
-        }
-        .padding(14)
-        .glassCard(.base)
-    }
-
-    @ViewBuilder
-    private func competitionRow(match: HomeActiveMatch) -> some View {
-        let delta = match.myToday - match.theirToday
-        let up = delta >= 0
-        let label = match.metricType == "steps"
-            ? "\(abs(delta)) steps"
-            : "\(abs(delta)) cal"
-
-        HStack {
-            Text("vs \(match.opponent.displayName)")
-                .font(FitUpFont.body(12))
-                .foregroundStyle(FitUpColors.Text.secondary)
-            Spacer()
-            HStack(spacing: 4) {
-                Image(systemName: up ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(up ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange)
-                Text("\(up ? "+" : "-")\(label)")
-                    .font(FitUpFont.display(13, weight: .bold))
-                    .foregroundStyle(up ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange)
-            }
-        }
-        .padding(.vertical, 8)
-    }
 }
 
 #Preview {

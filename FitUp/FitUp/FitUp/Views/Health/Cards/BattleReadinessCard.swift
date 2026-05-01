@@ -20,8 +20,7 @@ struct BattleReadinessCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("TODAY'S BATTLE READINESS")
                 .font(FitUpFont.body(10, weight: .heavy))
-                .tracking(2)
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .fitUpGlobalTitleStyle(weight: .heavy, tracking: 2)
                 .padding(.bottom, 14)
 
             HStack(alignment: .center, spacing: 16) {

@@ -5,16 +5,12 @@
 //  Slice 3 searching cards section.
 //
 
-import Combine
 import SwiftUI
 
 struct SearchingSection: View {
     let requests: [HomeSearchingRequest]
     let isCancellingSearchId: UUID?
-    var waitTimeText: (HomeSearchingRequest) -> String
     var onCancel: (UUID) -> Void
-
-    @State private var dotCount = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -33,10 +29,13 @@ struct SearchingSection: View {
                             }
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Finding opponent\(String(repeating: ".", count: dotCount))")
+                            Text("Finding opponent...")
                                 .font(FitUpFont.body(13, weight: .bold))
                                 .foregroundStyle(FitUpColors.Text.primary)
-                            Text("\(sportLabel(for: request.metricType)) · \(MatchDurationCopy.competitionLengthBadge(days: request.durationDays)) · \(waitTimeText(request))")
+                            HStack(spacing: 4) {
+                                Text("\(sportLabel(for: request.metricType)) · \(MatchDurationCopy.competitionLengthBadge(days: request.durationDays)) ·")
+                                SearchingElapsedLabel(createdAt: request.createdAt)
+                            }
                                 .font(FitUpFont.body(11, weight: .medium))
                                 .foregroundStyle(FitUpColors.Text.secondary)
                         }
@@ -65,15 +64,30 @@ struct SearchingSection: View {
                 .homeLiquidGlassCard(.base)
             }
         }
-        .onReceive(
-            Timer.publish(every: 0.6, on: .main, in: .common).autoconnect()
-        ) { _ in
-            dotCount = (dotCount + 1) % 4
-        }
     }
 
     private func sportLabel(for metricType: String) -> String {
         metricType == "active_calories" ? "Calories" : "Steps"
     }
 
+}
+
+private struct SearchingElapsedLabel: View {
+    let createdAt: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            Text(waitTimeText(at: context.date))
+                .font(FitUpFont.body(11, weight: .medium))
+                .foregroundStyle(FitUpColors.Text.secondary)
+                .monospacedDigit()
+        }
+    }
+
+    private func waitTimeText(at now: Date) -> String {
+        let elapsed = max(0, Int(now.timeIntervalSince(createdAt)))
+        let minutes = elapsed / 60
+        let seconds = elapsed % 60
+        return "\(minutes)m \(String(format: "%02d", seconds))s"
+    }
 }

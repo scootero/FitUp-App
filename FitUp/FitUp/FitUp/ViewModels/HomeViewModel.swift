@@ -24,7 +24,6 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var completedMatches: [ActivityCompletedMatch] = []
     @Published private(set) var stats = ActivityStats(matchCount: 0, winCount: 0, winRateText: "0%")
     @Published private(set) var isLoading = false
-    @Published private(set) var now = Date()
     @Published var errorMessage: String?
     @Published private(set) var activeActionSearchID: UUID?
     @Published private(set) var activeActionPendingMatchID: UUID?
@@ -42,6 +41,7 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var dailyBattleMargins: [DailyBattleMargin] = []
     /// 7 or 10 calendar days for the signed margin chart.
     @Published var marginChartDayCount: Int = 7
+    @Published private(set) var isInitialLoading = true
 
     var hasAnyContent: Bool {
         !searchingRequests.isEmpty || !activeMatches.isEmpty || !pendingMatches.isEmpty
@@ -55,7 +55,6 @@ final class HomeViewModel: ObservableObject {
     private var userId: UUID?
     private var profileTimeZoneIdentifier: String?
     private var myDisplayName: String = "You"
-    private var waitTimerCancellable: AnyCancellable?
     private var shouldShowOnboardingPlaceholder = false
     private var pollingTask: Task<Void, Never>?
     private let pollingIntervalNs: UInt64 = 90_000_000_000
@@ -77,6 +76,7 @@ final class HomeViewModel: ObservableObject {
         if userId != profileId {
             stop()
             userId = profileId
+            isInitialLoading = true
         }
 
         startPollingIfNeeded()
@@ -84,14 +84,10 @@ final class HomeViewModel: ObservableObject {
         if showOnboardingSearching {
             shouldShowOnboardingPlaceholder = true
         }
-        startWaitTimer()
-
         Task { await reload(force: false) }
     }
 
     func stop() {
-        waitTimerCancellable?.cancel()
-        waitTimerCancellable = nil
         celebrationDismissTask?.cancel()
         celebrationDismissTask = nil
         activeCelebrationDismissTask?.cancel()
@@ -166,6 +162,9 @@ final class HomeViewModel: ObservableObject {
         discoverUsers = snapshot.discoverUsers
         completedMatches = completed
         stats = Self.makeStats(from: completed)
+        if isInitialLoading {
+            isInitialLoading = false
+        }
 
         var celebration: HomePendingMatch?
         if !newPendingMatchIds.isEmpty,
@@ -198,10 +197,8 @@ final class HomeViewModel: ObservableObject {
         if let celebration {
             activeCelebrationDismissTask?.cancel()
             activeCelebrationDismissTask = nil
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
-                matchActiveCelebration = nil
-                matchFoundCelebration = celebration
-            }
+            matchActiveCelebration = nil
+            matchFoundCelebration = celebration
             scheduleCelebrationDismiss()
             deferredMatchActiveCelebration = activeCelebration
         } else if let activeCelebration {
@@ -351,9 +348,7 @@ final class HomeViewModel: ObservableObject {
         }
         let deferred = deferredMatchActiveCelebration
         deferredMatchActiveCelebration = nil
-        withAnimation(.easeOut(duration: 0.22)) {
-            matchFoundCelebration = nil
-        }
+        matchFoundCelebration = nil
         if let deferred {
             presentMatchActiveCelebration(deferred)
         }
@@ -365,17 +360,13 @@ final class HomeViewModel: ObservableObject {
         if let id = matchActiveCelebration?.id, let profileId = userId {
             MatchActiveCelebrationStore.markShown(profileId: profileId, matchId: id)
         }
-        withAnimation(.easeOut(duration: 0.22)) {
-            matchActiveCelebration = nil
-        }
+        matchActiveCelebration = nil
     }
 
     private func presentMatchActiveCelebration(_ match: HomeActiveMatch) {
         activeCelebrationDismissTask?.cancel()
         activeCelebrationDismissTask = nil
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
-            matchActiveCelebration = match
-        }
+        matchActiveCelebration = match
         scheduleActiveCelebrationDismiss()
     }
 
@@ -400,16 +391,12 @@ final class HomeViewModel: ObservableObject {
     func dismissDeclineFeedback() {
         declineFeedbackDismissTask?.cancel()
         declineFeedbackDismissTask = nil
-        withAnimation(.easeOut(duration: 0.22)) {
-            declineFeedbackOpponentName = nil
-        }
+        declineFeedbackOpponentName = nil
     }
 
     private func showDeclineFeedback(opponentName: String) {
         declineFeedbackDismissTask?.cancel()
-        withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
-            declineFeedbackOpponentName = opponentName
-        }
+        declineFeedbackOpponentName = opponentName
         declineFeedbackDismissTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_800_000_000)
             guard !Task.isCancelled else { return }
@@ -518,20 +505,4 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    func waitTimeLabel(for request: HomeSearchingRequest) -> String {
-        let elapsed = max(0, Int(now.timeIntervalSince(request.createdAt)))
-        let minutes = elapsed / 60
-        let seconds = elapsed % 60
-        return "\(minutes)m \(String(format: "%02d", seconds))s"
-    }
-
-    private func startWaitTimer() {
-        guard waitTimerCancellable == nil else { return }
-        waitTimerCancellable = Timer
-            .publish(every: 1, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] date in
-                self?.now = date
-            }
-    }
 }

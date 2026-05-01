@@ -84,7 +84,6 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var weekCalories: [Int] = Array(repeating: 0, count: 7)
 
     @Published private(set) var sleepSummary: HealthSleepSummary?
-    @Published private(set) var hrZoneRows: [HealthHRZoneRow] = []
 
     @Published private(set) var weekComparisonSteps: HealthWeekComparison?
     @Published private(set) var weekComparisonCalories: HealthWeekComparison?
@@ -244,21 +243,16 @@ final class HealthViewModel: ObservableObject {
         async let weekCalsOutcome = loadOptionalHK("week_calories_array", userId: userId, fallback: Array(repeating: 0, count: 7)) {
             try await HealthKitService.fetchSevenDayCaloriesArray()
         }
-        async let zonesOutcome = loadOptionalHK("hr_zones", userId: userId, fallback: HealthKitService.emptyHRZoneRows) {
-            await HealthKitService.fetchHRZoneRows()
-        }
 
         let restingResult = await restingOutcome
         let sleepResult = await sleepOutcome
         let wStepsResult = await weekStepsOutcome
         let wCalsResult = await weekCalsOutcome
-        let zonesResult = await zonesOutcome
 
         let resting = restingResult.value
         let sleepAgg = sleepResult.value
         let wSteps = wStepsResult.value
         let wCals = wCalsResult.value
-        let zones = zonesResult.value
 
         let sleepForReadiness = sleepAgg?.lastNightAsleepHours
 
@@ -282,7 +276,6 @@ final class HealthViewModel: ObservableObject {
         weekSteps = wSteps
         weekCalories = wCals
         sleepSummary = sleepAgg
-        hrZoneRows = zones
 
         async let weekComparisonResult = buildWeekComparisons()
         async let battleStatsResult = battleStatsRepository.fetchHealthBattleStats()
@@ -305,7 +298,6 @@ final class HealthViewModel: ObservableObject {
             sleepAgg: sleepAgg,
             weekSteps: wSteps,
             weekCalories: wCals,
-            zones: zones,
             readinessScore: score
         )
         var meta = hkSnapshot
@@ -320,7 +312,6 @@ final class HealthViewModel: ObservableObject {
         meta["optional_sleep_ok"] = "\(sleepResult.ok)"
         meta["optional_week_steps_ok"] = "\(wStepsResult.ok)"
         meta["optional_week_cals_ok"] = "\(wCalsResult.ok)"
-        meta["optional_zones_ok"] = "\(zonesResult.ok)"
         AppLogger.log(
             category: "healthkit_read",
             level: .info,
@@ -341,7 +332,6 @@ final class HealthViewModel: ObservableObject {
         weekSteps = Array(repeating: 0, count: 7)
         weekCalories = Array(repeating: 0, count: 7)
         sleepSummary = nil
-        hrZoneRows = []
         sleepLastNightHours = nil
         stepsTodayValue = 0
         caloriesTodayValue = 0
@@ -413,10 +403,8 @@ final class HealthViewModel: ObservableObject {
         sleepAgg: HealthSleepSummary?,
         weekSteps: [Int],
         weekCalories: [Int],
-        zones: [HealthHRZoneRow],
         readinessScore: Int
     ) -> [String: String] {
-        let zonesSummary = zones.map { "\($0.label)=\($0.valueLabel) (\(String(format: "%.0f", $0.percent))%)" }.joined(separator: " | ")
         let snapshot: String
         if let sleepAgg {
             let stages = sleepAgg.stagePercentagesSevenNight
@@ -437,7 +425,6 @@ final class HealthViewModel: ObservableObject {
                 "sleep_stages_7n_pct_deep=\(String(format: "%.1f", stages.deep)) core=\(String(format: "%.1f", stages.core)) rem=\(String(format: "%.1f", stages.rem)) awake=\(String(format: "%.1f", stages.awake))",
                 "week_steps_oldest_to_today=\(weekSteps.map(String.init).joined(separator: ","))",
                 "week_cal_oldest_to_today=\(weekCalories.map(String.init).joined(separator: ","))",
-                "hr_zones=\(zonesSummary.isEmpty ? "—" : zonesSummary)",
             ].joined(separator: "\n")
         } else {
             snapshot = [
@@ -449,7 +436,6 @@ final class HealthViewModel: ObservableObject {
                 "sleep_summary=—",
                 "week_steps_oldest_to_today=\(weekSteps.map(String.init).joined(separator: ","))",
                 "week_cal_oldest_to_today=\(weekCalories.map(String.init).joined(separator: ","))",
-                "hr_zones=\(zonesSummary.isEmpty ? "—" : zonesSummary)",
             ].joined(separator: "\n")
         }
         return [

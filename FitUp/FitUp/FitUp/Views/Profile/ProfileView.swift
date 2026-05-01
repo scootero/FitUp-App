@@ -83,7 +83,7 @@ struct ProfileView: View {
     private var titleHeader: some View {
         Text("Profile")
             .font(FitUpFont.display(22, weight: .black))
-            .foregroundStyle(FitUpColors.Text.primary)
+            .fitUpGlobalTitleStyle(weight: .black, tracking: 0.3)
             .padding(.top, 4)
     }
 

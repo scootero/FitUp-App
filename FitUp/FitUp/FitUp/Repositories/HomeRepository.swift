@@ -282,33 +282,139 @@ final class HomeRepository {
             guard !matchIds.isEmpty else { return ([], []) }
 
             let profileTimeZone = profileTimeZoneIdentifier.flatMap { TimeZone(identifier: $0) }
+            let matchRowsResponse = try await client
+                .from("matches")
+                .select("id, state, metric_type, duration_days, match_type, created_at")
+                .in("id", values: Array(matchIds))
+                .in("state", values: ["active", "pending"])
+                .execute()
+            let matchRows = jsonRows(from: matchRowsResponse.data)
+            guard !matchRows.isEmpty else { return ([], []) }
+
+            let filteredMatchIds = Set(matchRows.compactMap { uuid(from: $0["id"]) })
+            guard !filteredMatchIds.isEmpty else { return ([], []) }
+
+            let participantRowsResponse = try await client
+                .from("match_participants")
+                .select("match_id, user_id, accepted_at")
+                .in("match_id", values: Array(filteredMatchIds))
+                .execute()
+            let participantRows = jsonRows(from: participantRowsResponse.data)
+
+            let dayRowsResponse = try await client
+                .from("match_days")
+                .select("id, match_id, day_number, status, winner_user_id, is_void, calendar_date")
+                .in("match_id", values: Array(filteredMatchIds))
+                .order("day_number", ascending: true)
+                .execute()
+            let dayRowsAll = jsonRows(from: dayRowsResponse.data)
+            let dayIds = Set(dayRowsAll.compactMap { uuid(from: $0["id"]) })
+
+            var dayParticipantRows: [[String: Any]] = []
+            if !dayIds.isEmpty {
+                let dayParticipantsResponse = try await client
+                    .from("match_day_participants")
+                    .select("match_day_id, user_id, metric_total, finalized_value")
+                    .in("match_day_id", values: Array(dayIds))
+                    .execute()
+                dayParticipantRows = jsonRows(from: dayParticipantsResponse.data)
+            }
+
+            let pendingMatchIds = Set(matchRows.compactMap { row -> UUID? in
+                guard string(from: row["state"]) == "pending" else { return nil }
+                return uuid(from: row["id"])
+            })
+
+            var challengeIdByMatch: [UUID: UUID] = [:]
+            if !pendingMatchIds.isEmpty {
+                let challengesResponse = try await client
+                    .from("direct_challenges")
+                    .select("id, match_id")
+                    .in("match_id", values: Array(pendingMatchIds))
+                    .eq("status", value: "pending")
+                    .execute()
+                let challengeRows = jsonRows(from: challengesResponse.data)
+                for row in challengeRows {
+                    guard let matchId = uuid(from: row["match_id"]), let challengeId = uuid(from: row["id"]) else { continue }
+                    challengeIdByMatch[matchId] = challengeId
+                }
+            }
+
+            var participantsByMatch: [UUID: [[String: Any]]] = [:]
+            for row in participantRows {
+                guard let matchId = uuid(from: row["match_id"]) else { continue }
+                participantsByMatch[matchId, default: []].append(row)
+            }
+
+            var dayRowsByMatch: [UUID: [[String: Any]]] = [:]
+            for row in dayRowsAll {
+                guard let matchId = uuid(from: row["match_id"]) else { continue }
+                dayRowsByMatch[matchId, default: []].append(row)
+            }
+
+            var dayParticipantsByDay: [UUID: [[String: Any]]] = [:]
+            for row in dayParticipantRows {
+                guard let dayId = uuid(from: row["match_day_id"]) else { continue }
+                dayParticipantsByDay[dayId, default: []].append(row)
+            }
+
+            let opponentIds = Set(participantRows.compactMap { row -> UUID? in
+                guard let uid = uuid(from: row["user_id"]), uid != currentUserId else { return nil }
+                return uid
+            })
+            var opponentCache: [UUID: HomeOpponent] = [:]
+            if !opponentIds.isEmpty {
+                let opponentProfilesResponse = try await client
+                    .from("profiles")
+                    .select("id, display_name, initials")
+                    .in("id", values: Array(opponentIds))
+                    .execute()
+                for row in jsonRows(from: opponentProfilesResponse.data) {
+                    guard let id = uuid(from: row["id"]) else { continue }
+                    opponentCache[id] = HomeOpponent(
+                        id: id,
+                        displayName: string(from: row["display_name"]) ?? "Opponent",
+                        initials: string(from: row["initials"]) ?? "OP",
+                        colorHex: colorHex(for: id)
+                    )
+                }
+            }
 
             var active: [HomeActiveMatch] = []
             var pending: [HomePendingMatch] = []
-            var opponentCache: [UUID: HomeOpponent] = [:]
 
-            for matchId in matchIds {
-                guard let match = await fetchMatchRow(matchId: matchId) else { continue }
+            for match in matchRows {
+                guard let matchId = uuid(from: match["id"]) else { continue }
                 let state = string(from: match["state"]) ?? "pending"
                 guard state == "active" || state == "pending" else { continue }
 
                 let metricType = string(from: match["metric_type"]) ?? "steps"
                 let durationDays = int(from: match["duration_days"]) ?? 1
-                let participantRows = await fetchParticipantRows(matchId: matchId)
-                guard let opponentId = participantRows.compactMap({ uuid(from: $0["user_id"]) }).first(where: { $0 != currentUserId }) else {
+                let participants = participantsByMatch[matchId] ?? []
+                guard let opponentId = participants.compactMap({ uuid(from: $0["user_id"]) }).first(where: { $0 != currentUserId }) else {
                     continue
                 }
-                let opponent = await resolveOpponent(opponentId: opponentId, cache: &opponentCache)
-                let myAccepted = participantRows
+                let opponent = opponentCache[opponentId] ?? HomeOpponent(
+                    id: opponentId,
+                    displayName: "Opponent",
+                    initials: "OP",
+                    colorHex: colorHex(for: opponentId)
+                )
+                let myAccepted = participants
                     .first(where: { uuid(from: $0["user_id"]) == currentUserId })
                     .flatMap { date(from: $0["accepted_at"]) } != nil
-                let theyAccepted = participantRows
+                let theyAccepted = participants
                     .first(where: { uuid(from: $0["user_id"]) == opponentId })
                     .flatMap { date(from: $0["accepted_at"]) } != nil
 
-                let dayRows = await fetchDayRows(matchId: matchId)
+                let dayRows = dayRowsByMatch[matchId] ?? []
                 let scores = deriveScores(dayRows: dayRows, currentUserId: currentUserId, opponentId: opponentId)
-                let totals = await fetchTodayTotals(dayRows: dayRows, currentUserId: currentUserId, opponentId: opponentId)
+                let totals = todayTotals(
+                    dayRows: dayRows,
+                    dayParticipantsByDay: dayParticipantsByDay,
+                    currentUserId: currentUserId,
+                    opponentId: opponentId
+                )
                 let dayPips = deriveDayPips(dayRows: dayRows, durationDays: durationDays, currentUserId: currentUserId)
                 let finalizedCount = dayRows.filter { string(from: $0["status"]) == "finalized" }.count
                 let daysLeft = max(durationDays - finalizedCount, 0)
@@ -353,7 +459,7 @@ final class HomeRepository {
                         )
                     )
                 } else if state == "pending" {
-                    let challengeId = await fetchChallengeId(matchId: matchId)
+                    let challengeId = challengeIdByMatch[matchId]
                     let matchType = string(from: match["match_type"]) ?? "public_matchmaking"
                     let createdAt = date(from: match["created_at"]) ?? Date()
                     pending.append(
@@ -383,6 +489,21 @@ final class HomeRepository {
             AppLogger.log(category: "matchmaking", level: .warning, message: "active/pending load failed", metadata: ["error": error.localizedDescription])
             return ([], [])
         }
+    }
+
+    private func todayTotals(
+        dayRows: [[String: Any]],
+        dayParticipantsByDay: [UUID: [[String: Any]]],
+        currentUserId: UUID,
+        opponentId: UUID
+    ) -> (myTotal: Int, theirTotal: Int) {
+        let today = Self.calendarFormatter.string(from: Date())
+        let todayRow = dayRows.first(where: { string(from: $0["calendar_date"]) == today }) ?? dayRows.last
+        guard let dayId = uuid(from: todayRow?["id"]) else { return (0, 0) }
+        let rows = dayParticipantsByDay[dayId] ?? []
+        let myTotal = rows.first(where: { uuid(from: $0["user_id"]) == currentUserId }).flatMap { int(from: $0["finalized_value"]) ?? int(from: $0["metric_total"]) } ?? 0
+        let theirTotal = rows.first(where: { uuid(from: $0["user_id"]) == opponentId }).flatMap { int(from: $0["finalized_value"]) ?? int(from: $0["metric_total"]) } ?? 0
+        return (myTotal, theirTotal)
     }
 
     private func fetchMatchRow(matchId: UUID) async -> [String: Any]? {
@@ -562,30 +683,64 @@ final class HomeRepository {
             let response = try await client
                 .from("profiles")
                 .select("id, display_name, initials")
+                .neq("id", value: currentUserId.uuidString)
                 .order("created_at", ascending: false)
-                .limit(24)
+                .limit(8)
                 .execute()
 
+            let profileRows = jsonRows(from: response.data)
+            let discoverIds = profileRows.compactMap { uuid(from: $0["id"]) }
+
+            var latestStatsByUser: [UUID: (wins: Int?, losses: Int?)] = [:]
+            if !discoverIds.isEmpty {
+                let leaderboardResponse = try await client
+                    .from("leaderboard_entries")
+                    .select("user_id, wins, losses, week_start")
+                    .in("user_id", values: discoverIds)
+                    .order("week_start", ascending: false)
+                    .execute()
+                for row in jsonRows(from: leaderboardResponse.data) {
+                    guard let userId = uuid(from: row["user_id"]), latestStatsByUser[userId] == nil else { continue }
+                    latestStatsByUser[userId] = (int(from: row["wins"]), int(from: row["losses"]))
+                }
+            }
+
+            var latestStepsByUser: [UUID: Int] = [:]
+            if !discoverIds.isEmpty {
+                let today = Self.calendarFormatter.string(from: Date())
+                let stepsResponse = try await client
+                    .from("metric_snapshots")
+                    .select("user_id, value, synced_at")
+                    .in("user_id", values: discoverIds)
+                    .eq("metric_type", value: "steps")
+                    .eq("source_date", value: today)
+                    .order("synced_at", ascending: false)
+                    .execute()
+                for row in jsonRows(from: stepsResponse.data) {
+                    guard let userId = uuid(from: row["user_id"]), latestStepsByUser[userId] == nil else { continue }
+                    latestStepsByUser[userId] = int(from: row["value"])
+                }
+            }
+
             var discover: [HomeDiscoverUser] = []
-            for row in jsonRows(from: response.data) {
-                guard let id = uuid(from: row["id"]), id != currentUserId else { continue }
+            for row in profileRows {
+                guard let id = uuid(from: row["id"]) else { continue }
                 let displayName = string(from: row["display_name"]) ?? "Player"
                 let initials = string(from: row["initials"]) ?? Self.initials(from: displayName)
-                let stats = await fetchLatestLeaderboardStats(userId: id)
-                let todaySteps = await fetchLatestTodaySteps(userId: id)
+                let stats = latestStatsByUser[id]
                 discover.append(
                     HomeDiscoverUser(
                         id: id,
                         displayName: displayName,
                         initials: initials,
                         colorHex: colorHex(for: id),
-                        todaySteps: todaySteps,
-                        wins: stats.wins,
-                        losses: stats.losses
+                        todaySteps: latestStepsByUser[id],
+                        wins: stats?.wins,
+                        losses: stats?.losses
                     )
                 )
             }
-            return Array(discover.prefix(8))
+            return discover
         } catch {
             if error is CancellationError { return [] }
             AppLogger.log(category: "matchmaking", level: .warning, message: "discover load failed", metadata: ["error": error.localizedDescription])

@@ -147,7 +147,6 @@ private struct PendingMatchRow: View {
         .homeLiquidGlassCard(.pending)
         .disabled(activeActionMatchID == match.id)
         .opacity(activeActionMatchID == match.id ? 0.6 : 1)
-        .animation(.spring(response: 0.45, dampingFraction: 0.78), value: match.hasAcceptedByMe)
         .onAppear {
             guard match.hasAcceptedByMe else { return }
             startLockedGlowPulse()
@@ -167,10 +166,7 @@ private struct PendingMatchRow: View {
     }
 
     private func startLockedGlowPulse() {
-        glowPulse = false
-        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-            glowPulse = true
-        }
+        glowPulse = true
     }
 
     private var acceptLockedButton: some View {
