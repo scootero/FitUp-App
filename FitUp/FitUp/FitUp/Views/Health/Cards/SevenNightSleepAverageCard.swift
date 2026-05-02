@@ -15,25 +15,26 @@ struct SevenNightSleepAverageCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("7-NIGHT AVERAGE")
-                .font(FitUpFont.body(10, weight: .heavy))
-                .fitUpHealthSectionTitleStyle(weight: .heavy, tracking: 2)
+                .font(FitUpFont.mono(10))
+                .tracking(1)
+                .foregroundStyle(FitUpColors.Text.tertiary)
                 .padding(.bottom, 8)
 
             Text(avgText)
                 .font(FitUpFont.display(26, weight: .bold))
-                .foregroundStyle(FitUpColors.HealthOnLight.primary)
+                .foregroundStyle(FitUpColors.Text.primary)
                 .padding(.bottom, 4)
 
             Text("±\(varianceText)h variance")
                 .font(FitUpFont.body(11))
-                .foregroundStyle(FitUpColors.HealthOnLight.tertiary)
+                .foregroundStyle(FitUpColors.Text.tertiary)
                 .padding(.bottom, 14)
 
             sleepBars
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .healthGamifiedCard(.sleepSevenNight)
+        .glassCard(.base)
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                 barAnim = true
@@ -80,7 +81,7 @@ struct SevenNightSleepAverageCard: View {
                     }
                     Text(weekdayLetter(offset: i))
                         .font(FitUpFont.body(10, weight: isToday ? .semibold : .regular))
-                        .foregroundStyle(isToday ? FitUpColors.Neon.cyan : FitUpColors.HealthOnLight.tertiary)
+                        .foregroundStyle(isToday ? FitUpColors.Neon.cyan : FitUpColors.Text.tertiary)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -111,7 +112,7 @@ struct SevenNightSleepAverageCard: View {
         if hours > 0 {
             return AnyShapeStyle(FitUpColors.Neon.cyan.opacity(0.24))
         }
-        return AnyShapeStyle(Color.black.opacity(0.08))
+        return AnyShapeStyle(Color.white.opacity(0.07))
     }
 }
 

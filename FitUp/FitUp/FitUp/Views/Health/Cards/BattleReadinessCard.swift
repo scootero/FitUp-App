@@ -2,7 +2,7 @@
 //  BattleReadinessCard.swift
 //  FitUp
 //
-//  Slice 12 — `HealthScreen` battle readiness hero (light gamified surface).
+//  Slice 12 — `HealthScreen` battle readiness hero (`glassCard(.win)`).
 //
 
 import SwiftUI
@@ -20,18 +20,18 @@ struct BattleReadinessCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("TODAY'S BATTLE READINESS")
                 .font(FitUpFont.body(10, weight: .heavy))
-                .fitUpHealthSectionTitleStyle(weight: .heavy, tracking: 2)
+                .fitUpGlobalTitleStyle(weight: .heavy, tracking: 2)
                 .padding(.bottom, 14)
 
             HStack(alignment: .center, spacing: 16) {
-                RingGaugeView(score: score, size: 90, onLightBackground: true)
+                RingGaugeView(score: score, size: 90)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(title)
                         .font(FitUpFont.display(22, weight: .bold))
-                        .foregroundStyle(FitUpColors.HealthOnLight.primary)
+                        .foregroundStyle(FitUpColors.Text.primary)
                     Text(subtitle)
                         .font(FitUpFont.body(13))
-                        .foregroundStyle(FitUpColors.HealthOnLight.secondary)
+                        .foregroundStyle(FitUpColors.Text.secondary)
                         .lineSpacing(4)
                 }
             }
@@ -45,7 +45,7 @@ struct BattleReadinessCard: View {
             }
         }
         .padding(20)
-        .healthGamifiedCard(.battleReadiness)
+        .glassCard(.win)
     }
 
     private func quickChip(icon: String, value: String, label: String) -> some View {
@@ -54,17 +54,17 @@ struct BattleReadinessCard: View {
                 .font(.system(size: 16))
             Text(value)
                 .font(FitUpFont.mono(13, weight: .bold))
-                .foregroundStyle(FitUpColors.HealthOnLight.primary)
+                .foregroundStyle(FitUpColors.Text.primary)
                 .minimumScaleFactor(0.8)
                 .lineLimit(1)
             Text(label)
                 .font(FitUpFont.body(9))
-                .foregroundStyle(FitUpColors.HealthOnLight.tertiary)
+                .foregroundStyle(FitUpColors.Text.tertiary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
         .padding(.horizontal, 6)
-        .healthGamifiedCard(.miniChip)
+        .glassCard(.base)
     }
 }
 

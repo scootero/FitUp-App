@@ -13,9 +13,10 @@ struct SleepRatioCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("SLEEP RATIO")
+            Text("Sleep Ratio")
                 .font(FitUpFont.body(10, weight: .heavy))
-                .fitUpHealthSectionTitleStyle(weight: .heavy, tracking: 2)
+                .tracking(2)
+                .foregroundStyle(FitUpColors.Text.tertiary)
                 .padding(.bottom, 12)
 
             if let r = summary?.lastNightSleepRatio {
@@ -25,20 +26,20 @@ struct SleepRatioCard: View {
             } else {
                 Text("No sleep data from last night")
                     .font(FitUpFont.body(13, weight: .semibold))
-                    .foregroundStyle(FitUpColors.HealthOnLight.secondary)
+                    .foregroundStyle(FitUpColors.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .healthGamifiedCard(.sleepRatio)
+        .glassCard(.base)
     }
 
     private func ratioRow(label: String, percent: Double, hours: Double, color: Color) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label.uppercased())
                 .font(FitUpFont.mono(9))
-                .foregroundStyle(FitUpColors.HealthOnLight.tertiary)
+                .foregroundStyle(FitUpColors.Text.tertiary)
                 .frame(width: 44, alignment: .leading)
             Spacer(minLength: 8)
             Text(String(format: "%.1f%%", percent))
@@ -46,7 +47,7 @@ struct SleepRatioCard: View {
                 .foregroundStyle(color)
             Text(durationText(hours: hours))
                 .font(FitUpFont.body(11))
-                .foregroundStyle(FitUpColors.HealthOnLight.secondary)
+                .foregroundStyle(FitUpColors.Text.secondary)
         }
         .padding(.vertical, 4)
     }

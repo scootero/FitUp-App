@@ -9,8 +9,6 @@ import SwiftUI
 
 struct CompetitionEdgeTodaySection: View {
     let matches: [HomeActiveMatch]
-    /// When `true` (Health tab), use the same light retro panels as other health cards.
-    var healthLightChrome: Bool = false
 
     /// One row per opponent + metric; multiple active battles vs the same person combine with summed today totals and a match count badge.
     private var displayRows: [CompetitionEdgeTodayRowData] {
@@ -52,25 +50,6 @@ struct CompetitionEdgeTodaySection: View {
         }
     }
 
-    private var edgeRowsContent: some View {
-        VStack(spacing: 8) {
-            if displayRows.isEmpty {
-                Text("No active battles right now.")
-                    .font(FitUpFont.body(13, weight: .medium))
-                    .foregroundStyle(
-                        healthLightChrome ? FitUpColors.HealthOnLight.secondary : FitUpColors.Text.secondary
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-            } else {
-                ForEach(displayRows) { row in
-                    CompetitionEdgeTodayRow(row: row, healthLightChrome: healthLightChrome)
-                }
-            }
-        }
-        .padding(14)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -85,31 +64,29 @@ struct CompetitionEdgeTodaySection: View {
             Text("Per opponent, see who is ahead right now.")
                 .font(FitUpFont.body(12, weight: .medium))
                 .foregroundStyle(
-                    healthLightChrome
-                        ? AnyShapeStyle(
-                            LinearGradient(
-                                colors: [FitUpColors.HealthOnLight.secondary, FitUpColors.Neon.cyan.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        : AnyShapeStyle(
-                            LinearGradient(
-                                colors: [FitUpColors.Text.secondary, FitUpColors.Neon.cyan.opacity(0.8)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                    LinearGradient(
+                        colors: [FitUpColors.Text.secondary, FitUpColors.Neon.cyan.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
                 )
                 .padding(.bottom, 10)
 
-            Group {
-                if healthLightChrome {
-                    edgeRowsContent.healthGamifiedCard(.competitionEdge)
+            VStack(spacing: 8) {
+                if displayRows.isEmpty {
+                    Text("No active battles right now.")
+                        .font(FitUpFont.body(13, weight: .medium))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
                 } else {
-                    edgeRowsContent.modifier(CompetitionEdgeSectionLiquidGlassModifier())
+                    ForEach(displayRows) { row in
+                        CompetitionEdgeTodayRow(row: row)
+                    }
                 }
             }
+            .padding(14)
+            .modifier(CompetitionEdgeSectionLiquidGlassModifier())
         }
     }
 }
@@ -164,7 +141,6 @@ private struct CompetitionEdgeTodayRowData: Identifiable, Equatable {
 
 private struct CompetitionEdgeTodayRow: View {
     let row: CompetitionEdgeTodayRowData
-    var healthLightChrome: Bool = false
 
     private var delta: Int { row.myToday - row.theirToday }
     private var isAhead: Bool { delta >= 0 }
@@ -210,22 +186,15 @@ private struct CompetitionEdgeTodayRow: View {
                 if let matchCountBadge {
                     Text(matchCountBadge)
                         .font(FitUpFont.body(11, weight: .heavy))
-                        .foregroundStyle(
-                            healthLightChrome ? FitUpColors.HealthOnLight.tertiary : FitUpColors.Text.tertiary
-                        )
+                        .foregroundStyle(FitUpColors.Text.tertiary)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .background {
                             Capsule()
-                                .fill(
-                                    healthLightChrome ? Color.black.opacity(0.06) : Color.white.opacity(0.07)
-                                )
+                                .fill(Color.white.opacity(0.07))
                                 .overlay {
                                     Capsule()
-                                        .strokeBorder(
-                                            healthLightChrome ? Color.black.opacity(0.10) : Color.white.opacity(0.12),
-                                            lineWidth: 1
-                                        )
+                                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
                                 }
                         }
                         .accessibilityLabel("\(row.matchCount) matches")
@@ -246,9 +215,7 @@ private struct CompetitionEdgeTodayRow: View {
 
             Text(totalsLabel)
                 .font(FitUpFont.body(11, weight: .medium))
-                .foregroundStyle(
-                    healthLightChrome ? FitUpColors.HealthOnLight.tertiary : FitUpColors.Text.tertiary
-                )
+                .foregroundStyle(FitUpColors.Text.tertiary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -257,7 +224,7 @@ private struct CompetitionEdgeTodayRow: View {
         .padding(.vertical, 12)
         .background {
             RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                .fill(healthLightChrome ? Color.black.opacity(0.05) : Color.white.opacity(0.04))
+                .fill(Color.white.opacity(0.04))
                 .overlay {
                     RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
                         .strokeBorder(

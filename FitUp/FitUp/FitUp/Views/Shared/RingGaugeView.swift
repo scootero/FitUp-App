@@ -10,8 +10,6 @@ import SwiftUI
 struct RingGaugeView: View {
     let score: Int
     var size: CGFloat = 90
-    /// Use darker track / labels when the gauge sits on a light card.
-    var onLightBackground: Bool = false
 
     private var ringColor: Color {
         if score >= 75 { return FitUpColors.Neon.cyan }
@@ -25,10 +23,7 @@ struct RingGaugeView: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(
-                    onLightBackground ? Color.black.opacity(0.10) : Color.white.opacity(0.08),
-                    lineWidth: lineWidth
-                )
+                .stroke(Color.white.opacity(0.08), lineWidth: lineWidth)
                 .frame(width: size - lineWidth, height: size - lineWidth)
 
             Circle()
@@ -46,7 +41,7 @@ struct RingGaugeView: View {
                     .foregroundStyle(ringColor)
                 Text("/100")
                     .font(FitUpFont.mono(9))
-                    .foregroundStyle(onLightBackground ? FitUpColors.HealthOnLight.tertiary : FitUpColors.Text.tertiary)
+                    .foregroundStyle(FitUpColors.Text.tertiary)
             }
         }
         .frame(width: size, height: size)

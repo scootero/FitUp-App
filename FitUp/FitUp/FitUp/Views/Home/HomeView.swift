@@ -159,8 +159,7 @@ struct HomeView: View {
                             },
                             onOpenMatch: { match in
                                 onOpenMatchDetails(match.id, match.opponentName)
-                            },
-                            lightPanels: false
+                            }
                         )
                         .padding(.top, 4)
                     }
