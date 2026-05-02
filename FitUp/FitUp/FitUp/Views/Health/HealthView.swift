@@ -93,7 +93,7 @@ struct HealthView: View {
                 SevenNightSleepAverageCard(summary: viewModel.sleepSummary)
                     .padding(.bottom, 14)
 
-                CompetitionEdgeTodaySection(matches: viewModel.activeMatchEdges)
+                CompetitionEdgeTodaySection(matches: viewModel.activeMatchEdges, healthLightChrome: true)
                     .padding(.bottom, 20)
 
                 if let err = viewModel.errorMessage {
@@ -132,7 +132,7 @@ struct HealthView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Apple Health access is off for FitUp. Enable read access for Steps, Active Energy, and related data in Settings.")
                 .font(FitUpFont.body(12))
-                .foregroundStyle(FitUpColors.Text.secondary)
+                .foregroundStyle(FitUpColors.HealthOnLight.secondary)
             Button {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
                     openURL(url)
@@ -146,7 +146,7 @@ struct HealthView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(.base)
+        .healthGamifiedCard(.accessBanner)
     }
 
     private var header: some View {

@@ -50,7 +50,8 @@ struct HomeDayPip: Identifiable, Equatable {
 struct DailyBattleMargin: Identifiable, Equatable, Sendable {
     /// `yyyy-MM-dd` (match calendar date from server).
     let calendarDate: String
-    /// Sum of (viewer − opponent) metric totals for that date across qualifying matches.
+    /// Sum of (your total − opponent total) across active/completed matches for that calendar date.
+    /// The RPC dedupes by `(match_day, opponent)` before summing.
     let margin: Int
 
     var id: String { calendarDate }
@@ -74,6 +75,8 @@ struct HomeActiveMatch: Identifiable, Equatable {
     let theirScore: Int
     let isWinning: Bool
     let opponent: HomeOpponent
+    /// Opponent's sync write time for today's match_day row.
+    let opponentTodayUpdatedAt: Date?
     let dayPips: [HomeDayPip]
 }
 
@@ -314,7 +317,7 @@ final class HomeRepository {
             if !dayIds.isEmpty {
                 let dayParticipantsResponse = try await client
                     .from("match_day_participants")
-                    .select("match_day_id, user_id, metric_total, finalized_value")
+                    .select("match_day_id, user_id, metric_total, finalized_value, last_updated_at")
                     .in("match_day_id", values: Array(dayIds))
                     .execute()
                 dayParticipantRows = jsonRows(from: dayParticipantsResponse.data)
@@ -382,6 +385,10 @@ final class HomeRepository {
 
             var active: [HomeActiveMatch] = []
             var pending: [HomePendingMatch] = []
+            let profileTodayKey = Self.formatProfileCalendarDate(
+                Date(),
+                profileTimeZoneIdentifier: profileTimeZoneIdentifier
+            )
 
             for match in matchRows {
                 guard let matchId = uuid(from: match["id"]) else { continue }
@@ -413,9 +420,15 @@ final class HomeRepository {
                     dayRows: dayRows,
                     dayParticipantsByDay: dayParticipantsByDay,
                     currentUserId: currentUserId,
-                    opponentId: opponentId
+                    opponentId: opponentId,
+                    todayString: profileTodayKey
                 )
-                let dayPips = deriveDayPips(dayRows: dayRows, durationDays: durationDays, currentUserId: currentUserId)
+                let dayPips = deriveDayPips(
+                    dayRows: dayRows,
+                    durationDays: durationDays,
+                    currentUserId: currentUserId,
+                    todayString: profileTodayKey
+                )
                 let finalizedCount = dayRows.filter { string(from: $0["status"]) == "finalized" }.count
                 let daysLeft = max(durationDays - finalizedCount, 0)
                 let finalCutoff = finalDayCutoff(from: dayRows, daysLeft: daysLeft, timeZone: profileTimeZone)
@@ -455,6 +468,7 @@ final class HomeRepository {
                             theirScore: scores.theirScore,
                             isWinning: totals.myTotal >= totals.theirTotal,
                             opponent: opponent,
+                            opponentTodayUpdatedAt: totals.opponentTodayUpdatedAt,
                             dayPips: dayPips
                         )
                     )
@@ -495,15 +509,18 @@ final class HomeRepository {
         dayRows: [[String: Any]],
         dayParticipantsByDay: [UUID: [[String: Any]]],
         currentUserId: UUID,
-        opponentId: UUID
-    ) -> (myTotal: Int, theirTotal: Int) {
-        let today = Self.calendarFormatter.string(from: Date())
-        let todayRow = dayRows.first(where: { string(from: $0["calendar_date"]) == today }) ?? dayRows.last
-        guard let dayId = uuid(from: todayRow?["id"]) else { return (0, 0) }
+        opponentId: UUID,
+        todayString: String
+    ) -> (myTotal: Int, theirTotal: Int, opponentTodayUpdatedAt: Date?) {
+        guard let todayRow = dayRows.first(where: { string(from: $0["calendar_date"]) == todayString }),
+              let dayId = uuid(from: todayRow["id"])
+        else { return (0, 0, nil) }
         let rows = dayParticipantsByDay[dayId] ?? []
         let myTotal = rows.first(where: { uuid(from: $0["user_id"]) == currentUserId }).flatMap { int(from: $0["finalized_value"]) ?? int(from: $0["metric_total"]) } ?? 0
-        let theirTotal = rows.first(where: { uuid(from: $0["user_id"]) == opponentId }).flatMap { int(from: $0["finalized_value"]) ?? int(from: $0["metric_total"]) } ?? 0
-        return (myTotal, theirTotal)
+        let opponentRow = rows.first(where: { uuid(from: $0["user_id"]) == opponentId })
+        let theirTotal = opponentRow.flatMap { int(from: $0["finalized_value"]) ?? int(from: $0["metric_total"]) } ?? 0
+        let opponentTodayUpdatedAt = date(from: opponentRow?["last_updated_at"])
+        return (myTotal, theirTotal, opponentTodayUpdatedAt)
     }
 
     private func fetchMatchRow(matchId: UUID) async -> [String: Any]? {
@@ -552,9 +569,10 @@ final class HomeRepository {
 
     private func fetchTodayTotals(dayRows: [[String: Any]], currentUserId: UUID, opponentId: UUID) async -> (myTotal: Int, theirTotal: Int) {
         guard let client = SupabaseProvider.client else { return (0, 0) }
-        let today = Self.calendarFormatter.string(from: Date())
-        let todayRow = dayRows.first(where: { string(from: $0["calendar_date"]) == today }) ?? dayRows.last
-        guard let dayId = uuid(from: todayRow?["id"]) else { return (0, 0) }
+        let today = Self.formatProfileCalendarDate(Date(), profileTimeZoneIdentifier: nil)
+        guard let todayRow = dayRows.first(where: { string(from: $0["calendar_date"]) == today }),
+              let dayId = uuid(from: todayRow["id"])
+        else { return (0, 0) }
 
         do {
             let response = try await client
@@ -603,12 +621,16 @@ final class HomeRepository {
         return (myScore, theirScore)
     }
 
-    private func deriveDayPips(dayRows: [[String: Any]], durationDays: Int, currentUserId: UUID) -> [HomeDayPip] {
+    private func deriveDayPips(
+        dayRows: [[String: Any]],
+        durationDays: Int,
+        currentUserId: UUID,
+        todayString: String
+    ) -> [HomeDayPip] {
         let byNumber = Dictionary(uniqueKeysWithValues: dayRows.compactMap { row -> (Int, [String: Any])? in
             guard let dayNumber = int(from: row["day_number"]) else { return nil }
             return (dayNumber, row)
         })
-        let todayString = Self.calendarFormatter.string(from: Date())
 
         return (1...max(durationDays, 1)).map { dayNumber in
             guard let row = byNumber[dayNumber] else {
@@ -917,7 +939,7 @@ final class HomeRepository {
     }
 }
 
-// MARK: - home_daily_battle_margins RPC (see supabase/scripts/sql-editor/04_home_daily_battle_margins_rpc.sql)
+// MARK: - home_daily_battle_margins RPC (net per-day sum of match deltas; see supabase/scripts/sql-editor/04_home_daily_battle_margins_rpc.sql)
 
 private struct HomeDailyBattleMarginsRPCParams: Sendable {
     let p_end_date: String

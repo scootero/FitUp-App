@@ -36,9 +36,12 @@ struct HomeBattleHeroCard: View {
     let matches: [HomeActiveMatch]
     @Binding var selectedMetric: HeroMetric
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var animatedMyRingProgress: Double = 0
     @State private var animatedCenterValue: Int = 0
     @State private var pulseGlow = false
+    @State private var isBreathingExpanded = false
     @State private var centerCountTask: Task<Void, Never>?
 
     private var matchesForSelectedMetric: [HomeActiveMatch] {
@@ -107,12 +110,14 @@ struct HomeBattleHeroCard: View {
         max(1, myToday, topOpponentToday)
     }
 
-    private var myComparableRingProgress: Double {
-        Double(myToday) / Double(ringScaleMax)
-    }
-
     private var opponentComparableRingProgress: Double {
         Double(topOpponentToday) / Double(ringScaleMax)
+    }
+
+    private var marginRingProgress: Double {
+        let leaderTotal = max(myToday, topOpponentToday, 1)
+        let gap = abs(marginVsTopOpponent)
+        return min(max(Double(gap) / Double(leaderTotal), 0), 1)
     }
 
     private var accentColor: Color {
@@ -159,10 +164,30 @@ struct HomeBattleHeroCard: View {
         selectedMetric.unitLabel.uppercased()
     }
 
-    private var behindDeficitProgress: Double {
-        guard isBehindState else { return 0 }
-        let deficit = abs(marginVsTopOpponent)
-        return min(max(Double(deficit) / Double(max(topOpponentToday, 1)), 0), 1)
+    private var ringCenterContextText: String {
+        hasAnyActiveMatch ? "vs top rival today" : "your total today"
+    }
+
+    private var accessibilityMetricUnit: String {
+        selectedMetric == .steps ? "steps" : "calories"
+    }
+
+    private var ringCenterAccessibilityLabel: String {
+        if hasAnyActiveMatch {
+            let direction = displayedCenterTarget >= 0 ? "Plus" : "Minus"
+            return "\(direction) \(abs(displayedCenterTarget).formatted()) \(accessibilityMetricUnit) versus the top rival today"
+        }
+        return "\(displayedCenterTarget.formatted()) \(accessibilityMetricUnit) today"
+    }
+
+    private var ringBreathScale: CGFloat {
+        guard !reduceMotion else { return 1.0 }
+        return isBreathingExpanded ? 1.0 : 0.969
+    }
+
+    private var ringBreathLineWidthDelta: CGFloat {
+        guard !reduceMotion else { return 0 }
+        return isBreathingExpanded ? 0.8 : -0.8
     }
 
     private var myScoreForRivalList: Int {
@@ -241,32 +266,36 @@ struct HomeBattleHeroCard: View {
                     .padding(.bottom, 14)
             }
 
-            VStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .center, spacing: 18) {
                 ZStack {
                     heroTopBackdrop
 
-                    VStack(spacing: 12) {
+                    VStack(spacing: 22) {
                         ringView
                             .frame(maxWidth: .infinity, alignment: .center)
+                        if let focusOpponentMatch {
+                            TimelineView(.periodic(from: .now, by: 60)) { context in
+                                if let freshnessLine = opponentFreshnessLine(
+                                    opponentUpdatedAt: focusOpponentMatch.opponentTodayUpdatedAt,
+                                    now: context.date
+                                ) {
+                                    Text(freshnessLine)
+                                        .font(FitUpFont.body(12, weight: .medium))
+                                        .foregroundStyle(FitUpColors.Text.tertiary)
+                                        .multilineTextAlignment(.center)
+                                }
+                            }
+                        }
                         Text(battleStatusLine)
-                            .font(FitUpFont.body(12, weight: .semibold))
+                            .font(FitUpFont.body(14, weight: .semibold))
                             .foregroundStyle(FitUpColors.Text.secondary)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 16)
-                    .background {
-                        heroTopTexture
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .padding(.horizontal, 10)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 26)
                 }
                 .frame(maxWidth: .infinity)
-
-                nearbyOpponentsCard
             }
             .frame(maxWidth: .infinity)
         }
@@ -275,11 +304,15 @@ struct HomeBattleHeroCard: View {
             withAnimation(.easeInOut(duration: 0.35)) {
                 pulseGlow = true
             }
+            startRingBreathing()
             animateHeroRing()
         }
         .onDisappear {
             centerCountTask?.cancel()
             centerCountTask = nil
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            startRingBreathing()
         }
         .onChange(of: selectedMetric) { _, _ in
             animateHeroRing()
@@ -307,7 +340,7 @@ struct HomeBattleHeroCard: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 17
+                    lineWidth: 20 + ringBreathLineWidthDelta
                 )
                 .overlay {
                     Circle()
@@ -320,7 +353,7 @@ struct HomeBattleHeroCard: View {
                                 ],
                                 center: .center
                             ),
-                            lineWidth: 13
+                            lineWidth: 16 + (ringBreathLineWidthDelta * 0.6)
                         )
                         .blur(radius: isBehindState ? 0.25 : 0.15)
                 }
@@ -337,7 +370,7 @@ struct HomeBattleHeroCard: View {
                             ],
                             center: .center
                         ),
-                        style: StrokeStyle(lineWidth: 13, lineCap: .round)
+                        style: StrokeStyle(lineWidth: 16 + (ringBreathLineWidthDelta * 0.6), lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
                     .shadow(color: opponentColor.opacity(0.28), radius: 10)
@@ -361,7 +394,7 @@ struct HomeBattleHeroCard: View {
                             ],
                         center: .center
                     ),
-                    style: StrokeStyle(lineWidth: 17, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 20 + ringBreathLineWidthDelta, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
                 .scaleEffect(x: isBehindState ? -1 : 1, y: 1)
@@ -388,21 +421,30 @@ struct HomeBattleHeroCard: View {
 
             VStack(spacing: 2) {
                 Text(hasAnyActiveMatch ? formattedDelta(animatedCenterValue) : animatedCenterValue.formatted())
-                    .font(FitUpFont.display(28, weight: .black))
+                    .font(FitUpFont.display(32, weight: .black))
                     .foregroundStyle(FitUpColors.Text.primary)
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
                 Text(ringCenterUnitText)
-                    .font(FitUpFont.body(10, weight: .heavy))
+                    .font(FitUpFont.body(12, weight: .heavy))
                     .tracking(1.2)
                     .foregroundStyle(FitUpColors.Text.secondary)
+                Text(ringCenterContextText)
+                    .font(FitUpFont.body(11, weight: .semibold))
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .minimumScaleFactor(0.75)
+                    .lineLimit(1)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(ringCenterAccessibilityLabel)
+            .accessibilityHint("Center value inside your battle ring")
         }
-        .frame(width: 174, height: 174)
+        .scaleEffect(ringBreathScale)
+        .frame(width: 194, height: 194)
     }
 
     private var nearbyOpponentsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Text("NEARBY OPPONENTS")
                     .font(FitUpFont.mono(10, weight: .bold))
@@ -420,12 +462,9 @@ struct HomeBattleHeroCard: View {
                     .foregroundStyle(FitUpColors.Text.secondary)
             } else {
                 ForEach(Array(nearbyRows.enumerated()), id: \.element.id) { idx, row in
-                    nearbyRowView(row)
-                    if idx < nearbyRows.count - 1 {
-                        let upper = nearbyRows[idx]
-                        let lower = nearbyRows[idx + 1]
-                        nearbyGapView(upperScore: upper.score, lowerScore: lower.score)
-                    }
+                    let gapAbove = idx > 0 ? max(0, nearbyRows[idx - 1].score - row.score) : nil
+                    let gapBelow = idx < nearbyRows.count - 1 ? max(0, row.score - nearbyRows[idx + 1].score) : nil
+                    nearbyRowView(row, gapAbove: gapAbove, gapBelow: gapBelow)
                 }
             }
         }
@@ -441,60 +480,83 @@ struct HomeBattleHeroCard: View {
         )
     }
 
-    private func nearbyRowView(_ row: NearbyRow) -> some View {
-        HStack(spacing: 10) {
-            Text("\(row.rank)")
-                .font(FitUpFont.mono(11, weight: .bold))
-                .foregroundStyle(FitUpColors.Text.tertiary)
-                .frame(width: 18, alignment: .leading)
+    private func nearbyRowView(_ row: NearbyRow, gapAbove: Int?, gapBelow: Int?) -> some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 12) {
+                Text("\(row.rank)")
+                    .font(FitUpFont.mono(13, weight: .bold))
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .frame(width: 22, alignment: .leading)
 
-            Circle()
-                .fill(row.isMe ? FitUpColors.Neon.cyan : FitUpColors.Neon.purple.opacity(0.8))
-                .frame(width: 8, height: 8)
+                Circle()
+                    .fill(row.isMe ? FitUpColors.Neon.cyan : FitUpColors.Neon.purple.opacity(0.8))
+                    .frame(width: 10, height: 10)
 
-            Text(row.name)
-                .font(FitUpFont.body(11, weight: .semibold))
-                .foregroundStyle(row.isMe ? FitUpColors.Text.primary : FitUpColors.Text.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
+                Text(row.name)
+                    .font(FitUpFont.body(14, weight: row.isMe ? .bold : .semibold))
+                    .foregroundStyle(row.isMe ? FitUpColors.Text.primary : FitUpColors.Text.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
 
-            if row.isMe {
-                Text("ME")
-                    .font(FitUpFont.mono(9, weight: .bold))
-                    .foregroundStyle(FitUpColors.Neon.cyan)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill(FitUpColors.Neon.cyan.opacity(0.14))
-                    )
+                if row.isMe {
+                    Text("ME")
+                        .font(FitUpFont.mono(11, weight: .bold))
+                        .foregroundStyle(FitUpColors.Neon.cyan)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(FitUpColors.Neon.cyan.opacity(0.14))
+                        )
+                }
+
+                Spacer(minLength: 0)
+
+                Text("\(row.score.formatted())")
+                    .font(FitUpFont.display(18, weight: .heavy))
+                    .foregroundStyle(row.isMe ? FitUpColors.Neon.cyan : FitUpColors.Text.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
 
-            Spacer(minLength: 0)
-
-            Text("\(row.score.formatted())")
-                .font(FitUpFont.body(13, weight: .bold))
-                .foregroundStyle(row.isMe ? FitUpColors.Neon.cyan : FitUpColors.Text.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            if gapAbove != nil || gapBelow != nil {
+                HStack(spacing: 14) {
+                    if let gapAbove {
+                        nearbyGapPiece(symbol: "chevron.up", value: gapAbove, isMe: row.isMe)
+                    }
+                    if let gapBelow {
+                        nearbyGapPiece(symbol: "chevron.down", value: gapBelow, isMe: row.isMe)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
-                .fill(Color.white.opacity(row.isMe ? 0.1 : 0.04))
+                .fill(Color.white.opacity(row.isMe ? 0.20 : 0.10))
+                .overlay {
+                    if row.isMe {
+                        RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
+                            .fill(FitUpColors.Neon.cyan.opacity(0.06))
+                    }
+                }
                 .overlay(
                     RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
-                        .strokeBorder(Color.white.opacity(row.isMe ? 0.25 : 0.08), lineWidth: 1)
+                        .strokeBorder(Color.white.opacity(row.isMe ? 0.32 : 0.18), lineWidth: 1)
                 )
         )
     }
 
-    private func nearbyGapView(upperScore: Int, lowerScore: Int) -> some View {
-        Text("+\((max(0, upperScore - lowerScore)).formatted()) \(selectedMetric.unitLabel)")
-            .font(FitUpFont.mono(10, weight: .semibold))
-            .foregroundStyle(FitUpColors.Text.tertiary)
-            .frame(maxWidth: .infinity, alignment: .center)
+    private func nearbyGapPiece(symbol: String, value: Int, isMe: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .semibold))
+            Text("+\(value.formatted()) \(selectedMetric.unitLabel)")
+                .font(FitUpFont.mono(11, weight: .semibold))
+        }
+        .foregroundStyle(isMe ? FitUpColors.Text.secondary : FitUpColors.Text.tertiary)
     }
 
     private func formattedDelta(_ delta: Int) -> String {
@@ -532,13 +594,21 @@ struct HomeBattleHeroCard: View {
     private func animateHeroRing() {
         animatedMyRingProgress = 0
         withAnimation(.easeOut(duration: 0.75)) {
-            if isBehindState {
-                animatedMyRingProgress = behindDeficitProgress
-            } else {
-                animatedMyRingProgress = min(max(myComparableRingProgress, 0), 1)
-            }
+            animatedMyRingProgress = marginRingProgress
         }
         animateCenterValue(to: displayedCenterTarget)
+    }
+
+    private func startRingBreathing() {
+        guard !reduceMotion else {
+            isBreathingExpanded = true
+            return
+        }
+
+        isBreathingExpanded = false
+        withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+            isBreathingExpanded = true
+        }
     }
 
     private var heroTopTexture: some View {
@@ -597,20 +667,128 @@ struct HomeBattleHeroCard: View {
         }
     }
 
+    private var heroGlassVariant: GlassCardVariant {
+        guard hasAnyActiveMatch, focusOpponentMatch != nil else { return .base }
+        return isWinningState ? .win : .lose
+    }
+
+    /// Nearly invisible tint (~98% transparent) over material blur + liquid-glass edge read.
     private var heroTopBackdrop: some View {
-        RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: backdropGradientColors,
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-            )
-            .shadow(color: backdropGlowColor.opacity(0.24), radius: 16, y: 8)
+        let variant = heroGlassVariant
+        let corner: CGFloat = 24
+
+        return RoundedRectangle(cornerRadius: corner, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay {
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.black.opacity(0.05),
+                                Color.black.opacity(0.018),
+                                Color.clear,
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.034),
+                                Color.white.opacity(0.012),
+                                Color.clear,
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: backdropGradientColors,
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .opacity(0.028)
+            }
+            .overlay(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.12),
+                                Color.white.opacity(0.045),
+                                Color.clear,
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .mask(
+                        RoundedRectangle(cornerRadius: corner, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.white, Color.white.opacity(0.22), Color.clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    )
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.14),
+                                Color.white.opacity(0.04),
+                                Color.clear,
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .overlay(alignment: .top) {
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.09), lineWidth: 0.55)
+                    .blur(radius: 0.32)
+                    .mask(
+                        LinearGradient(
+                            colors: [Color.white, Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            }
+            .overlay(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.32), lineWidth: 0.65)
+                    .blur(radius: 0.28)
+                    .mask(
+                        RoundedRectangle(cornerRadius: corner, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.white, Color.clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    )
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .strokeBorder(variant.borderColor.opacity(0.5), lineWidth: 0.88)
+            }
+            .shadow(color: variant.shadowColor.opacity(0.32), radius: 14, x: 0, y: 8)
+            .shadow(color: Color.black.opacity(0.1), radius: 9, x: 0, y: 4)
     }
 
     private var backdropGradientColors: [Color] {
@@ -635,9 +813,14 @@ struct HomeBattleHeroCard: View {
         ]
     }
 
-    private var backdropGlowColor: Color {
-        guard hasAnyActiveMatch, focusOpponentMatch != nil else { return FitUpColors.Neon.blue }
-        return isWinningState ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange
+    private func opponentFreshnessLine(opponentUpdatedAt: Date?, now: Date) -> String? {
+        guard let opponentUpdatedAt else { return nil }
+        let elapsedSeconds = max(0, Int(now.timeIntervalSince(opponentUpdatedAt)))
+        let elapsedMinutes = elapsedSeconds / 60
+        if elapsedMinutes < 2 { return "Opponent updated just now" }
+        if elapsedMinutes <= 10 { return "Opponent updated \(elapsedMinutes)m ago" }
+        if elapsedMinutes < 60 { return "Opponent stale: \(elapsedMinutes)m ago" }
+        return "Opponent very stale: 1h+ ago"
     }
 
     private func animateCenterValue(to target: Int) {
@@ -710,6 +893,7 @@ struct HomeBattleHeroCard: View {
                     theirScore: 3,
                     isWinning: true,
                     opponent: HomeOpponent(id: UUID(), displayName: "Chris", initials: "CH", colorHex: "#00AAFF"),
+                    opponentTodayUpdatedAt: nil,
                     dayPips: []
                 ),
                 HomeActiveMatch(
@@ -727,6 +911,7 @@ struct HomeBattleHeroCard: View {
                     theirScore: 3,
                     isWinning: true,
                     opponent: HomeOpponent(id: UUID(), displayName: "Taylor", initials: "TA", colorHex: "#FF6200"),
+                    opponentTodayUpdatedAt: nil,
                     dayPips: []
                 ),
                 HomeActiveMatch(
@@ -744,6 +929,7 @@ struct HomeBattleHeroCard: View {
                     theirScore: 3,
                     isWinning: true,
                     opponent: HomeOpponent(id: UUID(), displayName: "Jordan", initials: "JO", colorHex: "#BF5FFF"),
+                    opponentTodayUpdatedAt: nil,
                     dayPips: []
                 ),
                 HomeActiveMatch(
@@ -761,6 +947,7 @@ struct HomeBattleHeroCard: View {
                     theirScore: 3,
                     isWinning: true,
                     opponent: HomeOpponent(id: UUID(), displayName: "Morgan", initials: "MO", colorHex: "#39FF14"),
+                    opponentTodayUpdatedAt: nil,
                     dayPips: []
                 ),
             ],
@@ -784,6 +971,7 @@ struct HomeBattleHeroCard: View {
                     theirScore: 3,
                     isWinning: false,
                     opponent: HomeOpponent(id: UUID(), displayName: "Leader", initials: "LE", colorHex: "#00AAFF"),
+                    opponentTodayUpdatedAt: nil,
                     dayPips: []
                 ),
                 HomeActiveMatch(
@@ -801,6 +989,7 @@ struct HomeBattleHeroCard: View {
                     theirScore: 3,
                     isWinning: false,
                     opponent: HomeOpponent(id: UUID(), displayName: "Close1", initials: "C1", colorHex: "#FF6200"),
+                    opponentTodayUpdatedAt: nil,
                     dayPips: []
                 ),
                 HomeActiveMatch(
@@ -818,6 +1007,7 @@ struct HomeBattleHeroCard: View {
                     theirScore: 3,
                     isWinning: false,
                     opponent: HomeOpponent(id: UUID(), displayName: "Close2", initials: "C2", colorHex: "#BF5FFF"),
+                    opponentTodayUpdatedAt: nil,
                     dayPips: []
                 ),
                 HomeActiveMatch(
@@ -835,6 +1025,7 @@ struct HomeBattleHeroCard: View {
                     theirScore: 3,
                     isWinning: false,
                     opponent: HomeOpponent(id: UUID(), displayName: "Farther", initials: "FA", colorHex: "#39FF14"),
+                    opponentTodayUpdatedAt: nil,
                     dayPips: []
                 ),
             ],

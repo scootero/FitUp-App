@@ -2,7 +2,7 @@
 //  ComponentBreakdownCard.swift
 //  FitUp
 //
-//  Slice 12 — Component breakdown (`glassCard(.base)`).
+//  Slice 12 — Component breakdown (light gamified surface).
 //
 
 import SwiftUI
@@ -18,12 +18,12 @@ struct ComponentBreakdownCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("COMPONENT BREAKDOWN")
                 .font(FitUpFont.body(10, weight: .heavy))
-                .fitUpGlobalTitleStyle(weight: .heavy, tracking: 2)
+                .fitUpHealthSectionTitleStyle(weight: .heavy, tracking: 2)
                 .padding(.bottom, 16)
 
             Text("How the readiness score is built for competition context.")
                 .font(FitUpFont.body(12))
-                .foregroundStyle(FitUpColors.Text.secondary)
+                .foregroundStyle(FitUpColors.HealthOnLight.secondary)
                 .lineSpacing(6)
                 .padding(.bottom, 16)
 
@@ -55,7 +55,7 @@ struct ComponentBreakdownCard: View {
             }
         }
         .padding(18)
-        .glassCard(.base)
+        .healthGamifiedCard(.componentBreakdown)
     }
 
     private var sleepMetricText: String {
@@ -107,12 +107,12 @@ struct ComponentBreakdownCard: View {
             HStack(alignment: .center) {
                 Text(label)
                     .font(FitUpFont.body(13, weight: .bold))
-                    .foregroundStyle(FitUpColors.Text.primary)
+                    .foregroundStyle(FitUpColors.HealthOnLight.primary)
                 Spacer(minLength: 8)
                 HStack(spacing: 12) {
                     Text(metricText)
                         .font(FitUpFont.mono(11))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.HealthOnLight.secondary)
                     Text("\(Int(percent.rounded()))%")
                         .font(FitUpFont.body(11, weight: .bold))
                         .foregroundStyle(color)
@@ -122,7 +122,7 @@ struct ComponentBreakdownCard: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
+                        .fill(Color.black.opacity(0.07))
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(
                             LinearGradient(

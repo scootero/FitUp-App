@@ -23,6 +23,7 @@ struct HomeView: View {
     @State private var hasLoggedFirstRender = false
     @State private var hasLoggedHeroFirstRender = false
     @State private var hasLoggedFirstDataLoaded = false
+    @State private var isPastMatchesExpanded = false
 
     var body: some View {
         ZStack {
@@ -33,16 +34,18 @@ struct HomeView: View {
                     header
 
                     if viewModel.isHeroLoading {
-                        skeletonBlock(height: 212)
+                        skeletonBlock(height: 200)
                             .homeLiquidGlassCard(.base)
                             .redacted(reason: .placeholder)
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
+                            .padding(.top, 10)
                     } else {
                         HomeBattleHeroCard(
                             matches: viewModel.activeMatches,
                             selectedMetric: $viewModel.heroMetric
                         )
+                        .padding(.top, 10)
                     }
 
                     CompetitionEdgeTodaySection(matches: viewModel.activeMatches)
@@ -58,7 +61,18 @@ struct HomeView: View {
                         }
                     )
 
-                    statsRow
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Your battle record at a glance.")
+                            .font(FitUpFont.body(11, weight: .medium))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [FitUpColors.Text.secondary, FitUpColors.Neon.cyan.opacity(0.82)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                        statsRow
+                    }
 
                     if let errorMessage = viewModel.errorMessage, !errorMessage.isEmpty {
                         Text(errorMessage)
@@ -132,6 +146,23 @@ struct HomeView: View {
                         if !viewModel.hasAnyContent, !viewModel.isLoading {
                             zeroState
                         }
+
+                        HealthPastMatchesCard(
+                            matches: viewModel.completedMatches,
+                            isExpanded: isPastMatchesExpanded,
+                            isLoading: viewModel.isLoadingCompletedMatches,
+                            onToggleExpanded: {
+                                isPastMatchesExpanded.toggle()
+                                if isPastMatchesExpanded {
+                                    Task { await viewModel.loadCompletedMatchesIfNeeded() }
+                                }
+                            },
+                            onOpenMatch: { match in
+                                onOpenMatchDetails(match.id, match.opponentName)
+                            },
+                            lightPanels: false
+                        )
+                        .padding(.top, 4)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -261,6 +292,7 @@ struct HomeView: View {
         }
         .onDisappear {
             markReadTask?.cancel()
+            isPastMatchesExpanded = false
             viewModel.stop()
         }
         .onChange(of: notificationService.shouldPresentHomeInbox) { _, shouldPresent in
@@ -427,6 +459,20 @@ struct HomeView: View {
                 Text("Let's go, \(firstName)")
                     .font(FitUpFont.body(12, weight: .medium))
                     .foregroundStyle(FitUpColors.Text.secondary)
+
+                Text("It's battle time. Check your edge before you jump in.")
+                    .font(FitUpFont.body(12, weight: .semibold))
+                    .lineSpacing(1.2)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [FitUpColors.Neon.cyan.opacity(0.92), FitUpColors.Neon.blue.opacity(0.88)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .shadow(color: FitUpColors.Neon.blue.opacity(0.32), radius: 2, x: 2, y: 6)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 3)
             }
 
             Spacer(minLength: 0)

@@ -1,4 +1,5 @@
--- Home: per-calendar-day net margin (viewer − opponent) summed across qualifying matches.
+-- Home: per-calendar-day net margin = SUM over matches of (your total − opponent total) for that day.
+-- Each (match_day × opponent) pair is counted once (dedupes duplicate participant/join rows).
 -- Copy into Supabase SQL Editor and run (same as migration 20260428120000_home_daily_battle_margins_rpc.sql).
 
 create or replace function public.home_daily_battle_margins(
@@ -49,30 +50,31 @@ begin
       select
         d.cal_date,
         coalesce((
-          select sum(
-            (
-              coalesce(mdp_v.finalized_value, mdp_v.metric_total)
-              - coalesce(mdp_o.finalized_value, mdp_o.metric_total)
-            )::bigint
-          )
-          from public.match_days md
-          inner join public.matches m on m.id = md.match_id
-          inner join public.match_participants mp_v
-            on mp_v.match_id = m.id
-           and mp_v.user_id = v_viewer
-          inner join public.match_participants mp_o
-            on mp_o.match_id = m.id
-           and mp_o.user_id <> mp_v.user_id
-          inner join public.match_day_participants mdp_v
-            on mdp_v.match_day_id = md.id
-           and mdp_v.user_id = mp_v.user_id
-          inner join public.match_day_participants mdp_o
-            on mdp_o.match_day_id = md.id
-           and mdp_o.user_id = mp_o.user_id
-          where md.calendar_date = d.cal_date
-            and md.is_void = false
-            and m.state in ('active', 'completed')
-            and m.metric_type = p_metric_type
+          select coalesce(sum(pair_margin), 0::bigint)
+          from (
+            select
+              max(coalesce(mdp_v.finalized_value, mdp_v.metric_total))::bigint
+              - max(coalesce(mdp_o.finalized_value, mdp_o.metric_total))::bigint as pair_margin
+            from public.match_days md
+            inner join public.matches m on m.id = md.match_id
+            inner join public.match_participants mp_v
+              on mp_v.match_id = m.id
+             and mp_v.user_id = v_viewer
+            inner join public.match_participants mp_o
+              on mp_o.match_id = m.id
+             and mp_o.user_id <> mp_v.user_id
+            inner join public.match_day_participants mdp_v
+              on mdp_v.match_day_id = md.id
+             and mdp_v.user_id = mp_v.user_id
+            inner join public.match_day_participants mdp_o
+              on mdp_o.match_day_id = md.id
+             and mdp_o.user_id = mp_o.user_id
+            where md.calendar_date = d.cal_date
+              and md.is_void = false
+              and m.state in ('active', 'completed')
+              and m.metric_type = p_metric_type
+            group by md.id, mp_o.user_id
+          ) pair_rows
         ), 0::bigint) as margin
       from days d
     )

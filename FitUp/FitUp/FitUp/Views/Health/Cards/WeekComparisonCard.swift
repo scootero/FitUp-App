@@ -32,23 +32,22 @@ struct WeekComparisonCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("THIS WEEK VS LAST WEEK")
                 .font(FitUpFont.body(10, weight: .heavy))
-                .tracking(2)
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .fitUpHealthSectionTitleStyle(weight: .heavy, tracking: 2)
                 .padding(.bottom, 10)
 
             if let comparison {
                 Text(comparison.headline)
                     .font(FitUpFont.body(12))
-                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .foregroundStyle(FitUpColors.HealthOnLight.secondary)
                     .padding(.bottom, 12)
 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(comparison.currentValueText)
                         .font(FitUpFont.display(26, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.primary)
+                        .foregroundStyle(FitUpColors.HealthOnLight.primary)
                     Text(comparison.metricUnitLabel)
                         .font(FitUpFont.body(12, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.HealthOnLight.secondary)
                 }
                 .padding(.bottom, 10)
 
@@ -57,11 +56,11 @@ struct WeekComparisonCard: View {
             } else {
                 Text("Week comparison unavailable.")
                     .font(FitUpFont.body(12))
-                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .foregroundStyle(FitUpColors.HealthOnLight.secondary)
             }
         }
         .padding(18)
-        .glassCard(.base)
+        .healthGamifiedCard(.weekComparison)
     }
 
     @ViewBuilder
@@ -84,17 +83,17 @@ struct WeekComparisonCard: View {
                 let frame = geo.frame(in: .local)
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.white.opacity(0.04))
+                        .fill(Color.black.opacity(0.05))
 
                     dayBoundaryGuides(frame: frame)
 
                     if previousPoints.allSatisfy({ $0.y == 0 }) && currentPoints.allSatisfy({ $0.y == 0 }) {
                         baselinePath(frame: frame)
-                            .stroke(Color.white.opacity(0.14), style: StrokeStyle(lineWidth: 1))
+                            .stroke(Color.black.opacity(0.12), style: StrokeStyle(lineWidth: 1))
                     } else {
                         linePath(points: previousPoints, in: frame, maxY: maxY)
                             .stroke(
-                                Color.white.opacity(0.38),
+                                Color.black.opacity(0.22),
                                 style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round, dash: [4, 4])
                             )
                         linePath(points: currentPoints, in: frame, maxY: maxY)
@@ -111,7 +110,7 @@ struct WeekComparisonCard: View {
                 ForEach(weekdayAxisLabels, id: \.self) { label in
                     Text(label)
                         .font(FitUpFont.mono(9, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .foregroundStyle(FitUpColors.HealthOnLight.tertiary)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -120,12 +119,12 @@ struct WeekComparisonCard: View {
                 legendDot(color: FitUpColors.Neon.cyan, dashed: false)
                 Text("This Week \(comparison.currentValueText)")
                     .font(FitUpFont.body(10))
-                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .foregroundStyle(FitUpColors.HealthOnLight.secondary)
                 Spacer(minLength: 10)
-                legendDot(color: Color.white.opacity(0.5), dashed: true)
+                legendDot(color: Color.black.opacity(0.28), dashed: true)
                 Text("Last Week \(comparison.previousValueText)")
                     .font(FitUpFont.body(10))
-                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .foregroundStyle(FitUpColors.HealthOnLight.secondary)
             }
         }
     }
@@ -222,7 +221,7 @@ struct WeekComparisonCard: View {
                     p.move(to: CGPoint(x: x, y: 0))
                     p.addLine(to: CGPoint(x: x, y: frame.height))
                 }
-                .stroke(Color.white.opacity(0.06), style: StrokeStyle(lineWidth: 1))
+                .stroke(Color.black.opacity(0.06), style: StrokeStyle(lineWidth: 1))
             }
         }
     }

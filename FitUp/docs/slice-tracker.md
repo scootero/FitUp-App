@@ -391,3 +391,42 @@ Files owned / modified (iOS):
 
 Notes:
 - Do not use wake-day-only or longest-session-only logic for **last night** totals; see docs Section 11 before changing sleep math.
+
+## Home freshness slice — pull-to-refresh + hero opponent freshness
+Date: 2026-05-01
+Status: Complete
+Files modified:
+- `FitUp/FitUp/FitUp/Repositories/HomeRepository.swift` (added `opponentTodayUpdatedAt` to `HomeActiveMatch`; reads `match_day_participants.last_updated_at` in active cards path)
+- `FitUp/FitUp/FitUp/Services/HomeSnapshotCacheStore.swift` (cache v2: `schemaVersion = 2`, `keyPrefix = home.hero.snapshot.v2`, stores/restores optional opponent freshness timestamp)
+- `FitUp/FitUp/FitUp/ViewModels/HomeViewModel.swift` (forced reload path now runs eligible metric sync, awaits stats + margins + HK patch, persists hero snapshot after HK patch, fixes forced reload coalescing)
+- `FitUp/FitUp/FitUp/Views/Home/Sections/HomeBattleHeroCard.swift` (adds subtle opponent freshness line in hero top area with threshold copy)
+- `FitUp/FitUp/FitUp/Views/Shared/CompetitionEdgeTodaySection.swift` (preview fixture update for new `HomeActiveMatch` field)
+Supabase changes:
+- None. No schema migration and no new RPC; reuses existing `match_day_participants.last_updated_at`.
+Notes:
+- Pull-to-refresh now follows the full freshness path while keeping content visible (no forced skeleton reset) and writing refreshed values back to local caches.
+- Opponent freshness copy on hero uses focused/top opponent context and bucketed messaging: `updated just now`, `updated Xm ago`, `stale: Xm ago`, `very stale: 1h+ ago`.
+
+## Home hero polish — breathing ring + spacing
+Date: 2026-05-01
+Status: Complete
+Files modified:
+- `FitUp/FitUp/FitUp/Views/Home/Sections/HomeBattleHeroCard.swift` (added subtle, low-cost repeating ring breath animation with Reduce Motion fallback; increased ring size and hero card spacing/padding around ring and status text)
+- `FitUp/FitUp/FitUp/Views/Home/HomeView.swift` (increased hero loading skeleton height to match larger hero card and reduce load-to-content jump)
+Supabase changes:
+- None.
+Notes:
+- Ring breath uses a single `easeInOut(duration: 2).repeatForever(autoreverses: true)` transform path (plus tiny synced stroke-width drift) to keep CPU impact low.
+- Reduce Motion support disables the repeating breath loop and keeps the ring at stable full scale.
+
+## Home battle hook + section hints
+Date: 2026-05-01
+Status: Complete
+Files modified:
+- `FitUp/FitUp/FitUp/Views/Home/HomeView.swift` (added themed header hook text under FITUP with offset shadow; added extra top spacing before hero card/skeleton; added short explanatory line above stats row)
+- `FitUp/FitUp/FitUp/Views/Home/Sections/HomeBattleHeroCard.swift` (kept center number, added compact third caption line clarifying context: `vs top rival today` / `your total today`; added accessibility label/hint so the center value meaning is announced)
+- `FitUp/FitUp/FitUp/Views/Shared/CompetitionEdgeTodaySection.swift` (added one-line explanatory subtitle under section title using existing home subtitle style)
+Supabase changes:
+- None.
+Notes:
+- This pass focuses on first-glance clarity for home metrics so the hero ring and nearby sections are self-explanatory without adding extra cards.

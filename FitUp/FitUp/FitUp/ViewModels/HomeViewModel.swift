@@ -58,6 +58,9 @@ final class HomeViewModel: ObservableObject {
     @Published var marginChartDayCount: Int = 7
     @Published private(set) var isHeroLoading = true
     @Published private(set) var isInitialLoading = true
+    /// Full rows for the expandable Past Matches card (warmed by stats refresh; lazy-loaded if empty).
+    @Published private(set) var completedMatches: [ActivityCompletedMatch] = []
+    @Published private(set) var isLoadingCompletedMatches = false
 
     var hasAnyContent: Bool {
         !searchingRequests.isEmpty || !activeMatches.isEmpty || !pendingMatches.isEmpty
@@ -94,12 +97,18 @@ final class HomeViewModel: ObservableObject {
     private var lastStatsRefreshAt: Date?
     private let statsRefreshMinInterval: TimeInterval = 300
     private var marginsRefreshGeneration = 0
+    private var lastHomeProfileLocalDate: String?
+    private var completedMatchesListTask: Task<Void, Never>?
 
     func start(profile: Profile?, showOnboardingSearching: Bool, sessionStore: SessionStore) {
         guard let profileId = profile?.id else { return }
         self.sessionStore = sessionStore
         myDisplayName = profile?.displayName ?? "You"
         profileTimeZoneIdentifier = profile?.timezone
+        let currentLocalDate = snapshotCacheStore.localDateString(
+            now: Date(),
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
 
         if userId != profileId {
             stop()
@@ -118,21 +127,28 @@ final class HomeViewModel: ObservableObject {
             heroStateResolvedAt = nil
             lastStatsRefreshAt = nil
             marginsRefreshGeneration += 1
+            lastHomeProfileLocalDate = currentLocalDate
+            completedMatches = []
+            completedMatchesListTask?.cancel()
+            completedMatchesListTask = nil
             loadHeroSnapshotFromDisk(profileId: profileId)
             loadCachedBattleStats(profileId: profileId)
             loadMarginsFromCache(profileId: profileId)
-        } else if !isHeroLoading {
-            let localDate = snapshotCacheStore.localDateString(
-                now: Date(),
-                profileTimeZoneIdentifier: profileTimeZoneIdentifier
-            )
-            logSnapshotLoaded(
-                source: "memory",
-                profileId: profileId,
-                localDate: localDate,
-                savedAt: heroStateResolvedAt
-            )
-            logHomeReturnNoReload(profileId: profileId)
+        } else {
+            handleHomeDayRolloverIfNeeded(currentLocalDate: currentLocalDate)
+            if !isHeroLoading {
+                let localDate = snapshotCacheStore.localDateString(
+                    now: Date(),
+                    profileTimeZoneIdentifier: profileTimeZoneIdentifier
+                )
+                logSnapshotLoaded(
+                    source: "memory",
+                    profileId: profileId,
+                    localDate: localDate,
+                    savedAt: heroStateResolvedAt
+                )
+                logHomeReturnNoReload(profileId: profileId)
+            }
         }
 
         startPollingIfNeeded()
@@ -157,12 +173,15 @@ final class HomeViewModel: ObservableObject {
         statsRefreshTask = nil
         marginsRefreshTask?.cancel()
         marginsRefreshTask = nil
+        completedMatchesListTask?.cancel()
+        completedMatchesListTask = nil
         matchFoundCelebration = nil
         matchActiveCelebration = nil
         deferredMatchActiveCelebration = nil
         declineFeedbackOpponentName = nil
         pollingTask?.cancel()
         pollingTask = nil
+        lastHomeProfileLocalDate = nil
     }
 
     func reload(force: Bool) async {
@@ -175,19 +194,26 @@ final class HomeViewModel: ObservableObject {
         isReloadInFlight = true
         defer {
             isReloadInFlight = false
-            hasPendingForcedReload = false
         }
 
+        var carryForce = force
         repeat {
+            let shouldForceRefresh = carryForce || hasPendingForcedReload
+            carryForce = false
             hasPendingForcedReload = false
-            let finished = await performReload(userId: userId)
+            let finished = await performReload(userId: userId, forceRefresh: shouldForceRefresh)
             if !finished { return }
         } while hasPendingForcedReload
     }
 
-    private func performReload(userId: UUID) async -> Bool {
+    private func performReload(userId: UUID, forceRefresh: Bool) async -> Bool {
         isLoading = true
         defer { isLoading = false }
+        handleHomeDayRolloverIfNeeded()
+
+        if forceRefresh {
+            await runMetricSyncIfEligible()
+        }
 
         let oldPendingIds = Set(pendingMatches.map(\.id))
         let oldActiveIds = Set(activeMatches.map(\.id))
@@ -222,7 +248,6 @@ final class HomeViewModel: ObservableObject {
         syncHeroMetricWithActiveMatches()
         if isHeroLoading { isHeroLoading = false }
         persistFreshHeroSnapshot(profileId: userId)
-        scheduleHeroHealthKitPatch()
 
         var celebration: HomePendingMatch?
         if !newPendingMatchIds.isEmpty,
@@ -273,10 +298,20 @@ final class HomeViewModel: ObservableObject {
         if isInitialLoading {
             isInitialLoading = false
         }
-        refreshHomeStatsInBackground(userId: userId, force: true)
-        marginsRefreshTask?.cancel()
-        marginsRefreshTask = Task { [weak self] in
-            await self?.refreshBattleMargins()
+
+        if forceRefresh {
+            await refreshHomeStatsAwaiting(userId: userId)
+            marginsRefreshTask?.cancel()
+            marginsRefreshTask = nil
+            await refreshBattleMargins()
+            await executeHeroHealthKitPatch(userId: userId)
+        } else {
+            refreshHomeStatsInBackground(userId: userId, force: true)
+            marginsRefreshTask?.cancel()
+            marginsRefreshTask = Task { [weak self] in
+                await self?.refreshBattleMargins()
+            }
+            scheduleHeroHealthKitPatch()
         }
         return true
     }
@@ -329,6 +364,33 @@ final class HomeViewModel: ObservableObject {
         )
         guard !Task.isCancelled, self.userId == userId, generation == marginsRefreshGeneration else { return }
         dailyBattleMargins = rows
+#if DEBUG
+        let series = rows.map { "\($0.calendarDate)=\($0.margin)" }.joined(separator: ", ")
+        let todayKey = HomeRepository.formatProfileCalendarDate(
+            Date(),
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
+        let todayRpcMargin = rows.first(where: { $0.calendarDate == todayKey })?.margin ?? 0
+        var seenMatchIds = Set<UUID>()
+        let todayLocalEdgeSum = activeMatches
+            .filter { $0.metricType == heroMetric.metricType }
+            .filter { seenMatchIds.insert($0.id).inserted }
+            .reduce(0) { $0 + ($1.myToday - $1.theirToday) }
+        AppLogger.log(
+            category: "matchmaking",
+            level: .debug,
+            message: "home_daily_battle_margins debug",
+            userId: userId,
+            metadata: [
+                "metric_type": heroMetric.metricType,
+                "day_count": String(marginChartDayCount),
+                "series": series,
+                "today_key": todayKey,
+                "today_rpc_margin": String(todayRpcMargin),
+                "today_local_edge_sum": String(todayLocalEdgeSum)
+            ]
+        )
+#endif
         let savedAt = Date()
         battleMarginsSavedAt = savedAt
         let cached = marginsCacheStore.makeCached(
@@ -485,6 +547,24 @@ final class HomeViewModel: ObservableObject {
         declineFeedbackOpponentName = nil
     }
 
+    /// Loads completed match rows for the Past Matches card if the list is still empty (e.g. before stats refresh finished).
+    func loadCompletedMatchesIfNeeded() async {
+        guard let userId else { return }
+        if !completedMatches.isEmpty { return }
+        if isLoadingCompletedMatches { return }
+        isLoadingCompletedMatches = true
+        defer { isLoadingCompletedMatches = false }
+        completedMatchesListTask?.cancel()
+        completedMatchesListTask = Task { [weak self] in
+            guard let self else { return }
+            let rows = await activityRepository.loadCompletedMatches(currentUserId: userId)
+            guard !Task.isCancelled else { return }
+            guard self.userId == userId else { return }
+            self.completedMatches = rows
+        }
+        await completedMatchesListTask?.value
+    }
+
     private func showDeclineFeedback(opponentName: String) {
         declineFeedbackDismissTask?.cancel()
         declineFeedbackOpponentName = opponentName
@@ -545,6 +625,7 @@ final class HomeViewModel: ObservableObject {
             guard self.userId == userId else { return }
             let freshStats = Self.makeStats(from: completed)
             self.stats = freshStats
+            self.completedMatches = completed
             self.isStatsLoading = false
             self.lastStatsRefreshAt = Date()
 
@@ -556,6 +637,30 @@ final class HomeViewModel: ObservableObject {
             )
             self.battleStatsCacheStore.saveTodayStats(cached)
         }
+    }
+
+    private func refreshHomeStatsAwaiting(userId: UUID) async {
+        statsRefreshTask?.cancel()
+        statsRefreshTask = nil
+        if !stats.hasResolvedValue {
+            isStatsLoading = true
+        }
+        isStatsRefreshing = true
+        defer { isStatsRefreshing = false }
+        let completed = await activityRepository.loadCompletedMatches(currentUserId: userId)
+        guard !Task.isCancelled, self.userId == userId else { return }
+        let freshStats = Self.makeStats(from: completed)
+        stats = freshStats
+        completedMatches = completed
+        isStatsLoading = false
+        lastStatsRefreshAt = Date()
+        let cached = battleStatsCacheStore.makeStats(
+            profileId: userId,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier,
+            stats: freshStats,
+            now: Date()
+        )
+        battleStatsCacheStore.saveTodayStats(cached)
     }
 
     @discardableResult
@@ -600,29 +705,34 @@ final class HomeViewModel: ObservableObject {
 
     private func scheduleHeroHealthKitPatch() {
         guard let userId else { return }
-        guard let firstActive = activeMatches.first else { return }
-        let metricType = normalizedHeroMetricType(firstActive.metricType)
+        guard activeMatches.first != nil else { return }
         heroHealthKitPatchTask?.cancel()
         heroHealthKitPatchTask = Task { [weak self] in
             guard let self else { return }
-            let readStartedAt = Date()
-            let value: Int
-            do {
-                if metricType == "active_calories" {
-                    value = try await HealthKitService.fetchTodayActiveCalories()
-                } else {
-                    value = try await HealthKitService.fetchTodayStepCount()
-                }
-            } catch {
-                return
-            }
-            self.applyHeroHealthKitPatch(
-                value: value,
-                metricType: metricType,
-                readStartedAt: readStartedAt,
-                userId: userId
-            )
+            await self.executeHeroHealthKitPatch(userId: userId)
         }
+    }
+
+    private func executeHeroHealthKitPatch(userId: UUID) async {
+        guard let firstActive = activeMatches.first else { return }
+        let metricType = normalizedHeroMetricType(firstActive.metricType)
+        let readStartedAt = Date()
+        let value: Int
+        do {
+            if metricType == "active_calories" {
+                value = try await HealthKitService.fetchTodayActiveCalories()
+            } else {
+                value = try await HealthKitService.fetchTodayStepCount()
+            }
+        } catch {
+            return
+        }
+        applyHeroHealthKitPatch(
+            value: value,
+            metricType: metricType,
+            readStartedAt: readStartedAt,
+            userId: userId
+        )
     }
 
     private func applyHeroHealthKitPatch(
@@ -635,6 +745,7 @@ final class HomeViewModel: ObservableObject {
         heroHealthKitValueByMetric[metricType] = value
         activeMatches = applyHealthKitOverrides(to: activeMatches)
         syncLiveActivity()
+        persistFreshHeroSnapshot(profileId: userId)
         let elapsedMs: Int
         if let startedAt = heroLoadStartedAt {
             elapsedMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
@@ -675,8 +786,51 @@ final class HomeViewModel: ObservableObject {
                 theirScore: match.theirScore,
                 isWinning: hkValue >= match.theirToday,
                 opponent: match.opponent,
+                opponentTodayUpdatedAt: match.opponentTodayUpdatedAt,
                 dayPips: match.dayPips
             )
+        }
+    }
+
+    private func runMetricSyncIfEligible() async {
+        guard let sessionStore else { return }
+        let isSyncEligible = sessionStore.isOnboardingComplete || sessionStore.healthKitPromptCompleted
+        guard isSyncEligible else { return }
+        await MetricSyncCoordinator.shared.requestSync(trigger: .manual, force: true)
+    }
+
+    private func handleHomeDayRolloverIfNeeded(currentLocalDate: String? = nil) {
+        let localDate = currentLocalDate ?? snapshotCacheStore.localDateString(
+            now: Date(),
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
+        defer { lastHomeProfileLocalDate = localDate }
+        guard let previousDate = lastHomeProfileLocalDate, previousDate != localDate else { return }
+        heroHealthKitValueByMetric.removeAll()
+        guard !activeMatches.isEmpty else { return }
+        activeMatches = activeMatches.map { match in
+            HomeActiveMatch(
+                id: match.id,
+                metricType: match.metricType,
+                durationDays: match.durationDays,
+                sportLabel: match.sportLabel,
+                seriesLabel: match.seriesLabel,
+                daysLeft: match.daysLeft,
+                finalDayCutoffAt: match.finalDayCutoffAt,
+                finalDayScoreEndsAt: match.finalDayScoreEndsAt,
+                myToday: 0,
+                theirToday: 0,
+                myScore: match.myScore,
+                theirScore: match.theirScore,
+                isWinning: true,
+                opponent: match.opponent,
+                opponentTodayUpdatedAt: nil,
+                dayPips: match.dayPips
+            )
+        }
+        syncLiveActivity()
+        if let userId {
+            persistFreshHeroSnapshot(profileId: userId)
         }
     }
 

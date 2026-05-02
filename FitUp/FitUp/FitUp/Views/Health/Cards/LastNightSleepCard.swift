@@ -13,20 +13,19 @@ struct LastNightSleepCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("LAST NIGHT")
-                .font(FitUpFont.mono(10))
-                .tracking(1)
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .font(FitUpFont.body(10, weight: .heavy))
+                .fitUpHealthSectionTitleStyle(weight: .heavy, tracking: 2)
                 .padding(.bottom, 8)
 
             Group {
                 if let h = summary?.lastNightAsleepHours, h > 0 {
                     Text(Self.formatTimeAsleep(hours: h))
                         .font(FitUpFont.display(22, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.primary)
+                        .foregroundStyle(FitUpColors.HealthOnLight.primary)
                 } else {
                     Text("No sleep data from last night")
                         .font(FitUpFont.body(14, weight: .semibold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.HealthOnLight.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -38,7 +37,7 @@ struct LastNightSleepCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(.base)
+        .healthGamifiedCard(.sleepLastNight)
     }
 
     private var hypnogram: some View {
@@ -46,7 +45,7 @@ struct LastNightSleepCard: View {
         return Group {
             if segments.isEmpty {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.white.opacity(0.08))
+                    .fill(Color.black.opacity(0.07))
                     .frame(height: 36)
             } else {
                 SleepHypnogramView(segments: segments)

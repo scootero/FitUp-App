@@ -26,15 +26,14 @@ struct WeekChartCard: View {
 
             Text("7-DAY TREND")
                 .font(FitUpFont.body(10, weight: .heavy))
-                .tracking(2)
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .fitUpHealthSectionTitleStyle(weight: .heavy, tracking: 2)
                 .padding(.bottom, 8)
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(selectedDayLabel.uppercased())
                     .font(FitUpFont.body(10, weight: .heavy))
                     .tracking(1.2)
-                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .foregroundStyle(FitUpColors.HealthOnLight.tertiary)
                 Text(selectedDayValueLabel)
                     .font(FitUpFont.display(22, weight: .bold))
                     .foregroundStyle(goalColor)
@@ -48,16 +47,16 @@ struct WeekChartCard: View {
                 HStack(spacing: 0) {
                     Text("Today: ")
                         .font(FitUpFont.body(11))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.HealthOnLight.secondary)
                     Text("\(valueToday)")
                         .font(FitUpFont.body(11, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.primary)
+                        .foregroundStyle(FitUpColors.HealthOnLight.primary)
                 }
                 Spacer()
                 HStack(spacing: 0) {
                     Text("Goal: ")
                         .font(FitUpFont.body(11))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.HealthOnLight.secondary)
                     Text("\(valueGoal)")
                         .font(FitUpFont.body(11, weight: .bold))
                         .foregroundStyle(goalColor)
@@ -68,7 +67,7 @@ struct WeekChartCard: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color.white.opacity(0.07))
+                        .fill(Color.black.opacity(0.08))
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(
                             LinearGradient(
@@ -85,7 +84,7 @@ struct WeekChartCard: View {
             .padding(.bottom, 4)
         }
         .padding(18)
-        .glassCard(.base)
+        .healthGamifiedCard(.weekChart)
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                 barAnim = true
@@ -182,13 +181,13 @@ struct WeekChartCard: View {
                                 Capsule().fill(FitUpColors.Neon.cyan)
                             }
                         }
-                        .foregroundStyle(statsTab == tab ? Color.black : FitUpColors.Text.secondary)
+                        .foregroundStyle(statsTab == tab ? Color.black : FitUpColors.HealthOnLight.secondary)
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(3)
-        .background(Color.white.opacity(0.06))
+        .background(Color.black.opacity(0.06))
         .clipShape(Capsule())
     }
 
@@ -220,7 +219,11 @@ struct WeekChartCard: View {
                     }
                     Text(i < labels.count ? labels[i] : "—")
                         .font(FitUpFont.body(9))
-                        .foregroundStyle(isSelected ? goalColor : (isToday ? FitUpColors.Neon.cyan : FitUpColors.Text.tertiary))
+                        .foregroundStyle(
+                            isSelected
+                                ? goalColor
+                                : (isToday ? FitUpColors.Neon.cyan : FitUpColors.HealthOnLight.tertiary)
+                        )
                 }
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())

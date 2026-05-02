@@ -32,6 +32,7 @@ struct CachedHomeActiveMatch: Codable {
     let myScore: Int
     let theirScore: Int
     let opponent: CachedHomeOpponent
+    let opponentTodayUpdatedAt: Date?
     let dayPips: [CachedHomeDayPip]
 }
 
@@ -49,8 +50,8 @@ struct CachedHomeDayPip: Codable {
 
 final class HomeSnapshotCacheStore {
     private let defaults: UserDefaults
-    private let keyPrefix = "home.hero.snapshot.v1"
-    private let schemaVersion = 1
+    private let keyPrefix = "home.hero.snapshot.v2"
+    private let schemaVersion = 2
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -176,6 +177,7 @@ private extension CachedHomeActiveMatch {
                 initials: match.opponent.initials,
                 colorHex: match.opponent.colorHex
             ),
+            opponentTodayUpdatedAt: match.opponentTodayUpdatedAt,
             dayPips: match.dayPips.map {
                 CachedHomeDayPip(dayNumber: $0.dayNumber, state: CachedHomeDayPip.string(from: $0.state))
             }
@@ -203,6 +205,7 @@ private extension CachedHomeActiveMatch {
                 initials: opponent.initials,
                 colorHex: opponent.colorHex
             ),
+            opponentTodayUpdatedAt: opponentTodayUpdatedAt,
             dayPips: dayPips.map {
                 HomeDayPip(dayNumber: $0.dayNumber, state: CachedHomeDayPip.state(from: $0.state))
             }

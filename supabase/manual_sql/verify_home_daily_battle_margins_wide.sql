@@ -1,55 +1,37 @@
--- Read-only diagnostics for `public.home_daily_battle_margins` (Home battle margin chart).
+-- Wide read-only scan: find suspicious (profile, calendar_date, metric_type) days only.
 -- Compares:
 --   1) old_summed_margin        = raw join sum of (viewer - opponent) rows
 --   2) top_opponent_margin      = max(viewer) - max(opponent)
 --   3) new_deduped_sum_margin   = sum of per-(match_day, opponent) pair margins (expected)
--- No writes. Safe to run in SQL Editor.
---
--- Usage:
--- 1) Replace params below: p_profile_id (profiles.id), optional p_metric_type, p_end_date, p_day_count.
--- 2) Run Section 0 optionally, then Section 1.
+-- No raw `match_day_participants` rows returned — summary columns only.
+-- Run from Supabase SQL Editor with a privileged role. Not used by the app.
 
 -- ============================================================================
--- Section 0: Params only (optional sanity check)
+-- Section 0: Params
 -- ============================================================================
 with params as (
-  select
-    '00000000-0000-0000-0000-000000000000'::uuid as p_profile_id,
-    'steps'::text as p_metric_type,
-    current_date::date as p_end_date,
-    7 as p_day_count
+  select 14 as p_day_count
 )
 select * from params;
 
 -- ============================================================================
--- Section 1: Per-calendar-day margin breakdown (same joins/filters as the RPC)
+-- Section 1: Suspicious rows only (last `p_day_count` calendar days)
 -- ============================================================================
 with params as (
-  select
-    '00000000-0000-0000-0000-000000000000'::uuid as p_profile_id,
-    'steps'::text as p_metric_type,
-    current_date::date as p_end_date,
-    7 as p_day_count
+  select 14 as p_day_count
 ),
 bounds as (
   select
-    p.p_profile_id,
-    p.p_metric_type,
-    p.p_end_date,
-    least(31, greatest(1, coalesce(p.p_day_count, 7))) as v_count,
-    p.p_end_date
-      - (least(31, greatest(1, coalesce(p.p_day_count, 7))) - 1) as v_start
+    current_date::date as v_end,
+    current_date::date - (p.p_day_count - 1) as v_start
   from params p
-),
-days as (
-  select gs::date as cal_date
-  from bounds b
-  cross join lateral generate_series(b.v_start, b.p_end_date, interval '1 day') as gs
 ),
 base as (
   select
+    mp_v.user_id as profile_id,
+    md.calendar_date::date as calendar_date,
+    m.metric_type::text as metric_type,
     md.id as match_day_id,
-    md.calendar_date as cal_date,
     coalesce(mdp_v.finalized_value, mdp_v.metric_total)::bigint as viewer_val,
     coalesce(mdp_o.finalized_value, mdp_o.metric_total)::bigint as opponent_val,
     mp_o.user_id as opponent_id,
@@ -60,12 +42,11 @@ base as (
   from bounds b
   join public.match_days md
     on md.calendar_date >= b.v_start
-   and md.calendar_date <= b.p_end_date
+   and md.calendar_date <= b.v_end
   join public.matches m
     on m.id = md.match_id
   join public.match_participants mp_v
     on mp_v.match_id = m.id
-   and mp_v.user_id = b.p_profile_id
   join public.match_participants mp_o
     on mp_o.match_id = m.id
    and mp_o.user_id <> mp_v.user_id
@@ -77,65 +58,72 @@ base as (
    and mdp_o.user_id = mp_o.user_id
   where md.is_void = false
     and m.state in ('active', 'completed')
-    and m.metric_type = b.p_metric_type
+    and m.metric_type in ('steps', 'active_calories')
 ),
 pair_rows as (
   select
-    cal_date,
+    profile_id,
+    calendar_date,
+    metric_type,
     match_day_id,
     opponent_id,
     max(viewer_val) - max(opponent_val) as pair_margin
   from base
-  group by cal_date, match_day_id, opponent_id
+  group by profile_id, calendar_date, metric_type, match_day_id, opponent_id
 ),
 deduped as (
   select
-    cal_date,
+    profile_id,
+    calendar_date,
+    metric_type,
     coalesce(sum(pair_margin), 0::bigint) as new_deduped_sum_margin
   from pair_rows
-  group by cal_date
+  group by profile_id, calendar_date, metric_type
 ),
 agg as (
   select
-    cal_date,
-    min(viewer_val) as viewer_min,
-    max(viewer_val) as viewer_max,
+    profile_id,
+    calendar_date,
+    metric_type,
+    min(viewer_val) as min_viewer,
+    max(viewer_val) as max_viewer,
     (
       count(distinct viewer_val)
       + case when bool_or(viewer_val is null) then 1 else 0 end
-    ) as viewer_distinct,
+    ) as distinct_viewer_count,
     (
       (min(viewer_val) is distinct from max(viewer_val))
       or (
         count(*) filter (where viewer_val is null) > 0
         and count(*) filter (where viewer_val is not null) > 0
       )
-    ) as viewer_inconsistent,
+    ) as viewer_values_inconsistent,
     count(distinct opponent_id) as opponent_count,
-    max(opponent_val) as highest_opponent_value,
+    max(opponent_val) as highest_opponent,
     coalesce(sum(row_margin), 0::bigint) as old_summed_margin,
     coalesce(max(viewer_val), 0::bigint) - coalesce(max(opponent_val), 0::bigint) as top_opponent_margin
   from base
-  group by cal_date
+  group by profile_id, calendar_date, metric_type
 )
 select
-  d.cal_date,
-  a.viewer_min,
-  a.viewer_max,
-  a.viewer_distinct,
-  coalesce(a.viewer_inconsistent, false) as viewer_inconsistent,
-  a.highest_opponent_value,
-  coalesce(a.opponent_count, 0::bigint) as opponent_count,
-  coalesce(a.old_summed_margin, 0::bigint) as old_summed_margin,
-  coalesce(a.top_opponent_margin, 0::bigint) as top_opponent_margin,
-  coalesce(ds.new_deduped_sum_margin, 0::bigint) as new_deduped_sum_margin,
-  coalesce(a.old_summed_margin, 0::bigint) - coalesce(ds.new_deduped_sum_margin, 0::bigint)
-    as raw_minus_deduped_delta,
-  coalesce(a.top_opponent_margin, 0::bigint) - coalesce(ds.new_deduped_sum_margin, 0::bigint)
-    as top_minus_deduped_delta
-from days d
-left join agg a
-  on a.cal_date = d.cal_date
-left join deduped ds
-  on ds.cal_date = d.cal_date
-order by d.cal_date;
+  a.profile_id,
+  a.calendar_date,
+  a.metric_type,
+  a.min_viewer,
+  a.max_viewer,
+  a.distinct_viewer_count,
+  a.viewer_values_inconsistent,
+  a.highest_opponent,
+  a.opponent_count,
+  a.old_summed_margin,
+  a.top_opponent_margin,
+  d.new_deduped_sum_margin
+from agg a
+left join deduped d
+  on d.profile_id = a.profile_id
+ and d.calendar_date = a.calendar_date
+ and d.metric_type = a.metric_type
+where a.viewer_values_inconsistent
+   or a.old_summed_margin is distinct from d.new_deduped_sum_margin
+   or a.top_opponent_margin is distinct from d.new_deduped_sum_margin
+order by a.calendar_date desc, a.profile_id, a.metric_type;

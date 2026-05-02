@@ -2,7 +2,7 @@
 //  HomeBattleMarginChart.swift
 //  FitUp
 //
-//  Signed daily bars: net margin (you − opponent) summed across matches per calendar day.
+//  Signed daily bars: net sum of (you − opponent) across matches per calendar day (`home_daily_battle_margins`).
 //
 
 import Charts
@@ -57,7 +57,7 @@ struct HomeBattleMarginChart: View {
                 .clipShape(Capsule())
             }
 
-            Text("Net \(unitLabel) vs rivals · ahead up, behind down")
+            Text("Net \(unitLabel) across your matches · ahead up, behind down")
                 .font(FitUpFont.body(11, weight: .medium))
                 .foregroundStyle(
                     LinearGradient(
