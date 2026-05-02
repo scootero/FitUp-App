@@ -90,6 +90,9 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var battleStats = HealthBattleStats.empty
 
     @Published private(set) var activeMatchEdges: [HomeActiveMatch] = []
+    @Published private(set) var completedMatches: [ActivityCompletedMatch] = []
+    @Published private(set) var isLoadingCompletedMatches = false
+    @Published private(set) var hasLoadedCompletedMatches = false
 
     @Published private(set) var showSyncedBadge = false
     @Published private(set) var lastLoadFinishedAt: Date?
@@ -102,9 +105,11 @@ final class HealthViewModel: ObservableObject {
 
     private let battleStatsRepository = BattleStatsRepository()
     private let homeRepository = HomeRepository()
+    private let activityRepository = ActivityRepository()
 
     private var profileId: UUID?
     private var profileTimeZoneIdentifier: String?
+    private var completedMatchesTask: Task<Void, Never>?
 
     var selectedWeekComparison: HealthWeekComparison? {
         statsTab == .steps ? weekComparisonSteps : weekComparisonCalories
@@ -122,7 +127,15 @@ final class HealthViewModel: ObservableObject {
     }
 
     func start(profile: Profile?) {
-        profileId = profile?.id
+        let newProfileId = profile?.id
+        if profileId != newProfileId {
+            completedMatchesTask?.cancel()
+            completedMatchesTask = nil
+            completedMatches = []
+            isLoadingCompletedMatches = false
+            hasLoadedCompletedMatches = false
+        }
+        profileId = newProfileId
         profileTimeZoneIdentifier = profile?.timezone
         Task { await reload(source: "profile_task") }
     }
@@ -319,6 +332,33 @@ final class HealthViewModel: ObservableObject {
             userId: userId,
             metadata: meta
         )
+
+        if hasLoadedCompletedMatches {
+            await loadCompletedMatches(force: true)
+        }
+    }
+
+    func loadCompletedMatchesIfNeeded() async {
+        await loadCompletedMatches(force: false)
+    }
+
+    func loadCompletedMatches(force: Bool) async {
+        guard let userId = profileId else { return }
+        if isLoadingCompletedMatches { return }
+        if hasLoadedCompletedMatches, !force { return }
+        isLoadingCompletedMatches = true
+        defer { isLoadingCompletedMatches = false }
+
+        completedMatchesTask?.cancel()
+        completedMatchesTask = Task { [weak self] in
+            guard let self else { return }
+            let rows = await activityRepository.loadCompletedMatches(currentUserId: userId)
+            guard !Task.isCancelled else { return }
+            guard self.profileId == userId else { return }
+            self.completedMatches = rows
+            self.hasLoadedCompletedMatches = true
+        }
+        await completedMatchesTask?.value
     }
 
     private func resetHealthDisplayToEmpty() {

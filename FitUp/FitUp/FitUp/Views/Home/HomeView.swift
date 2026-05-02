@@ -21,6 +21,7 @@ struct HomeView: View {
     @State private var markReadTask: Task<Void, Never>?
     @State private var homeFirstRenderAt: Date?
     @State private var hasLoggedFirstRender = false
+    @State private var hasLoggedHeroFirstRender = false
     @State private var hasLoggedFirstDataLoaded = false
 
     var body: some View {
@@ -31,35 +32,45 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     header
 
-                    if viewModel.isInitialLoading {
-                        loadingSkeleton
+                    if viewModel.isHeroLoading {
+                        skeletonBlock(height: 212)
+                            .homeLiquidGlassCard(.base)
+                            .redacted(reason: .placeholder)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     } else {
                         HomeBattleHeroCard(
                             matches: viewModel.activeMatches,
                             selectedMetric: $viewModel.heroMetric
                         )
+                    }
 
-                        CompetitionEdgeTodaySection(matches: viewModel.activeMatches)
+                    CompetitionEdgeTodaySection(matches: viewModel.activeMatches)
 
-                        HomeBattleMarginChart(
-                            points: viewModel.dailyBattleMargins,
-                            unitLabel: viewModel.heroMetric.unitLabel,
-                            dayCount: viewModel.marginChartDayCount,
-                            onDayCountSelected: { n in
-                                Task { await viewModel.setMarginChartDayCount(n) }
-                            }
-                        )
-
-                        statsRow
-
-                        if let errorMessage = viewModel.errorMessage, !errorMessage.isEmpty {
-                            Text(errorMessage)
-                                .font(FitUpFont.body(12, weight: .semibold))
-                                .foregroundStyle(FitUpColors.Neon.pink)
-                                .padding(.horizontal, 2)
+                    HomeBattleMarginChart(
+                        points: viewModel.dailyBattleMargins,
+                        unitLabel: viewModel.heroMetric.unitLabel,
+                        dayCount: viewModel.marginChartDayCount,
+                        freshnessSavedAt: viewModel.battleMarginsSavedAt,
+                        isRefreshing: viewModel.isBattleMarginsRefreshing,
+                        onDayCountSelected: { n in
+                            Task { await viewModel.setMarginChartDayCount(n) }
                         }
+                    )
 
-                        // Stats -> Searching -> Pending -> Active Battles -> Past Matches -> Discover
+                    statsRow
+
+                    if let errorMessage = viewModel.errorMessage, !errorMessage.isEmpty {
+                        Text(errorMessage)
+                            .font(FitUpFont.body(12, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Neon.pink)
+                            .padding(.horizontal, 2)
+                    }
+
+                    if viewModel.isInitialLoading {
+                        deferredSectionsLoadingSkeleton
+                    } else {
+                        // Stats -> Searching -> Pending -> Active Battles -> Discover
                         if !viewModel.searchingRequests.isEmpty {
                             SearchingSection(
                                 requests: viewModel.searchingRequests,
@@ -96,13 +107,6 @@ struct HomeView: View {
                             matches: viewModel.activeMatches,
                             onOpenMatch: { match in
                                 onOpenMatchDetails(match.id, match.opponent.displayName)
-                            }
-                        )
-
-                        PastMatchesSection(
-                            matches: viewModel.completedMatches,
-                            onOpenMatch: { match in
-                                onOpenMatchDetails(match.id, match.opponentName)
                             }
                         )
 
@@ -201,8 +205,26 @@ struct HomeView: View {
             viewModel.syncHeroMetricWithActiveMatches()
         }
         .onChange(of: profile?.id) { _, _ in
+            hasLoggedHeroFirstRender = false
             hasLoggedFirstDataLoaded = false
             homeFirstRenderAt = Date()
+        }
+        .onChange(of: viewModel.isHeroLoading) { _, isHeroLoading in
+            guard !isHeroLoading, !hasLoggedHeroFirstRender else { return }
+            hasLoggedHeroFirstRender = true
+            let elapsedMs: Int
+            if let startedAt = homeFirstRenderAt {
+                elapsedMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
+            } else {
+                elapsedMs = 0
+            }
+            AppLogger.log(
+                category: "home_perf",
+                level: .info,
+                message: "hero_first_render",
+                userId: profile?.id,
+                metadata: ["elapsed_ms_from_first_render": "\(elapsedMs)"]
+            )
         }
         .onChange(of: viewModel.isInitialLoading) { _, isInitialLoading in
             guard !isInitialLoading, !hasLoggedFirstDataLoaded else { return }
@@ -316,8 +338,8 @@ struct HomeView: View {
 
     private var statsRow: some View {
         HStack(spacing: 10) {
-            statCell(value: "\(viewModel.stats.matchCount)", label: "Matches")
-            statCell(value: "\(viewModel.stats.winCount)", label: "Wins")
+            statCell(value: viewModel.stats.matchCountText, label: "Matches")
+            statCell(value: viewModel.stats.winCountText, label: "Wins")
             statCell(
                 value: viewModel.stats.winRateText,
                 label: "Win Rate",
@@ -466,6 +488,21 @@ struct HomeView: View {
 
             skeletonSectionTitle
             skeletonBlock(height: 84)
+                .homeLiquidGlassCard(.base)
+        }
+        .redacted(reason: .placeholder)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var deferredSectionsLoadingSkeleton: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            skeletonSectionTitle
+            skeletonBlock(height: 118)
+                .homeLiquidGlassCard(.base)
+
+            skeletonSectionTitle
+            skeletonBlock(height: 96)
                 .homeLiquidGlassCard(.base)
         }
         .redacted(reason: .placeholder)

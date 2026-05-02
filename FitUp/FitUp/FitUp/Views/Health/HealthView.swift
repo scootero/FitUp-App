@@ -10,9 +10,11 @@ import UIKit
 
 struct HealthView: View {
     let profile: Profile?
+    var onOpenMatchDetails: (UUID, String) -> Void
 
     @StateObject private var viewModel = HealthViewModel()
     @Environment(\.openURL) private var openURL
+    @State private var isPastMatchesExpanded = false
 
     var body: some View {
         ScrollView {
@@ -65,6 +67,22 @@ struct HealthView: View {
 
                 BattleStatsCard(stats: viewModel.battleStats)
                     .padding(.bottom, 14)
+
+                HealthPastMatchesCard(
+                    matches: viewModel.completedMatches,
+                    isExpanded: isPastMatchesExpanded,
+                    isLoading: viewModel.isLoadingCompletedMatches,
+                    onToggleExpanded: {
+                        isPastMatchesExpanded.toggle()
+                        if isPastMatchesExpanded {
+                            Task { await viewModel.loadCompletedMatchesIfNeeded() }
+                        }
+                    },
+                    onOpenMatch: { match in
+                        onOpenMatchDetails(match.id, match.opponentName)
+                    }
+                )
+                .padding(.bottom, 14)
 
                 healthSectionLabel("Sleep Quality")
                 HStack(alignment: .top, spacing: 10) {
@@ -158,6 +176,6 @@ struct HealthView: View {
 }
 
 #Preview {
-    HealthView(profile: nil)
+    HealthView(profile: nil, onOpenMatchDetails: { _, _ in })
         .background { BackgroundGradientView() }
 }

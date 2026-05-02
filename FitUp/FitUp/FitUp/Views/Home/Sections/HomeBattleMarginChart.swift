@@ -12,6 +12,8 @@ struct HomeBattleMarginChart: View {
     let points: [DailyBattleMargin]
     let unitLabel: String
     let dayCount: Int
+    var freshnessSavedAt: Date? = nil
+    var isRefreshing: Bool = false
     var onDayCountSelected: (Int) -> Void
 
     private let barWidth: CGFloat = 17
@@ -64,6 +66,14 @@ struct HomeBattleMarginChart: View {
                         endPoint: .trailing
                     )
                 )
+
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                if let freshnessText = freshnessText(now: context.date) {
+                    Text(freshnessText)
+                        .font(FitUpFont.body(11, weight: .medium))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                }
+            }
 
             if points.isEmpty {
                 Text("Margin history will show here once battle data syncs. Pull down to refresh.")
@@ -231,6 +241,20 @@ struct HomeBattleMarginChart: View {
         if t > -0.15 { return FitUpColors.Neon.purple.opacity(0.32) }
         if t > -0.5 { return FitUpColors.Neon.orange.opacity(0.56) }
         return FitUpColors.Neon.red.opacity(0.6)
+    }
+
+    private func freshnessText(now: Date) -> String? {
+        if isRefreshing {
+            return "Updating..."
+        }
+        guard let freshnessSavedAt else { return nil }
+        let delta = max(0, Int(now.timeIntervalSince(freshnessSavedAt)))
+        if delta < 60 { return "Updated just now" }
+        let minutes = delta / 60
+        if minutes < 60 { return "Updated \(minutes)m ago" }
+        let hours = minutes / 60
+        if hours < 24 { return "Updated \(hours)h ago" }
+        return "Updated yesterday"
     }
 }
 
