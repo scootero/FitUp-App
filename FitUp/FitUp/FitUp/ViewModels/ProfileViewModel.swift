@@ -57,7 +57,6 @@ final class ProfileViewModel: ObservableObject {
     // MARK: - Dependencies
 
     private let activityRepository = ActivityRepository()
-    private let leaderboardRepository = LeaderboardRepository()
     private let profileRepository = ProfileRepository()
 
     // MARK: - Load stats
@@ -67,21 +66,13 @@ final class ProfileViewModel: ObservableObject {
         isLoadingStats = true
         defer { isLoadingStats = false }
 
-        async let completedTask = activityRepository.loadCompletedMatches(currentUserId: userId)
-        async let leaderboardTask: [LeaderboardEntryRecord] = {
-            (try? await leaderboardRepository.fetchGlobalLeaderboard(
-                weekStart: LeaderboardRepository.weekStartUTC()
-            )) ?? []
-        }()
-
-        let completed = await completedTask
-        let leaderboard = await leaderboardTask
-        let myEntry = leaderboard.first { $0.userId == userId }
+        let completed = await activityRepository.loadCompletedMatches(currentUserId: userId)
+        let currentStreak = Self.currentWinStreak(from: completed)
 
         stats = ProfileStats(
             matchCount: completed.count,
             winCount: completed.filter(\.myWon).count,
-            streak: myEntry?.streak ?? 0
+            streak: currentStreak
         )
     }
 
@@ -108,5 +99,17 @@ final class ProfileViewModel: ObservableObject {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return (try? encoder.encode(logs)) ?? Data()
+    }
+
+    private static func currentWinStreak(from matches: [ActivityCompletedMatch]) -> Int {
+        var streak = 0
+        for match in matches {
+            if match.myWon {
+                streak += 1
+            } else {
+                break
+            }
+        }
+        return streak
     }
 }

@@ -101,7 +101,7 @@ struct LeaderboardView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Leaderboard")
+                Text("Weekly Steps")
                     .font(FitUpFont.display(22, weight: .heavy))
                     .foregroundStyle(FitUpColors.Text.primary)
                 Text(viewModel.weekRangeLabel)
@@ -109,7 +109,7 @@ struct LeaderboardView: View {
                     .foregroundStyle(FitUpColors.Text.secondary)
             }
             Spacer(minLength: 0)
-            NeonBadge(label: "LIVE", color: FitUpColors.Neon.green)
+            NeonBadge(label: "MON-SUN", color: FitUpColors.Neon.cyan)
         }
         .padding(.top, 10)
         .padding(.bottom, 14)
@@ -138,7 +138,7 @@ struct LeaderboardView: View {
     }
 
     private var emptyLeaderboardState: some View {
-        Text("No scores yet this week.")
+        Text(viewModel.tab == .friends ? "No friends have logged steps this week yet." : "No step totals yet this week.")
             .font(FitUpFont.body(14, weight: .medium))
             .foregroundStyle(FitUpColors.Text.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -164,13 +164,13 @@ struct LeaderboardView: View {
                 Text("You")
                     .font(FitUpFont.body(13, weight: .bold))
                     .foregroundStyle(FitUpColors.Neon.cyan)
-                Text("\(row.wins)W · \(row.losses)L · 🔥\(row.streak)")
+                Text("Weekly steps")
                     .font(FitUpFont.body(11, weight: .medium))
                     .foregroundStyle(FitUpColors.Text.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(formatPoints(row.points))
+            Text(formatSteps(row.totalSteps))
                 .font(FitUpFont.body(14, weight: .bold))
                 .foregroundStyle(FitUpColors.Neon.cyan)
         }
@@ -183,10 +183,11 @@ struct LeaderboardView: View {
         }
     }
 
-    private func formatPoints(_ value: Int) -> String {
+    private func formatSteps(_ value: Int) -> String {
         let f = NumberFormatter()
         f.numberStyle = .decimal
-        return f.string(from: NSNumber(value: value)) ?? "\(value)"
+        let formatted = f.string(from: NSNumber(value: value)) ?? "\(value)"
+        return "\(formatted) steps"
     }
 }
 

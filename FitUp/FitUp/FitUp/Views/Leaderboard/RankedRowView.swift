@@ -19,14 +19,6 @@ struct RankedRowView: View {
     let scrollGeo: GeometryProxy
     var onTap: () -> Void
 
-    private var subtitle: String {
-        var parts: [String] = ["\(row.wins)W · \(row.losses)L"]
-        if row.streak > 0 {
-            parts.append("🔥\(row.streak)")
-        }
-        return parts.joined(separator: " · ")
-    }
-
     var body: some View {
         Button {
             if !row.isCurrentUser {
@@ -51,13 +43,13 @@ struct RankedRowView: View {
                         .font(FitUpFont.body(13, weight: .bold))
                         .foregroundStyle(row.isCurrentUser ? FitUpColors.Neon.cyan : FitUpColors.Text.primary)
 
-                    Text(subtitle)
+                    Text("Weekly steps")
                         .font(FitUpFont.body(11, weight: .medium))
                         .foregroundStyle(FitUpColors.Text.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(formatPoints(row.points))
+                Text(formatSteps(row.totalSteps))
                     .font(FitUpFont.body(14, weight: .bold))
                     .foregroundStyle(row.isCurrentUser ? FitUpColors.Neon.cyan : FitUpColors.Text.primary)
             }
@@ -78,9 +70,10 @@ struct RankedRowView: View {
         }
     }
 
-    private func formatPoints(_ value: Int) -> String {
+    private func formatSteps(_ value: Int) -> String {
         let f = NumberFormatter()
         f.numberStyle = .decimal
-        return f.string(from: NSNumber(value: value)) ?? "\(value)"
+        let formatted = f.string(from: NSNumber(value: value)) ?? "\(value)"
+        return "\(formatted) steps"
     }
 }

@@ -9,12 +9,9 @@ import Foundation
 
 struct LeaderboardDisplayRow: Identifiable, Equatable {
     let id: UUID
-    /// Display order (1-based). Friends tab uses client recomputed ranks; global uses server rank when present.
+    /// Display order (1-based) returned by the weekly steps leaderboard source.
     let displayRank: Int
-    let points: Int
-    let wins: Int
-    let losses: Int
-    let streak: Int
+    let totalSteps: Int
     let displayName: String
     let initials: String
     /// Hex without `#`, same palette as `ProfileAccentColor`.

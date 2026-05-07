@@ -79,48 +79,24 @@ final class LeaderboardViewModel: ObservableObject {
                     return
                 }
 
-                var entries = try await repository.fetchGlobalLeaderboard(weekStart: weekStart)
-                let allowed = friendIds.union([profile.id])
-                entries = entries.filter { allowed.contains($0.userId) }
-                if !entries.contains(where: { $0.userId == profile.id }) {
-                    entries.append(
-                        LeaderboardEntryRecord(
-                            userId: profile.id,
-                            points: 0,
-                            wins: 0,
-                            losses: 0,
-                            streak: 0,
-                            rank: nil
-                        )
-                    )
-                }
-                entries.sort { $0.points > $1.points }
-                let shaped = try await mapToDisplayRows(
+                let entries = try await repository.fetchWeeklyStepsLeaderboard(
+                    weekStart: weekStart,
+                    scope: .friends
+                )
+                let shaped = mapToDisplayRows(
                     entries: entries,
-                    currentUserId: profile.id,
-                    reRankedFilterMode: true
+                    currentUserId: profile.id
                 )
                 splitPodiumAndList(shaped)
             } else {
                 friendsHasNoFriends = false
-                var entries = try await repository.fetchGlobalLeaderboard(weekStart: weekStart)
-                if !entries.contains(where: { $0.userId == profile.id }) {
-                    entries.append(
-                        LeaderboardEntryRecord(
-                            userId: profile.id,
-                            points: 0,
-                            wins: 0,
-                            losses: 0,
-                            streak: 0,
-                            rank: nil
-                        )
-                    )
-                }
-                entries.sort { Self.compareGlobal(a: $0, b: $1) }
-                let shaped = try await mapToDisplayRows(
+                let entries = try await repository.fetchWeeklyStepsLeaderboard(
+                    weekStart: weekStart,
+                    scope: .global
+                )
+                let shaped = mapToDisplayRows(
                     entries: entries,
-                    currentUserId: profile.id,
-                    reRankedFilterMode: false
+                    currentUserId: profile.id
                 )
                 splitPodiumAndList(shaped)
             }
@@ -148,58 +124,25 @@ final class LeaderboardViewModel: ObservableObject {
     }
 
     private func mapToDisplayRows(
-        entries: [LeaderboardEntryRecord],
-        currentUserId: UUID,
-        reRankedFilterMode: Bool
-    ) async throws -> [LeaderboardDisplayRow] {
-        let ids = entries.map(\.userId)
-        var profiles = try await repository.fetchProfiles(userIds: ids)
-
-        if profiles[currentUserId] == nil {
-            profiles[currentUserId] = LeaderboardProfileSummary(
-                id: currentUserId,
-                displayName: cachedProfile?.displayName ?? "You",
-                initials: cachedProfile?.initials ?? "YO"
-            )
-        }
-
-        var rows: [LeaderboardDisplayRow] = []
-        for (index, entry) in entries.enumerated() {
-            let rank = reRankedFilterMode ? (index + 1) : (entry.rank ?? (index + 1))
-            let summary = profiles[entry.userId]
-            let displayName = summary?.displayName ?? "Player"
-            let initials = summary?.initials ?? Self.initials(from: displayName)
+        entries: [WeeklyStepsLeaderboardRecord],
+        currentUserId: UUID
+    ) -> [LeaderboardDisplayRow] {
+        var rows: [LeaderboardDisplayRow] = entries.map { entry in
+            let displayName = entry.displayName
+            let initials = entry.initials.isEmpty ? Self.initials(from: displayName) : entry.initials
             let hex = ProfileAccentColor.hex(for: entry.userId)
-            rows.append(
-                LeaderboardDisplayRow(
-                    id: entry.userId,
-                    displayRank: rank,
-                    points: entry.points,
-                    wins: entry.wins,
-                    losses: entry.losses,
-                    streak: entry.streak,
-                    displayName: displayName,
-                    initials: initials,
-                    colorHex: hex,
-                    isCurrentUser: entry.userId == currentUserId
-                )
+            return LeaderboardDisplayRow(
+                id: entry.userId,
+                displayRank: entry.rank,
+                totalSteps: entry.totalSteps,
+                displayName: displayName,
+                initials: initials,
+                colorHex: hex,
+                isCurrentUser: entry.userId == currentUserId
             )
         }
+        rows.sort { $0.displayRank < $1.displayRank }
         return rows
-    }
-
-    private static func compareGlobal(a: LeaderboardEntryRecord, b: LeaderboardEntryRecord) -> Bool {
-        switch (a.rank, b.rank) {
-        case let (ra?, rb?):
-            if ra != rb { return ra < rb }
-            return a.points > b.points
-        case (_?, nil):
-            return true
-        case (nil, _?):
-            return false
-        case (nil, nil):
-            return a.points > b.points
-        }
     }
 
     private static func initials(from displayName: String) -> String {

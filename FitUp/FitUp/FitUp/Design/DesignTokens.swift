@@ -434,6 +434,68 @@ struct BackgroundGradientView: View {
     }
 }
 
+struct StaticPageGradientBackgroundView: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(rgb: 0x070B16),
+                    Color(rgb: 0x050814),
+                    Color(rgb: 0x03050D),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            FitUpColors.Neon.cyan.opacity(0.24),
+                            FitUpColors.Neon.blue.opacity(0.14),
+                            .clear,
+                        ],
+                        center: .center,
+                        startRadius: 8,
+                        endRadius: 240
+                    )
+                )
+                .frame(width: 380, height: 380)
+                .offset(x: -120, y: -300)
+                .blur(radius: 42)
+
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            FitUpColors.Neon.purple.opacity(0.22),
+                            FitUpColors.Neon.pink.opacity(0.12),
+                            .clear,
+                        ],
+                        center: .center,
+                        startRadius: 8,
+                        endRadius: 270
+                    )
+                )
+                .frame(width: 410, height: 410)
+                .offset(x: 160, y: 120)
+                .blur(radius: 50)
+
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.03), .clear, Color.black.opacity(0.12)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+        }
+        .overlay(Color.black.opacity(0.12))
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
 // MARK: - ScreenIn (0.26s ease)
 
 struct ScreenTransitionModifier: ViewModifier {

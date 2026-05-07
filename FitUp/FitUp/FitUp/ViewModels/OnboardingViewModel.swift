@@ -11,13 +11,13 @@ import Foundation
 @MainActor
 final class OnboardingViewModel: ObservableObject {
     enum Step {
-        case tutorial
-        case healthExplainer
-        case notificationExplainer
+        case hero
+        case howItWorks
+        case permissions
         case findFirstMatch
     }
 
-    @Published private(set) var step: Step = .tutorial
+    @Published private(set) var step: Step = .hero
     @Published private(set) var sevenDayStepAverage: Double?
     @Published private(set) var isLoadingAverage = false
     @Published private(set) var isAuthorizingHealth = false
@@ -39,18 +39,25 @@ final class OnboardingViewModel: ObservableObject {
         ProductAnalytics.track(ProductAnalytics.Event.onboardingStarted, userId: uid)
     }
 
-    func completeTutorialStep() {
+    func completeHeroStep() {
         ProductAnalytics.track(
             ProductAnalytics.Event.onboardingTutorialCompleted,
             userId: analyticsUserId
         )
-        step = .healthExplainer
+        step = .howItWorks
         errorMessage = nil
     }
 
-    func requestHealthPermission() async {
-        isAuthorizingHealth = true
+    func completeHowItWorksStep() {
+        step = .permissions
         errorMessage = nil
+    }
+
+    /// Requests Health, then notifications, on one conceptual step. Calls `onHealthPromptFinished` after the Health flow returns (for per-profile Health onboarding flag).
+    func runOnboardingPermissionsFlow(onHealthPromptFinished: @escaping () -> Void) async {
+        errorMessage = nil
+
+        isAuthorizingHealth = true
         defer { isAuthorizingHealth = false }
 
         ProductAnalytics.track(
@@ -91,13 +98,10 @@ final class OnboardingViewModel: ObservableObject {
             )
         }
 
+        onHealthPromptFinished()
         await refreshSevenDayStepAverage()
-        step = .notificationExplainer
-    }
 
-    func requestNotificationPermission() async {
         isAuthorizingNotifications = true
-        errorMessage = nil
         defer { isAuthorizingNotifications = false }
 
         do {

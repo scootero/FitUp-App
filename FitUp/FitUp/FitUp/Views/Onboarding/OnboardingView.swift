@@ -30,9 +30,9 @@ struct OnboardingView: View {
         .onChange(of: viewModel.step) { _, step in
             let stepKey: String
             switch step {
-            case .tutorial: stepKey = "tutorial"
-            case .healthExplainer: stepKey = "health_explainer"
-            case .notificationExplainer: stepKey = "notification_explainer"
+            case .hero: stepKey = "hero"
+            case .howItWorks: stepKey = "how_it_works"
+            case .permissions: stepKey = "permissions"
             case .findFirstMatch: stepKey = "find_first_match"
             }
             ProductAnalytics.track(
@@ -48,35 +48,26 @@ struct OnboardingView: View {
     @ViewBuilder
     private var content: some View {
         switch viewModel.step {
-        case .tutorial:
-            TutorialCardsView {
-                viewModel.completeTutorialStep()
+        case .hero:
+            OnboardingHeroView {
+                viewModel.completeHeroStep()
             }
-        case .healthExplainer:
-            PermissionExplainerView(
-                title: "Enable Apple Health",
-                bodyText: "FitUp needs access to steps, active calories, resting heart rate, and sleep to run fair matches.",
-                iconSystemName: "heart.text.square.fill",
-                buttonTitle: "Continue",
-                isWorking: viewModel.isAuthorizingHealth
-            ) {
-                Task {
-                    await viewModel.requestHealthPermission()
-                    sessionStore.markHealthKitPromptCompleted()
+        case .howItWorks:
+            OnboardingHowItWorksView {
+                viewModel.completeHowItWorksStep()
+            }
+        case .permissions:
+            OnboardingPermissionsView(
+                isRequestingHealth: viewModel.isAuthorizingHealth,
+                isRequestingNotifications: viewModel.isAuthorizingNotifications,
+                onContinue: {
+                    Task {
+                        await viewModel.runOnboardingPermissionsFlow {
+                            sessionStore.markHealthKitPromptCompleted()
+                        }
+                    }
                 }
-            }
-        case .notificationExplainer:
-            PermissionExplainerView(
-                title: "Enable Notifications",
-                bodyText: "Get notified when a match is found, when challenges update, and when each day is finalized.",
-                iconSystemName: "bell.badge.fill",
-                buttonTitle: "Continue",
-                isWorking: viewModel.isAuthorizingNotifications
-            ) {
-                Task {
-                    await viewModel.requestNotificationPermission()
-                }
-            }
+            )
         case .findFirstMatch:
             FindFirstMatchView(
                 sevenDayAverageSteps: viewModel.sevenDayStepAverage,

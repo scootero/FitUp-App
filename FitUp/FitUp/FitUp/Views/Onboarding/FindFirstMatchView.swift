@@ -19,11 +19,11 @@ struct FindFirstMatchView: View {
     var body: some View {
         VStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Find Your First Match")
+                Text("Start your first match")
                     .font(FitUpFont.display(26, weight: .black))
                     .foregroundStyle(FitUpColors.Text.primary)
 
-                Text("We use your real 7-day step average to find a fair first opponent.")
+                Text("We use your recent activity (like your 7-day step average) to match you with a fair first opponent.")
                     .font(FitUpFont.body(14, weight: .medium))
                     .foregroundStyle(FitUpColors.Text.secondary)
 
@@ -48,7 +48,7 @@ struct FindFirstMatchView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Button("Find Opponent") {
+            Button("Start My First Match") {
                 onFindOpponent()
             }
             .solidButton(color: FitUpColors.Neon.cyan)

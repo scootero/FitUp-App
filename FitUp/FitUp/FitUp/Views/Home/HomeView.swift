@@ -27,7 +27,7 @@ struct HomeView: View {
 
     var body: some View {
         ZStack {
-            homeBackdropTexture
+            StaticPageGradientBackgroundView()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -41,18 +41,27 @@ struct HomeView: View {
                             .accessibilityHidden(true)
                             .padding(.top, 10)
                     } else {
-                        HomeBattleHeroCard(
-                            matches: viewModel.activeMatches,
-                            selectedMetric: $viewModel.heroMetric
-                        )
-                        .padding(.top, 10)
+                        if let primaryMatch = viewModel.heroPrimaryStepMatch {
+                            Button {
+                                onOpenMatchDetails(primaryMatch.id, primaryMatch.opponent.displayName)
+                            } label: {
+                                HomeBattleHeroCard(
+                                    matches: viewModel.activeStepMatches
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, 10)
+                        } else {
+                            HomeBattleHeroCard(
+                                matches: viewModel.activeStepMatches
+                            )
+                            .padding(.top, 10)
+                        }
                     }
-
-                    CompetitionEdgeTodaySection(matches: viewModel.activeMatches)
 
                     HomeBattleMarginChart(
                         points: viewModel.dailyBattleMargins,
-                        unitLabel: viewModel.heroMetric.unitLabel,
+                        unitLabel: "steps",
                         dayCount: viewModel.marginChartDayCount,
                         freshnessSavedAt: viewModel.battleMarginsSavedAt,
                         isRefreshing: viewModel.isBattleMarginsRefreshing,
@@ -119,6 +128,7 @@ struct HomeView: View {
 
                         ActiveSection(
                             matches: viewModel.activeMatches,
+                            primaryStepMatchID: viewModel.heroPrimaryStepMatch?.id,
                             onOpenMatch: { match in
                                 onOpenMatchDetails(match.id, match.opponent.displayName)
                             }
@@ -499,10 +509,10 @@ struct HomeView: View {
 
     private var zeroState: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Ready for your first battle?")
+            Text("No battles yet")
                 .font(FitUpFont.display(24, weight: .black))
             .fitUpGlobalTitleStyle(weight: .black, tracking: 0.25)
-            Text("Your Searching, Active, Pending, and Discover sections are empty. Start by creating a challenge.")
+            Text("Start a match to compete today.")
                 .font(FitUpFont.body(14, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
             Button("Find Your First Match") {
@@ -780,108 +790,6 @@ struct HomeView: View {
         }
     }
 
-    private var homeBackdropTexture: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(rgb: 0x050711),
-                    Color(rgb: 0x060A16),
-                    Color(rgb: 0x04050C),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            FitUpColors.Neon.cyan.opacity(0.34),
-                            FitUpColors.Neon.blue.opacity(0.2),
-                            .clear,
-                        ],
-                        center: .center,
-                        startRadius: 8,
-                        endRadius: 230
-                    )
-                )
-                .frame(width: 360, height: 360)
-                .offset(x: -120, y: -280)
-                .blur(radius: 34)
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            FitUpColors.Neon.red.opacity(0.28),
-                            FitUpColors.Neon.purple.opacity(0.18),
-                            .clear,
-                        ],
-                        center: .center,
-                        startRadius: 10,
-                        endRadius: 250
-                    )
-                )
-                .frame(width: 390, height: 390)
-                .offset(x: 150, y: 120)
-                .blur(radius: 44)
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            FitUpColors.Neon.blue.opacity(0.24),
-                            .clear,
-                        ],
-                        center: .center,
-                        startRadius: 10,
-                        endRadius: 260
-                    )
-                )
-                .frame(width: 410, height: 410)
-                .offset(x: 120, y: -220)
-                .blur(radius: 54)
-
-            Rectangle()
-                .fill(Color.white.opacity(0.05))
-                .mask(
-                    LinearGradient(
-                        colors: [.clear, .white, .clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .blur(radius: 30)
-                .opacity(0.28)
-
-            Canvas { context, size in
-                let dotCount = 90
-                for i in 0..<dotCount {
-                    let x = CGFloat((i * 97) % 1000) / 1000 * size.width
-                    let y = CGFloat((i * 57) % 1000) / 1000 * size.height
-                    let radius = CGFloat((i % 3) + 1)
-                    let alpha = 0.012 + (Double((i * 13) % 7) * 0.003)
-                    let rect = CGRect(x: x, y: y, width: radius, height: radius)
-                    context.fill(Path(ellipseIn: rect), with: .color(Color.white.opacity(alpha)))
-                }
-            }
-            .blendMode(.softLight)
-            .opacity(0.22)
-
-            Rectangle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color.clear, Color.black.opacity(0.34)],
-                        center: .center,
-                        startRadius: 140,
-                        endRadius: 600
-                    )
-                )
-        }
-        .overlay(Color.black.opacity(0.16))
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-    }
 }
 
 // MARK: - Challenge declined toast (retro)

@@ -23,12 +23,6 @@ struct SportStepView: View {
                     description: "Daily step count battle",
                     color: FitUpColors.Neon.cyan
                 )
-                sportCard(
-                    metric: .activeCalories,
-                    icon: "flame.fill",
-                    description: "Active calorie burn-off",
-                    color: FitUpColors.Neon.orange
-                )
             }
         }
     }

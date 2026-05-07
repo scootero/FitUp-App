@@ -9,22 +9,22 @@ import Combine
 import Foundation
 import Supabase
 
-struct LeaderboardEntryRecord: Equatable {
+struct WeeklyStepsLeaderboardRecord: Equatable {
     let userId: UUID
-    let points: Int
-    let wins: Int
-    let losses: Int
-    let streak: Int
-    let rank: Int?
-}
-
-struct LeaderboardProfileSummary: Equatable {
-    let id: UUID
+    let weekStart: Date?
+    let weekEnd: Date?
+    let totalSteps: Int
+    let rank: Int
     let displayName: String
     let initials: String
 }
 
 final class LeaderboardRepository {
+    enum LeaderboardScope: String {
+        case global
+        case friends
+    }
+
     private var client: SupabaseClient {
         get throws {
             guard let client = SupabaseProvider.client else {
@@ -59,51 +59,33 @@ final class LeaderboardRepository {
 
     // MARK: - Public
 
-    func fetchGlobalLeaderboard(weekStart: Date) async throws -> [LeaderboardEntryRecord] {
+    func fetchWeeklyStepsLeaderboard(
+        weekStart: Date,
+        scope: LeaderboardScope,
+        limit: Int = 100
+    ) async throws -> [WeeklyStepsLeaderboardRecord] {
         let c = try client
-        let iso = Self.weekStartISOString(from: weekStart)
-        let response = try await c
-            .from("leaderboard_entries")
-            .select("user_id, points, wins, losses, streak, rank")
-            .eq("week_start", value: iso)
-            .order("points", ascending: false)
+        let params = WeeklyStepsLeaderboardRPCParams(
+            p_week_start: Self.weekStartISOString(from: weekStart),
+            p_limit: max(1, limit),
+            p_scope: scope.rawValue
+        )
+        let response: PostgrestResponse<[WeeklyStepsLeaderboardRPCRow]> = try await c
+            .rpc("weekly_steps_leaderboard", params: params)
             .execute()
-
-        return jsonRows(from: response.data).compactMap { row in
-            guard let userId = uuid(from: row["user_id"]) else { return nil }
-            return LeaderboardEntryRecord(
-                userId: userId,
-                points: int(from: row["points"]) ?? 0,
-                wins: int(from: row["wins"]) ?? 0,
-                losses: int(from: row["losses"]) ?? 0,
-                streak: int(from: row["streak"]) ?? 0,
-                rank: int(from: row["rank"])
+        return response.value.map { row in
+            let safeName = row.display_name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let safeInitials = row.initials.trimmingCharacters(in: .whitespacesAndNewlines)
+            return WeeklyStepsLeaderboardRecord(
+                userId: row.user_id,
+                weekStart: Self.dateFromISODate(row.week_start),
+                weekEnd: Self.dateFromISODate(row.week_end),
+                totalSteps: Int(clamping: row.total_steps),
+                rank: row.rank,
+                displayName: safeName.isEmpty ? "Player" : safeName,
+                initials: safeInitials.isEmpty ? "PL" : safeInitials.uppercased()
             )
         }
-    }
-
-    func fetchProfiles(userIds: [UUID]) async throws -> [UUID: LeaderboardProfileSummary] {
-        guard !userIds.isEmpty else { return [:] }
-        let c = try client
-        let unique = Array(Set(userIds))
-        let response = try await c
-            .from("profiles")
-            .select("id, display_name, initials")
-            .in("id", values: unique.map { $0 })
-            .execute()
-
-        var map: [UUID: LeaderboardProfileSummary] = [:]
-        for row in jsonRows(from: response.data) {
-            guard let id = uuid(from: row["id"]) else { continue }
-            let name = string(from: row["display_name"])?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let initials = string(from: row["initials"])?.trimmingCharacters(in: .whitespacesAndNewlines)
-            map[id] = LeaderboardProfileSummary(
-                id: id,
-                displayName: (name?.isEmpty == false) ? name! : "Player",
-                initials: (initials?.isEmpty == false) ? initials!.uppercased() : "PL"
-            )
-        }
-        return map
     }
 
     /// Opponents = distinct other `user_id` on any `match_participants` row sharing a match with the current user.
@@ -151,6 +133,11 @@ final class LeaderboardRepository {
         return peers
     }
 
+    private static func dateFromISODate(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        return isoDayFormatter.date(from: value)
+    }
+
     // MARK: - JSON helpers
 
     private func jsonRows(from data: Data) -> [[String: Any]] {
@@ -169,16 +156,43 @@ final class LeaderboardRepository {
         return nil
     }
 
-    private func string(from value: Any?) -> String? {
-        value as? String
+    private static let isoDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
+
+private struct WeeklyStepsLeaderboardRPCParams: Sendable {
+    let p_week_start: String
+    let p_limit: Int
+    let p_scope: String
+}
+
+extension WeeklyStepsLeaderboardRPCParams: Encodable {
+    nonisolated func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(p_week_start, forKey: .p_week_start)
+        try c.encode(p_limit, forKey: .p_limit)
+        try c.encode(p_scope, forKey: .p_scope)
     }
 
-    private func int(from value: Any?) -> Int? {
-        if let intValue = value as? Int { return intValue }
-        if let doubleValue = value as? Double { return Int(doubleValue.rounded()) }
-        if let text = value as? String, let doubleValue = Double(text) {
-            return Int(doubleValue.rounded())
-        }
-        return nil
+    enum CodingKeys: String, CodingKey {
+        case p_week_start
+        case p_limit
+        case p_scope
     }
+}
+
+private struct WeeklyStepsLeaderboardRPCRow: Decodable, Sendable {
+    let user_id: UUID
+    let display_name: String
+    let initials: String
+    let week_start: String?
+    let week_end: String?
+    let total_steps: Int64
+    let rank: Int
 }

@@ -49,7 +49,7 @@ final class HomeViewModel: ObservableObject {
     /// Incoming friend request from DB poll (not from push) — shown when not dismissed and no duplicate push banner.
     @Published private(set) var polledIncomingFriend: (peerId: UUID, fromName: String)?
     @Published private(set) var isFriendRequestActionLoading = false
-    /// Steps vs calories for the home hero and margin chart (bound to `HomeBattleHeroCard`).
+    /// Home hero stack is steps-only in this slice; kept for cache/logging compatibility.
     @Published var heroMetric: HomeBattleHeroCard.HeroMetric = .steps
     @Published private(set) var dailyBattleMargins: [DailyBattleMargin] = []
     @Published private(set) var isBattleMarginsRefreshing = false
@@ -67,10 +67,27 @@ final class HomeViewModel: ObservableObject {
             || !discoverUsers.isEmpty
     }
 
+    var activeStepMatches: [HomeActiveMatch] {
+        activeMatches.filter { normalizedHeroMetricType($0.metricType) == HomeBattleHeroCard.HeroMetric.steps.metricType }
+    }
+
+    var heroPrimaryStepMatch: HomeActiveMatch? {
+        let stepMatches = activeStepMatches
+        guard !stepMatches.isEmpty else { return nil }
+        let myTopScore = stepMatches.map(\.myToday).max() ?? 0
+        let closestAhead = stepMatches
+            .filter { $0.theirToday > myTopScore }
+            .min(by: { ($0.theirToday - myTopScore) < ($1.theirToday - myTopScore) })
+        let closestBehind = stepMatches
+            .filter { $0.theirToday <= myTopScore }
+            .max(by: { $0.theirToday < $1.theirToday })
+        let topOpponent = stepMatches.max(by: { $0.theirToday < $1.theirToday })
+        return closestAhead ?? closestBehind ?? topOpponent
+    }
+
     private let repository = HomeRepository()
     private let activityRepository = ActivityRepository()
     private let friendshipRepository = FriendshipRepository()
-    private let leaderboardRepository = LeaderboardRepository()
     private let snapshotCacheStore = HomeSnapshotCacheStore()
     private let battleStatsCacheStore = HomeBattleStatsCacheStore()
     private let marginsCacheStore = HomeDailyBattleMarginsCacheStore()
@@ -317,16 +334,7 @@ final class HomeViewModel: ObservableObject {
     }
 
     func syncHeroMetricWithActiveMatches() {
-        let hasSteps = activeMatches.contains { $0.metricType != "active_calories" }
-        let hasCalories = activeMatches.contains { $0.metricType == "active_calories" }
-        if hasSteps, hasCalories { return }
-        if hasSteps {
-            heroMetric = .steps
-        } else if hasCalories {
-            heroMetric = .calories
-        } else {
-            heroMetric = .steps
-        }
+        heroMetric = .steps
     }
 
     func setMarginChartDayCount(_ n: Int) async {
@@ -359,7 +367,7 @@ final class HomeViewModel: ObservableObject {
         let rows = await repository.fetchDailyBattleMargins(
             endDate: Date(),
             dayCount: marginChartDayCount,
-            metricType: heroMetric.metricType,
+            metricType: HomeBattleHeroCard.HeroMetric.steps.metricType,
             profileTimeZoneIdentifier: profileTimeZoneIdentifier
         )
         guard !Task.isCancelled, self.userId == userId, generation == marginsRefreshGeneration else { return }
@@ -373,7 +381,7 @@ final class HomeViewModel: ObservableObject {
         let todayRpcMargin = rows.first(where: { $0.calendarDate == todayKey })?.margin ?? 0
         var seenMatchIds = Set<UUID>()
         let todayLocalEdgeSum = activeMatches
-            .filter { $0.metricType == heroMetric.metricType }
+            .filter { normalizedHeroMetricType($0.metricType) == HomeBattleHeroCard.HeroMetric.steps.metricType }
             .filter { seenMatchIds.insert($0.id).inserted }
             .reduce(0) { $0 + ($1.myToday - $1.theirToday) }
         AppLogger.log(
@@ -382,7 +390,7 @@ final class HomeViewModel: ObservableObject {
             message: "home_daily_battle_margins debug",
             userId: userId,
             metadata: [
-                "metric_type": heroMetric.metricType,
+                "metric_type": HomeBattleHeroCard.HeroMetric.steps.metricType,
                 "day_count": String(marginChartDayCount),
                 "series": series,
                 "today_key": todayKey,
@@ -396,7 +404,7 @@ final class HomeViewModel: ObservableObject {
         let cached = marginsCacheStore.makeCached(
             profileId: userId,
             profileTimeZoneIdentifier: profileTimeZoneIdentifier,
-            metricKey: heroMetric.metricType,
+            metricKey: HomeBattleHeroCard.HeroMetric.steps.metricType,
             dayCount: marginChartDayCount,
             rows: rows,
             savedAt: savedAt
@@ -435,7 +443,7 @@ final class HomeViewModel: ObservableObject {
                 polledIncomingFriend = nil
                 return
             }
-            let map = try await leaderboardRepository.fetchProfiles(userIds: [peer])
+            let map = try await friendshipRepository.fetchPeerProfileSummaries(profileIds: [peer])
             let name = map[peer]?.displayName ?? "Player"
             polledIncomingFriend = (peer, name)
         } catch {
@@ -453,7 +461,7 @@ final class HomeViewModel: ObservableObject {
 
     func makePrefillForPeer(_ peerId: UUID) async -> ChallengePrefillOpponent? {
         do {
-            let map = try await leaderboardRepository.fetchProfiles(userIds: [peerId])
+            let map = try await friendshipRepository.fetchPeerProfileSummaries(profileIds: [peerId])
             let s = map[peerId]
             let name = s?.displayName ?? "Player"
             let ini = s?.initials ?? String(name.prefix(2)).uppercased()
@@ -668,7 +676,7 @@ final class HomeViewModel: ObservableObject {
         guard let cached = marginsCacheStore.load(
             profileId: profileId,
             profileTimeZoneIdentifier: profileTimeZoneIdentifier,
-            metricKey: heroMetric.metricType,
+            metricKey: HomeBattleHeroCard.HeroMetric.steps.metricType,
             dayCount: marginChartDayCount
         ) else { return false }
         dailyBattleMargins = cached.rows.map {
@@ -860,7 +868,7 @@ final class HomeViewModel: ObservableObject {
             return
         }
 
-        heroMetric = snapshotCacheStore.heroMetric(from: cached)
+        heroMetric = .steps
         activeMatches = applyHealthKitOverrides(to: snapshotCacheStore.toDomain(cached))
         syncHeroMetricWithActiveMatches()
         isHeroLoading = false

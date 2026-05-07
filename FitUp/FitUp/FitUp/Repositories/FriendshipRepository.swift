@@ -42,6 +42,12 @@ struct SuggestedOpponentItem: Identifiable, Equatable {
     let colorHex: String
 }
 
+/// Display fields from `profiles` for arbitrary peer ids (e.g. friend request banner, challenge prefill).
+struct PeerProfileSummary: Equatable, Sendable {
+    let displayName: String
+    let initials: String
+}
+
 enum FriendshipRepositoryError: LocalizedError {
     case supabaseNotConfigured
     case unexpectedResponse
@@ -241,6 +247,13 @@ final class FriendshipRepository {
     /// Resolves a_ids / b_ids for a peer (for accept/remove).
     func canonicalPair(currentProfileId: UUID, peerId: UUID) -> (UUID, UUID) {
         Self.orderedPair(currentProfileId, peerId)
+    }
+
+    /// Batch-load `display_name` / `initials` from `profiles` by primary key `id`.
+    func fetchPeerProfileSummaries(profileIds: [UUID]) async throws -> [UUID: PeerProfileSummary] {
+        let c = try client
+        let map = try await fetchProfilesMap(ids: profileIds, client: c)
+        return map.mapValues { PeerProfileSummary(displayName: $0.displayName, initials: $0.initials) }
     }
 
     // MARK: - Private

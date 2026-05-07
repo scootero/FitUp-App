@@ -108,9 +108,7 @@ final class HomeSnapshotCacheStore {
     }
 
     func heroMetric(from snapshot: CachedHomeSnapshot) -> HomeBattleHeroCard.HeroMetric {
-        if snapshot.heroMetric == HomeBattleHeroCard.HeroMetric.calories.rawValue {
-            return .calories
-        }
+        _ = snapshot
         return .steps
     }
 

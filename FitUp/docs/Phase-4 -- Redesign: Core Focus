@@ -1,0 +1,245 @@
+# FitUp — Redesign: Core Focus
+
+## 🎯 Objective
+Refocus the app around a **single, addictive daily competition loop**:
+> “Am I winning or losing today vs my opponent?”
+
+Optimize for:
+- Instant clarity (≤ 3 seconds)
+- Daily habit formation
+- Clean, Apple-featured-level UX
+
+---
+
+# 🧠 Core Product Principles
+
+- One primary focus per screen
+- One dominant action per session
+- Hide complexity, don’t remove it
+- Competition > wellness
+- Daily loop > long-term analytics
+
+---
+
+# 🏠 HOME (Primary Screen) — REDESIGN
+
+## Goal
+Make Home feel like a **game screen**, not a dashboard.
+
+## Structure
+
+### 1. Hero Match (80% of screen)
+- Large circular gauge
+- Show:
+  - Step difference (e.g. `+193`)
+  - Status: `YOU’RE WINNING` / `LOSING`
+- Subtext:
+  - Opponent name
+  - “Ahead by X steps”
+
+### 2. Dynamic CTA (Required)
+- If winning → “Keep your lead”
+- If losing → “Walk X steps to take the lead”
+
+### 3. Secondary Matches (Optional, small)
+- Label: “Other Battles”
+- Compact list:
+  - Opponent + +/- value only
+- No charts, no extra data
+
+---
+
+## REMOVE from Home
+- ❌ Readiness
+- ❌ Sleep
+- ❌ Charts
+- ❌ Deep stats
+- ❌ Multi-section scrolling
+- ❌ “Competition Edge Today” wording (simplify to “Today”)
+
+---
+
+# ⚔️ MATCH SYSTEM
+
+## v1 Rules
+- Steps ONLY (no calories)
+- 1 primary visible match
+- Multi-match supported (background), but not equally surfaced
+
+## Multi-Day Matches
+- Keep internally
+- Surface:
+  - “Day X of Y”
+  - Daily win/loss
+  - Match score (e.g. 1–0)
+
+---
+
+## DO NOT ADD (YET)
+- ❌ 2v2 matches
+- ❌ Team battles
+- ❌ Match types (calories vs steps)
+
+---
+
+# 📊 STATS TAB (Replace Health Tab)
+
+## Goal
+Simple, addictive, brag-worthy stats
+
+## Show ONLY:
+- Win rate (%)
+- Total matches
+- Current streak
+- Top rival (most played)
+- (Optional) Total steps in matches
+
+## Avoid:
+- ❌ Complex breakdowns
+- ❌ Over-analysis
+- ❌ Multi-graph screens
+
+---
+
+# 🏆 LEADERBOARD
+
+## Structure
+
+### Friends Tab (Primary)
+- Weekly ranking (Mon–Sun)
+- Sorted by total steps
+- Only users with data shown
+
+### Global Tab (Secondary)
+- Same logic, all users
+
+---
+
+## Empty State
+- “No data yet — start a match”
+- CTA: Invite / Challenge
+
+---
+
+# 🔔 NOTIFICATIONS (CRITICAL)
+
+## Required Triggers
+
+- “You just got passed by [Name]”
+- “You’re 150 steps away from winning”
+- “You won today”
+- “Final day — you’re ahead”
+- “New challenge from [Name]”
+
+## Notes
+- Drive urgency + emotion
+- Avoid spam
+- Tie directly to match state
+
+---
+
+# 🚀 ONBOARDING
+
+## Goal
+User in first match within **< 2 minutes**
+
+## Flow
+1. Enter name
+2. HealthKit permission
+3. Immediately:
+   - Start bot match OR
+   - Prompt to invite friend
+
+## Remove:
+- ❌ Multi-step explanations
+- ❌ Delayed match start
+
+---
+
+# ⚠️ CRITICAL FIXES (Pre-TestFlight)
+
+- Fix duplicate match cards
+- Fix WINNING / LOSING logic
+- Fix missing data (“--steps”)
+- Sync stats across screens
+- Ensure leaderboard not empty/broken
+
+---
+
+# 💰 MONETIZATION
+
+## Strategy
+- Free: 1 active match
+- Paid: multiple matches
+
+## UI Rule
+- Always emphasize ONE primary match
+
+---
+
+# 📱 APP STRUCTURE
+
+## Tabs
+
+1. Home
+   - Primary match focus
+
+2. Battles
+   - All matches + history
+
+3. Stats
+   - User performance
+
+4. Leaderboard
+   - Weekly rankings
+
+5. Profile
+   - Settings / subscription
+
+---
+
+# ❌ DO NOT BUILD (YET)
+
+- Rewards / badges / streak systems (beyond simple streak)
+- Chat / messaging
+- AI recommendations
+- Calories tracking
+- Deep analytics
+- Social feeds
+
+---
+
+# 🧩 SUCCESS METRICS (TestFlight)
+
+- Time to first match < 2 min
+- % users who complete 1 match
+- % users who return next day
+- % users who invite a friend
+- Daily opens per user
+
+---
+
+# 🧠 FINAL PRINCIPLE
+
+> This is not a fitness tracker  
+> This is a **daily competition game**
+
+---
+
+# 🏁 SUMMARY
+
+Focus on:
+- Clarity
+- Simplicity
+- One core loop
+
+Defer:
+- Complexity
+- Expansion
+- Feature depth
+
+---
+
+# 🔑 NORTH STAR
+
+> “Make it the easiest and most addictive way to compete with one friend on steps, daily.”

@@ -321,7 +321,7 @@ struct ChallengeFlowView: View {
         }
 
         if let prefilledMetric = launchContext.prefilledMetric {
-            selectedMetric = prefilledMetric
+            selectedMetric = prefilledMetric == .activeCalories ? .steps : prefilledMetric
         }
         if let prefilledFormat = launchContext.prefilledFormat {
             selectedFormat = prefilledFormat

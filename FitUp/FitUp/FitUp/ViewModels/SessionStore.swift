@@ -19,7 +19,8 @@ final class SessionStore: ObservableObject {
     @Published private(set) var postAuthNameFieldPrefill: String?
     /// When `true`, the post-auth display name step is done (or not applicable). When `false` and authenticated, show `PostAuthDisplayNameView`.
     @Published private(set) var postAuthDisplayNameStepComplete: Bool = true
-    @Published private(set) var isOnboardingComplete = UserDefaults.standard.bool(forKey: "onboardingComplete")
+    /// Per-profile completion in `UserDefaults` (`fitup.onboardingComplete.<profileId>`). False until a profile is restored.
+    @Published private(set) var isOnboardingComplete = false
     /// Per-profile: user finished the onboarding Health authorization step (sheet dismissed).
     @Published private(set) var healthKitPromptCompleted = false
     @Published private(set) var showSearchingCardOnHome = false
@@ -46,7 +47,14 @@ final class SessionStore: ObservableObject {
 
     private let profileRepository = ProfileRepository()
 
-    private static let onboardingKey = "onboardingComplete"
+    /// Legacy global key (pre–per-profile). Migrated only for profiles created before the v2 install anchor.
+    private static let legacyOnboardingCompleteKey = "onboardingComplete"
+    /// First time this app version registers `SessionStore`; used so new accounts after install do not inherit legacy onboarding.
+    private static let onboardingV2InstallAnchorKey = "fitup.onboardingV2InstallAnchor"
+
+    private static func onboardingCompleteKey(profileId: UUID) -> String {
+        "fitup.onboardingComplete.\(profileId.uuidString)"
+    }
 
     private static func postAuthDisplayNameKey(profileId: UUID) -> String {
         "fitup.postAuthDisplayNameComplete.\(profileId.uuidString)"
@@ -57,7 +65,79 @@ final class SessionStore: ObservableObject {
     }
 
     init() {
+        Self.registerOnboardingV2InstallAnchorIfNeeded()
         Task { await restoreSession() }
+    }
+
+    private static func registerOnboardingV2InstallAnchorIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: onboardingV2InstallAnchorKey) == nil else { return }
+        defaults.set(Date().timeIntervalSince1970, forKey: onboardingV2InstallAnchorKey)
+    }
+
+    /// Debug-friendly root routing snapshot (Auth vs name vs onboarding vs tabs).
+    func logSessionRoutingDecision(reason: String) {
+        let route: String
+        if !isAuthenticated {
+            route = "auth"
+        } else if !postAuthDisplayNameStepComplete {
+            route = "post_auth_display_name"
+        } else if !isOnboardingComplete {
+            route = "onboarding"
+        } else {
+            route = "main_tabs"
+        }
+        var metadata: [String: String] = [
+            "reason": reason,
+            "route": route,
+            "authenticated": String(isAuthenticated),
+            "post_auth_name_complete": String(postAuthDisplayNameStepComplete),
+            "onboarding_complete": String(isOnboardingComplete),
+            "health_kit_prompt_complete": String(healthKitPromptCompleted),
+        ]
+        if let p = currentProfile {
+            metadata["profile_id"] = p.id.uuidString
+            metadata["auth_user_id"] = p.authUserId.uuidString
+        }
+        AppLogger.log(category: "session_routing", level: .debug, message: "root_route", metadata: metadata)
+    }
+
+    private func migrateLegacyOnboardingIfNeeded(for profile: Profile) {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: Self.legacyOnboardingCompleteKey) else { return }
+
+        let perKey = Self.onboardingCompleteKey(profileId: profile.id)
+        if defaults.object(forKey: perKey) != nil {
+            if defaults.bool(forKey: perKey) {
+                defaults.removeObject(forKey: Self.legacyOnboardingCompleteKey)
+            }
+            return
+        }
+
+        let anchorTs = defaults.double(forKey: Self.onboardingV2InstallAnchorKey)
+        guard anchorTs > 0 else { return }
+        let anchor = Date(timeIntervalSince1970: anchorTs)
+        guard profile.createdAt < anchor else { return }
+
+        defaults.set(true, forKey: perKey)
+        defaults.removeObject(forKey: Self.legacyOnboardingCompleteKey)
+        let createdISO = ISO8601DateFormatter().string(from: profile.createdAt)
+        AppLogger.log(
+            category: "session_routing",
+            level: .info,
+            message: "onboarding_legacy_migrated_to_per_profile",
+            userId: profile.id,
+            metadata: [
+                "auth_user_id": profile.authUserId.uuidString,
+                "profile_created_at": createdISO,
+            ]
+        )
+    }
+
+    private func syncOnboardingCompletionState(for profile: Profile) {
+        migrateLegacyOnboardingIfNeeded(for: profile)
+        let perKey = Self.onboardingCompleteKey(profileId: profile.id)
+        isOnboardingComplete = UserDefaults.standard.bool(forKey: perKey)
     }
 
     func restoreSession() async {
@@ -69,8 +149,10 @@ final class SessionStore: ObservableObject {
             currentProfile = nil
             postAuthNameFieldPrefill = nil
             postAuthDisplayNameStepComplete = true
+            isOnboardingComplete = false
             isLoadingSession = false
             AppLogger.log(category: "auth", level: .warning, message: "session restore skipped: Supabase client missing")
+            logSessionRoutingDecision(reason: "supabase_client_missing")
             return
         }
 
@@ -84,6 +166,7 @@ final class SessionStore: ObservableObject {
                 showSearchingCardOnHome = false
                 syncHealthKitPromptCompletedFromDefaults()
                 applyPostAuthDisplayNameStateAfterRestore(profile: profile)
+                syncOnboardingCompletionState(for: profile)
                 ProductAnalytics.track(
                     ProductAnalytics.Event.sessionRestored,
                     userId: currentProfile?.id
@@ -113,6 +196,7 @@ final class SessionStore: ObservableObject {
                 healthKitPromptCompleted = false
                 postAuthNameFieldPrefill = nil
                 postAuthDisplayNameStepComplete = true
+                isOnboardingComplete = false
             }
         } catch {
             isAuthenticated = false
@@ -124,10 +208,12 @@ final class SessionStore: ObservableObject {
             healthKitPromptCompleted = false
             postAuthNameFieldPrefill = nil
             postAuthDisplayNameStepComplete = true
+            isOnboardingComplete = false
             AppLogger.log(category: "auth", level: .debug, message: "no active session on launch")
         }
 
         isLoadingSession = false
+        logSessionRoutingDecision(reason: "restore_session_finished")
     }
 
     func signInWithEmail(email: String, password: String) async {
@@ -160,6 +246,7 @@ final class SessionStore: ObservableObject {
             isAuthenticated = true
             syncHealthKitPromptCompletedFromDefaults()
             if let profile = currentProfile {
+                syncOnboardingCompletionState(for: profile)
                 requirePostAuthDisplayNameConfirmation(
                     for: profile,
                     prefill: displayName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -175,10 +262,13 @@ final class SessionStore: ObservableObject {
         } catch {
             authErrorMessage = error.localizedDescription
             isAuthenticated = false
+            currentProfile = nil
             postAuthNameFieldPrefill = nil
             postAuthDisplayNameStepComplete = true
+            isOnboardingComplete = false
             AppLogger.log(category: "auth", level: .error, message: "email sign-up failed", metadata: ["error": error.localizedDescription])
         }
+        logSessionRoutingDecision(reason: "sign_up_finished")
     }
 
     func signInWithApple(idToken: String, preferredDisplayName: String? = nil) async {
@@ -198,6 +288,7 @@ final class SessionStore: ObservableObject {
             isAuthenticated = true
             syncHealthKitPromptCompletedFromDefaults()
             if let profile = currentProfile {
+                syncOnboardingCompletionState(for: profile)
                 if profileExistedBefore {
                     applyPostAuthDisplayNameStateAfterRestore(profile: profile)
                 } else {
@@ -219,6 +310,7 @@ final class SessionStore: ObservableObject {
             authErrorMessage = error.localizedDescription
             AppLogger.log(category: "auth", level: .error, message: "apple sign-in failed", metadata: ["error": error.localizedDescription])
         }
+        logSessionRoutingDecision(reason: "sign_in_apple_finished")
     }
 
     func signOut() async {
@@ -239,6 +331,7 @@ final class SessionStore: ObservableObject {
             healthKitPromptCompleted = false
             postAuthNameFieldPrefill = nil
             postAuthDisplayNameStepComplete = true
+            isOnboardingComplete = false
             if let signedOutUserId {
                 ProductAnalytics.track(ProductAnalytics.Event.authSignOut, userId: signedOutUserId)
             }
@@ -246,24 +339,33 @@ final class SessionStore: ObservableObject {
             authErrorMessage = error.localizedDescription
             AppLogger.log(category: "auth", level: .error, message: "sign-out failed", metadata: ["error": error.localizedDescription])
         }
+        logSessionRoutingDecision(reason: "sign_out")
     }
 
     func markOnboardingComplete() {
-        UserDefaults.standard.set(true, forKey: Self.onboardingKey)
+        guard let profileId = currentProfile?.id else { return }
+        let key = Self.onboardingCompleteKey(profileId: profileId)
+        UserDefaults.standard.set(true, forKey: key)
+        UserDefaults.standard.removeObject(forKey: Self.legacyOnboardingCompleteKey)
         isOnboardingComplete = true
         if let id = currentProfile?.id {
             ProductAnalytics.track(ProductAnalytics.Event.onboardingCompleted, userId: id)
         }
+        logSessionRoutingDecision(reason: "onboarding_marked_complete")
     }
 
     func resetOnboardingForDebug() {
-        UserDefaults.standard.set(false, forKey: Self.onboardingKey)
+        if let id = currentProfile?.id {
+            UserDefaults.standard.removeObject(forKey: Self.onboardingCompleteKey(profileId: id))
+        }
+        UserDefaults.standard.removeObject(forKey: Self.legacyOnboardingCompleteKey)
         isOnboardingComplete = false
         showSearchingCardOnHome = false
         if let id = currentProfile?.id {
             UserDefaults.standard.removeObject(forKey: Self.healthKitPromptKey(profileId: id))
         }
         healthKitPromptCompleted = false
+        logSessionRoutingDecision(reason: "onboarding_reset_debug")
     }
 
     func markHealthKitPromptCompleted() {
@@ -385,6 +487,7 @@ final class SessionStore: ObservableObject {
             ProductAnalytics.Event.postAuthDisplayNameCompleted,
             userId: profile.id
         )
+        logSessionRoutingDecision(reason: "post_auth_display_name_complete")
     }
 
     private func applyPostAuthDisplayNameStateAfterRestore(profile: Profile) {
