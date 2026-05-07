@@ -59,29 +59,9 @@ struct HomeView: View {
                         }
                     }
 
-                    HomeBattleMarginChart(
-                        points: viewModel.dailyBattleMargins,
-                        unitLabel: "steps",
-                        dayCount: viewModel.marginChartDayCount,
-                        freshnessSavedAt: viewModel.battleMarginsSavedAt,
-                        isRefreshing: viewModel.isBattleMarginsRefreshing,
-                        onDayCountSelected: { n in
-                            Task { await viewModel.setMarginChartDayCount(n) }
-                        }
-                    )
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Your battle record at a glance.")
-                            .font(FitUpFont.body(11, weight: .medium))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [FitUpColors.Text.secondary, FitUpColors.Neon.cyan.opacity(0.82)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                        statsRow
-                    }
+                    heroSummaryLine
+                    battleStatusStrip
+                    battleMiniStatsGrid
 
                     if let errorMessage = viewModel.errorMessage, !errorMessage.isEmpty {
                         Text(errorMessage)
@@ -93,65 +73,14 @@ struct HomeView: View {
                     if viewModel.isInitialLoading {
                         deferredSectionsLoadingSkeleton
                     } else {
-                        // Stats -> Searching -> Pending -> Active Battles -> Discover
-                        if !viewModel.searchingRequests.isEmpty {
-                            SearchingSection(
-                                requests: viewModel.searchingRequests,
-                                isCancellingSearchId: viewModel.activeActionSearchID,
-                                onCancel: { searchId in
-                                    Task { await viewModel.cancelSearch(searchId) }
-                                }
-                            )
-                        }
-
-                        if !viewModel.pendingMatches.isEmpty {
-                            PendingSection(
-                                matches: viewModel.pendingMatches,
-                                activeActionMatchID: viewModel.activeActionPendingMatchID,
-                                onOpenMatch: { pendingMatch in
-                                    onOpenMatchDetails(pendingMatch.id, pendingMatch.opponent.displayName)
-                                },
-                                onAccept: { pendingMatch in
-                                    Task { await viewModel.acceptPendingMatch(pendingMatch) }
-                                },
-                                onDecline: { pendingMatch in
-                                    Task { await viewModel.declinePendingMatch(pendingMatch) }
-                                }
-                            )
-                            .transition(
-                                .asymmetric(
-                                    insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96)),
-                                    removal: .opacity
-                                )
-                            )
-                        }
-
                         ActiveSection(
-                            matches: viewModel.activeMatches,
-                            primaryStepMatchID: viewModel.heroPrimaryStepMatch?.id,
+                            matches: viewModel.sortedActiveMatchesForHome,
                             onOpenMatch: { match in
                                 onOpenMatchDetails(match.id, match.opponent.displayName)
                             }
                         )
 
-                        if !viewModel.discoverUsers.isEmpty {
-                            DiscoverSection(
-                                users: viewModel.discoverUsers,
-                                onChallenge: { user in
-                                    if let uid = sessionStore.currentProfile?.id {
-                                        ProductAnalytics.track(
-                                            ProductAnalytics.Event.opponentProfileViewed,
-                                            userId: uid,
-                                            properties: [
-                                                "opponent_user_id": user.id.uuidString,
-                                                "source": "discover",
-                                            ]
-                                        )
-                                    }
-                                    onOpenChallenge(prefillOpponent(from: user))
-                                }
-                            )
-                        }
+                        pendingAndSearchingSection
 
                         if !viewModel.hasAnyContent, !viewModel.isLoading {
                             zeroState
@@ -292,9 +221,6 @@ struct HomeView: View {
         .onChange(of: viewModel.activeMatches.map(\.metricType)) { _, _ in
             viewModel.syncHeroMetricWithActiveMatches()
         }
-        .onChange(of: viewModel.heroMetric) { _, _ in
-            Task { await viewModel.refreshBattleMargins() }
-        }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active, profile?.id != nil else { return }
             Task { await viewModel.reload(force: true) }
@@ -311,6 +237,67 @@ struct HomeView: View {
                 isNotificationInboxVisible = true
             }
             scheduleInboxAutoRead()
+        }
+    }
+
+    @ViewBuilder
+    private var pendingAndSearchingSection: some View {
+        if viewModel.activeSearchCount > 0 || viewModel.invitesWaitingCount > 0 || viewModel.waitingOnOpponentCount > 0 {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(title: "Pending & Searching")
+
+                if !viewModel.receivedPendingMatches.isEmpty {
+                    PendingSection(
+                        title: "Invites waiting",
+                        matches: viewModel.receivedPendingMatches,
+                        mode: .actionRequired,
+                        activeActionMatchID: viewModel.activeActionPendingMatchID,
+                        onOpenMatch: { pendingMatch in
+                            onOpenMatchDetails(pendingMatch.id, pendingMatch.opponent.displayName)
+                        },
+                        onAccept: { pendingMatch in
+                            Task { await viewModel.acceptPendingMatch(pendingMatch) }
+                        },
+                        onDecline: { pendingMatch in
+                            Task { await viewModel.declinePendingMatch(pendingMatch) }
+                        }
+                    )
+                }
+
+                if !viewModel.searchingRequests.isEmpty {
+                    SearchingSection(
+                        requests: viewModel.searchingRequests,
+                        isCancellingSearchId: viewModel.activeActionSearchID,
+                        onCancel: { searchId in
+                            Task { await viewModel.cancelSearch(searchId) }
+                        }
+                    )
+                }
+
+                if !viewModel.sentPendingMatchesWaitingOnOpponent.isEmpty {
+                    PendingSection(
+                        title: "Waiting on opponent",
+                        matches: viewModel.sentPendingMatchesWaitingOnOpponent,
+                        mode: .waitingOnOpponent,
+                        activeActionMatchID: viewModel.activeActionPendingMatchID,
+                        onOpenMatch: { pendingMatch in
+                            onOpenMatchDetails(pendingMatch.id, pendingMatch.opponent.displayName)
+                        },
+                        onAccept: { pendingMatch in
+                            Task { await viewModel.acceptPendingMatch(pendingMatch) }
+                        },
+                        onDecline: { pendingMatch in
+                            Task { await viewModel.declinePendingMatch(pendingMatch) }
+                        }
+                    )
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96)),
+                            removal: .opacity
+                        )
+                    )
+                }
+            }
         }
     }
 
@@ -377,68 +364,133 @@ struct HomeView: View {
         }
     }
 
-    private var statsRow: some View {
-        HStack(spacing: 10) {
-            statCell(value: viewModel.stats.matchCountText, label: "Matches")
-            statCell(value: viewModel.stats.winCountText, label: "Wins")
-            statCell(
-                value: viewModel.stats.winRateText,
-                label: "Win Rate",
-                accentColor: FitUpColors.Neon.cyan,
-                variant: .win
+    private var heroSummaryLine: some View {
+        Group {
+            if let text = viewModel.heroSummaryText {
+                Text(text)
+                    .font(FitUpFont.body(12, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [FitUpColors.Text.secondary, FitUpColors.Neon.cyan.opacity(0.86)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .padding(.horizontal, 2)
+            }
+        }
+    }
+
+    private var battleStatusStrip: some View {
+        let state = viewModel.statusStripState
+        return HStack(spacing: 10) {
+            Circle()
+                .fill(statusDotColor(for: state))
+                .frame(width: 8, height: 8)
+            Text(viewModel.statusStripMessage)
+                .font(FitUpFont.body(12, weight: .semibold))
+                .foregroundStyle(FitUpColors.Text.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Spacer(minLength: 0)
+            HStack(spacing: 6) {
+                ForEach(viewModel.statusStripSecondaryPills) { pill in
+                    Text(pill.label)
+                        .font(FitUpFont.mono(8, weight: .bold))
+                        .foregroundStyle(statusPillColor(for: pill.kind))
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(statusPillColor(for: pill.kind).opacity(0.14))
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(statusPillColor(for: pill.kind).opacity(0.22), lineWidth: 0.8)
+                                )
+                        )
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .homeLiquidGlassCard(.base)
+    }
+
+    private var battleMiniStatsGrid: some View {
+        let summary = viewModel.battleSummaryStats
+        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+            miniStatCard(
+                label: "Winning",
+                value: summary.winningCount.map(String.init) ?? "--",
+                accent: FitUpColors.Neon.green
+            )
+            miniStatCard(
+                label: "Losing",
+                value: summary.losingCount.map(String.init) ?? "--",
+                accent: FitUpColors.Neon.orange
+            )
+            miniStatCard(
+                label: "Closest Lead",
+                value: summary.closestLead.map(formattedSignedMargin) ?? "--",
+                accent: FitUpColors.Neon.cyan
+            )
+            miniStatCard(
+                label: "Closest Deficit",
+                value: summary.closestDeficit.map(formattedSignedMargin) ?? "--",
+                accent: FitUpColors.Neon.red
             )
         }
     }
 
-    private func statCell(
-        value: String,
-        label: String,
-        accentColor: Color? = nil,
-        variant: GlassCardVariant = .base
-    ) -> some View {
-        VStack(spacing: 5) {
+    private func miniStatCard(label: String, value: String, accent: Color) -> some View {
+        VStack(spacing: 3) {
             Text(value)
-                .font(FitUpFont.display(28, weight: .black))
-                .foregroundStyle(statValueGradient(label: label, accentColor: accentColor))
-                .shadow(color: statGlowColor(label: label).opacity(0.32), radius: 8)
+                .font(FitUpFont.display(15, weight: .black))
+                .foregroundStyle(accent)
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.65)
             Text(label.uppercased())
-                .font(FitUpFont.body(10, weight: .medium))
-                .fitUpGlobalTitleStyle(weight: .semibold, tracking: 0.5)
+                .font(FitUpFont.mono(8, weight: .semibold))
+                .foregroundStyle(FitUpColors.Text.tertiary)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .padding(.horizontal, 8)
-        .homeLiquidGlassCard(variant)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 6)
+        .homeLiquidGlassCard(.base)
     }
 
-    private func statValueGradient(label: String, accentColor: Color?) -> LinearGradient {
-        if let accentColor {
-            return LinearGradient(
-                colors: [accentColor, FitUpColors.Neon.blue.opacity(0.92)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+    private func statusDotColor(for state: HomeViewModel.StatusStripState) -> Color {
+        switch state {
+        case .searching:
+            return FitUpColors.Neon.cyan
+        case .invitesWaiting:
+            return FitUpColors.Neon.orange
+        case .waitingOnOpponent(_):
+            return FitUpColors.Neon.purple
+        case .noActiveBattles:
+            return FitUpColors.Neon.yellow
+        case .allBattlesActive:
+            return FitUpColors.Neon.green
         }
-        if label == "Wins" {
-            return LinearGradient(
-                colors: [FitUpColors.Neon.green, FitUpColors.Neon.cyan],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-        return LinearGradient(
-            colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 
-    private func statGlowColor(label: String) -> Color {
-        if label == "Wins" { return FitUpColors.Neon.green }
-        if label == "Win Rate" { return FitUpColors.Neon.cyan }
-        return FitUpColors.Neon.blue
+    private func statusPillColor(for kind: HomeViewModel.StatusStripPillKind) -> Color {
+        switch kind {
+        case .searching:
+            return FitUpColors.Neon.cyan
+        case .invitesWaiting:
+            return FitUpColors.Neon.orange
+        case .waitingOnOpponent:
+            return FitUpColors.Neon.purple
+        }
+    }
+
+    private func formattedSignedMargin(_ value: Int) -> String {
+        let sign = value >= 0 ? "+" : "-"
+        return "\(sign)\(abs(value).formatted())"
     }
 
     private var header: some View {

@@ -263,36 +263,36 @@ struct HomeBattleHeroCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .center, spacing: 18) {
-                VStack(spacing: 14) {
+            VStack(alignment: .center, spacing: 12) {
+                VStack(spacing: 10) {
                     ringView
                         .frame(maxWidth: .infinity, alignment: .center)
 
                     if hasAnyActiveMatch {
                         opponentRow
                         Text(heroCtaLine)
-                            .font(FitUpFont.body(14, weight: .semibold))
+                            .font(FitUpFont.body(13, weight: .semibold))
                             .foregroundStyle(FitUpColors.Text.primary)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(battleStatusLine)
-                            .font(FitUpFont.body(13, weight: .medium))
+                            .font(FitUpFont.body(12, weight: .medium))
                             .foregroundStyle(FitUpColors.Text.secondary)
                             .multilineTextAlignment(.center)
                         freshnessLineView
-                            .padding(.top, 8)
+                            .padding(.top, 4)
                     } else {
                         Text("No step battle yet")
-                            .font(FitUpFont.body(14, weight: .semibold))
+                            .font(FitUpFont.body(13, weight: .semibold))
                             .foregroundStyle(FitUpColors.Text.secondary)
                             .multilineTextAlignment(.center)
                         Text("Start a match to compete today")
-                            .font(FitUpFont.body(13, weight: .medium))
+                            .font(FitUpFont.body(12, weight: .medium))
                             .foregroundStyle(FitUpColors.Text.tertiary)
                             .multilineTextAlignment(.center)
                     }
                 }
-                .padding(20)
+                .padding(14)
                 .frame(maxWidth: .infinity)
             }
             .frame(maxWidth: .infinity)
@@ -335,7 +335,7 @@ struct HomeBattleHeroCard: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 30 + (ringBreathLineWidthDelta * 1.5)
+                    lineWidth: 24 + (ringBreathLineWidthDelta * 1.2)
                 )
                 .overlay {
                     Circle()
@@ -348,7 +348,7 @@ struct HomeBattleHeroCard: View {
                                 ],
                                 center: .center
                             ),
-                            lineWidth: 24 + (ringBreathLineWidthDelta * 0.9)
+                            lineWidth: 18 + (ringBreathLineWidthDelta * 0.7)
                         )
                         .blur(radius: isBehindState ? 0.25 : 0.15)
                 }
@@ -365,7 +365,7 @@ struct HomeBattleHeroCard: View {
                             ],
                             center: .center
                         ),
-                        style: StrokeStyle(lineWidth: 24 + (ringBreathLineWidthDelta * 0.9), lineCap: .round)
+                        style: StrokeStyle(lineWidth: 18 + (ringBreathLineWidthDelta * 0.7), lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
                     .shadow(color: opponentColor.opacity(0.28), radius: 10)
@@ -389,7 +389,7 @@ struct HomeBattleHeroCard: View {
                             ],
                         center: .center
                     ),
-                    style: StrokeStyle(lineWidth: 30 + (ringBreathLineWidthDelta * 1.5), lineCap: .round)
+                    style: StrokeStyle(lineWidth: 24 + (ringBreathLineWidthDelta * 1.2), lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
                 .scaleEffect(x: isBehindState ? -1 : 1, y: 1)
@@ -416,16 +416,16 @@ struct HomeBattleHeroCard: View {
 
             VStack(spacing: 2) {
                 Text(hasAnyActiveMatch ? formattedDelta(animatedCenterValue) : animatedCenterValue.formatted())
-                    .font(FitUpFont.display(32, weight: .black))
+                    .font(FitUpFont.display(28, weight: .black))
                     .foregroundStyle(FitUpColors.Text.primary)
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
                 Text(ringCenterUnitText)
-                    .font(FitUpFont.body(12, weight: .heavy))
+                    .font(FitUpFont.body(11, weight: .heavy))
                     .tracking(1.2)
                     .foregroundStyle(FitUpColors.Text.secondary)
                 Text(ringCenterContextText)
-                    .font(FitUpFont.body(11, weight: .semibold))
+                    .font(FitUpFont.body(10, weight: .semibold))
                     .foregroundStyle(FitUpColors.Text.tertiary)
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.75)
@@ -436,7 +436,7 @@ struct HomeBattleHeroCard: View {
             .accessibilityHint("Center value inside your battle ring")
         }
         .scaleEffect(ringBreathScale)
-        .frame(width: 291, height: 291)
+        .frame(width: 238, height: 238)
     }
 
     @ViewBuilder

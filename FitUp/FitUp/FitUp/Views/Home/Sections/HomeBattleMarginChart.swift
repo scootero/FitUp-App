@@ -9,6 +9,8 @@ import Charts
 import SwiftUI
 
 struct HomeBattleMarginChart: View {
+    var title: String = "BATTLE MARGIN"
+    var subtitle: String? = nil
     let points: [DailyBattleMargin]
     let unitLabel: String
     let dayCount: Int
@@ -31,7 +33,7 @@ struct HomeBattleMarginChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("BATTLE MARGIN")
+                Text(title)
                     .font(FitUpFont.mono(11, weight: .bold))
                     .fitUpGlobalTitleStyle(weight: .bold, tracking: 0.9)
                     .shadow(color: FitUpColors.Neon.blue.opacity(0.32), radius: 7)
@@ -57,7 +59,7 @@ struct HomeBattleMarginChart: View {
                 .clipShape(Capsule())
             }
 
-            Text("Net \(unitLabel) across your matches · ahead up, behind down")
+            Text(subtitle ?? "Net \(unitLabel) across your matches · ahead up, behind down")
                 .font(FitUpFont.body(11, weight: .medium))
                 .foregroundStyle(
                     LinearGradient(

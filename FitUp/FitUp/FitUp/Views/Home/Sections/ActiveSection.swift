@@ -9,136 +9,121 @@ import SwiftUI
 
 struct ActiveSection: View {
     let matches: [HomeActiveMatch]
-    let primaryStepMatchID: UUID?
     var onOpenMatch: (HomeActiveMatch) -> Void
 
-    private struct OtherBattleRowModel: Identifiable {
-        let id: String
-        let title: String
-        let deltaText: String
-        let contextText: String?
-        let representativeMatch: HomeActiveMatch
-    }
-
-    private var candidateMatches: [HomeActiveMatch] {
-        guard let primaryStepMatchID else { return matches }
-        return matches.filter { $0.id != primaryStepMatchID }
-    }
-
-    private var groupedRows: [OtherBattleRowModel] {
-        var grouped: [String: [HomeActiveMatch]] = [:]
-        for match in candidateMatches {
-            let key = "\(match.opponent.id.uuidString)|\(match.metricType)"
-            grouped[key, default: []].append(match)
-        }
-
-        return grouped.values.compactMap { group in
-            let sorted = group.sorted { lhs, rhs in lhs.id.uuidString < rhs.id.uuidString }
-            guard let representative = sorted.first else { return nil }
-            let count = sorted.count
-            let title = count > 1
-                ? "\(representative.opponent.displayName) (\(count) battles)"
-                : representative.opponent.displayName
-
-            let myTodayTotal = sorted.reduce(0) { $0 + $1.myToday }
-            let theirTodayTotal = sorted.reduce(0) { $0 + $1.theirToday }
-            let delta = myTodayTotal - theirTodayTotal
-            let deltaText: String
-            if delta == 0 {
-                deltaText = "Tied"
-            } else {
-                deltaText = "\(delta > 0 ? "+" : "-")\(abs(delta).formatted())"
-            }
-
-            let dayNumber = currentDayNumber(for: representative)
-            let dayText = MatchDurationCopy.dayProgress(current: dayNumber, total: representative.durationDays)
-            let scoreText = "Match score: \(representative.myScore)–\(representative.theirScore)"
-            let contextText = "\(dayText) · \(scoreText)"
-
-            return OtherBattleRowModel(
-                id: "\(representative.id.uuidString)|\(representative.metricType)",
-                title: title,
-                deltaText: deltaText,
-                contextText: contextText,
-                representativeMatch: representative
-            )
-        }
-        .sorted { lhs, rhs in
-            let lhsAbs = abs(rawDelta(from: lhs.deltaText))
-            let rhsAbs = abs(rawDelta(from: rhs.deltaText))
-            if lhsAbs != rhsAbs { return lhsAbs > rhsAbs }
-            if lhs.title != rhs.title {
-                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-            }
-            return lhs.id < rhs.id
-        }
-    }
-
     var body: some View {
-        if !groupedRows.isEmpty {
+        if !matches.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Other Battles")
-                ForEach(groupedRows) { row in
-                    compactRow(row)
+                SectionHeader(title: "Active Battles", actionTitle: "\(matches.count) live")
+                ForEach(matches) { match in
+                    battleRow(match)
                 }
             }
         }
     }
 
-    private func compactRow(_ row: OtherBattleRowModel) -> some View {
-        Button {
-            // TODO: Use explicit recency ordering when match created-at is available for grouped rows.
-            onOpenMatch(row.representativeMatch)
+    private func battleRow(_ match: HomeActiveMatch) -> some View {
+        let margin = match.myToday - match.theirToday
+        return Button {
+            onOpenMatch(match)
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .top, spacing: 10) {
                     AvatarView(
-                        initials: row.representativeMatch.opponent.initials,
-                        color: ProfileAccentColor.swiftUIColor(hex: row.representativeMatch.opponent.colorHex),
-                        size: 26
+                        initials: match.opponent.initials,
+                        color: ProfileAccentColor.swiftUIColor(hex: match.opponent.colorHex),
+                        size: 34
                     )
-                    Text(row.title)
-                        .font(FitUpFont.body(14, weight: .semibold))
-                        .foregroundStyle(FitUpColors.Text.primary)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    Text(row.deltaText)
-                        .font(FitUpFont.display(20, weight: .black))
-                        .foregroundStyle(deltaColor(for: row))
-                        .lineLimit(1)
-                }
 
-                if let contextText = row.contextText {
-                    Text(contextText)
-                        .font(FitUpFont.body(11, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(match.opponent.displayName)
+                                .font(FitUpFont.body(14, weight: .bold))
+                                .foregroundStyle(FitUpColors.Text.primary)
+                                .lineLimit(1)
+                            statusPill(for: margin)
+                            Spacer(minLength: 0)
+                        }
+
+                        Text(match.seriesLabel)
+                            .font(FitUpFont.body(10, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+
+                        if let freshness = freshnessText(opponentUpdatedAt: match.opponentTodayUpdatedAt) {
+                            Text(freshness)
+                                .font(FitUpFont.body(10, weight: .medium))
+                                .foregroundStyle(FitUpColors.Text.tertiary)
+                        }
+                    }
+
+                    Spacer(minLength: 10)
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(formattedMargin(margin))
+                            .font(FitUpFont.display(20, weight: .black))
+                            .foregroundStyle(marginColor(for: margin))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                        Text(match.sportLabel.uppercased())
+                            .font(FitUpFont.mono(9, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                            .lineLimit(1)
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
             .homeLiquidGlassCard(.base)
+            .overlay(
+                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
     }
 
-    private func deltaColor(for row: OtherBattleRowModel) -> Color {
-        if row.deltaText == "Tied" { return FitUpColors.Text.secondary }
-        return row.deltaText.hasPrefix("+") ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange
+    private func statusPill(for margin: Int) -> some View {
+        Text(statusText(for: margin))
+            .font(FitUpFont.mono(9, weight: .bold))
+            .foregroundStyle(marginColor(for: margin))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                Capsule()
+                    .fill(marginColor(for: margin).opacity(0.15))
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(marginColor(for: margin).opacity(0.35), lineWidth: 1)
+                    )
+            )
     }
 
-    private func rawDelta(from formatted: String) -> Int {
-        if formatted == "Tied" { return 0 }
-        return Int(formatted.replacingOccurrences(of: "+", with: "")) ?? 0
+    private func statusText(for margin: Int) -> String {
+        if margin > 0 { return "Ahead today" }
+        if margin < 0 { return "Behind today" }
+        return "Tied today"
     }
 
-    private func currentDayNumber(for match: HomeActiveMatch) -> Int {
-        if let todayPip = match.dayPips.first(where: { $0.state == .today }) {
-            return todayPip.dayNumber
-        }
-        // Home rows only have lightweight day metadata and can be less precise than match-details merged rows.
-        let inferred = max(1, match.durationDays - match.daysLeft + 1)
-        return min(inferred, max(1, match.durationDays))
+    private func marginColor(for margin: Int) -> Color {
+        if margin > 0 { return FitUpColors.Neon.cyan }
+        if margin < 0 { return FitUpColors.Neon.orange }
+        return FitUpColors.Text.secondary
+    }
+
+    private func formattedMargin(_ value: Int) -> String {
+        let sign = value >= 0 ? "+" : "-"
+        return "\(sign)\(abs(value).formatted())"
+    }
+
+    private func freshnessText(opponentUpdatedAt: Date?) -> String? {
+        guard let opponentUpdatedAt else { return nil }
+        let elapsedSeconds = max(0, Int(Date().timeIntervalSince(opponentUpdatedAt)))
+        let elapsedMinutes = elapsedSeconds / 60
+        if elapsedMinutes < 1 { return "Updated just now" }
+        if elapsedMinutes < 60 { return "Updated \(elapsedMinutes)m ago" }
+        let elapsedHours = max(1, elapsedMinutes / 60)
+        if elapsedHours < 24 { return "Updated \(elapsedHours)h ago" }
+        return "Updated yesterday"
     }
 }

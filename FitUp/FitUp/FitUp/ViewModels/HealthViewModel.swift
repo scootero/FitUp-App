@@ -88,6 +88,10 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var weekComparisonSteps: HealthWeekComparison?
     @Published private(set) var weekComparisonCalories: HealthWeekComparison?
     @Published private(set) var battleStats = HealthBattleStats.empty
+    @Published private(set) var dailyBattleMargins: [DailyBattleMargin] = []
+    @Published private(set) var isBattleMarginsRefreshing = false
+    @Published private(set) var battleMarginsSavedAt: Date?
+    @Published var marginChartDayCount: Int = 7
 
     @Published private(set) var activeMatchEdges: [HomeActiveMatch] = []
     @Published private(set) var completedMatches: [ActivityCompletedMatch] = []
@@ -299,6 +303,7 @@ final class HealthViewModel: ObservableObject {
         weekComparisonCalories = comparisonResolved.calories
         battleStats = await battleStatsResult
         activeMatchEdges = await activeMatches
+        await refreshBattleMargins(source: source)
 
         lastLoadFinishedAt = Date()
 
@@ -381,6 +386,47 @@ final class HealthViewModel: ObservableObject {
         weekComparisonCalories = nil
         battleStats = .empty
         activeMatchEdges = []
+        dailyBattleMargins = []
+        isBattleMarginsRefreshing = false
+        battleMarginsSavedAt = nil
+    }
+
+    func setMarginChartDayCount(_ n: Int) async {
+        let clamped = n >= 10 ? 10 : 7
+        guard marginChartDayCount != clamped else { return }
+        marginChartDayCount = clamped
+        await refreshBattleMargins(source: "chart_range_change")
+    }
+
+    private func refreshBattleMargins(source: String) async {
+        guard profileId != nil else {
+            dailyBattleMargins = []
+            battleMarginsSavedAt = nil
+            isBattleMarginsRefreshing = false
+            return
+        }
+        isBattleMarginsRefreshing = true
+        defer { isBattleMarginsRefreshing = false }
+
+        let rows = await homeRepository.fetchDailyBattleMargins(
+            endDate: Date(),
+            dayCount: marginChartDayCount,
+            metricType: HomeBattleHeroCard.HeroMetric.steps.metricType,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
+        dailyBattleMargins = rows
+        battleMarginsSavedAt = Date()
+        AppLogger.log(
+            category: "healthkit_read",
+            level: .info,
+            message: "health battle margin refreshed",
+            userId: profileId,
+            metadata: [
+                "source": source,
+                "point_count": "\(rows.count)",
+                "day_count": "\(marginChartDayCount)"
+            ]
+        )
     }
 
     private func healthKitRead<T>(

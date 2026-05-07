@@ -19,20 +19,14 @@ struct SearchingSection: View {
             ForEach(requests) { request in
                 VStack(spacing: 0) {
                     HStack(spacing: 12) {
-                        Circle()
-                            .fill(FitUpColors.Neon.purple.opacity(0.15))
-                            .frame(width: 40, height: 40)
-                            .overlay {
-                                Image(systemName: "magnifyingglass")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundStyle(FitUpColors.Neon.purple)
-                            }
+                        SearchingPulseIcon()
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Finding opponent...")
+                            Text("Searching for random opponent...")
                                 .font(FitUpFont.body(13, weight: .bold))
                                 .foregroundStyle(FitUpColors.Text.primary)
                             HStack(spacing: 4) {
+                                Text("Matchmaking active ·")
                                 Text("\(sportLabel(for: request.metricType)) · \(MatchDurationCopy.competitionLengthBadge(days: request.durationDays)) ·")
                                 SearchingElapsedLabel(createdAt: request.createdAt)
                             }
@@ -62,6 +56,10 @@ struct SearchingSection: View {
                     .padding(.vertical, 12)
                 }
                 .homeLiquidGlassCard(.base)
+                .overlay(
+                    RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                        .strokeBorder(FitUpColors.Neon.cyan.opacity(0.14), lineWidth: 1)
+                )
             }
         }
     }
@@ -70,6 +68,34 @@ struct SearchingSection: View {
         metricType == "active_calories" ? "Calories" : "Steps"
     }
 
+}
+
+private struct SearchingPulseIcon: View {
+    @State private var animatePulse = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(FitUpColors.Neon.cyan.opacity(0.12))
+                .frame(width: 40, height: 40)
+
+            Circle()
+                .strokeBorder(FitUpColors.Neon.cyan.opacity(0.45), lineWidth: 2)
+                .frame(width: 20, height: 20)
+                .scaleEffect(animatePulse ? 1.35 : 0.72)
+                .opacity(animatePulse ? 0.08 : 0.7)
+
+            Circle()
+                .fill(FitUpColors.Neon.cyan)
+                .frame(width: 8, height: 8)
+                .scaleEffect(animatePulse ? 0.9 : 1.1)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                animatePulse = true
+            }
+        }
+    }
 }
 
 private struct SearchingElapsedLabel: View {

@@ -8,7 +8,14 @@
 import SwiftUI
 
 struct PendingSection: View {
+    enum Mode {
+        case actionRequired
+        case waitingOnOpponent
+    }
+
+    let title: String
     let matches: [HomePendingMatch]
+    let mode: Mode
     let activeActionMatchID: UUID?
     var onOpenMatch: (HomePendingMatch) -> Void
     var onAccept: (HomePendingMatch) -> Void
@@ -18,11 +25,12 @@ struct PendingSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Pending", actionTitle: "\(matches.count) new")
+            SectionHeader(title: title, actionTitle: sectionCountLabel)
 
             ForEach(matches) { match in
                 PendingMatchRow(
                     match: match,
+                    mode: mode,
                     activeActionMatchID: activeActionMatchID,
                     onOpenMatch: onOpenMatch,
                     onAccept: onAccept,
@@ -55,20 +63,26 @@ struct PendingSection: View {
             }
         }
     }
+
+    private var sectionCountLabel: String {
+        switch mode {
+        case .actionRequired:
+            return matches.count == 1 ? "1 invite" : "\(matches.count) invites"
+        case .waitingOnOpponent:
+            return matches.count == 1 ? "1 waiting" : "\(matches.count) waiting"
+        }
+    }
 }
 
 // MARK: - Row
 
 private struct PendingMatchRow: View {
     let match: HomePendingMatch
+    let mode: PendingSection.Mode
     let activeActionMatchID: UUID?
     var onOpenMatch: (HomePendingMatch) -> Void
     var onAccept: (HomePendingMatch) -> Void
     var onDeclineRequested: (HomePendingMatch) -> Void
-
-    @State private var glowPulse = false
-    /// Starts true so the burst ring is hidden until we animate accept; avoids a one-frame flash on load.
-    @State private var ringExpand = true
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -83,18 +97,21 @@ private struct PendingMatchRow: View {
                     )
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(match.opponent.displayName)
+                        Text(titleText)
                             .font(FitUpFont.display(14, weight: .bold))
                             .foregroundStyle(FitUpColors.Text.primary)
-                        Text("\(match.sportLabel) · \(match.seriesLabel)")
-                            .font(FitUpFont.body(11, weight: .medium))
-                            .foregroundStyle(FitUpColors.Text.secondary)
-                        if match.hasAcceptedByMe, !match.hasAcceptedByOpponent {
-                            Text("Waiting for \(match.opponent.displayName) to accept")
-                                .font(FitUpFont.mono(10, weight: .semibold))
-                                .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.9))
-                                .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(2)
+                        HStack(spacing: 5) {
+                            Image(systemName: subtitleIconName)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(subtitleIconColor)
+                            Text(subtitleText)
+                                .font(FitUpFont.body(11, weight: .medium))
+                                .foregroundStyle(FitUpColors.Text.secondary)
                         }
+                        Text("\(match.sportLabel) · \(match.seriesLabel)")
+                            .font(FitUpFont.mono(10, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
                     }
 
                     Spacer(minLength: 0)
@@ -104,25 +121,23 @@ private struct PendingMatchRow: View {
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 8) {
-                Button {
-                    onDeclineRequested(match)
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(FitUpColors.Neon.pink)
-                        .frame(width: 34, height: 34)
-                        .background(
-                            Circle()
-                                .fill(FitUpColors.Neon.pink.opacity(0.12))
-                                .overlay(Circle().strokeBorder(FitUpColors.Neon.pink.opacity(0.25), lineWidth: 1))
-                        )
-                }
-                .buttonStyle(.plain)
+            if mode == .actionRequired {
+                HStack(spacing: 8) {
+                    Button {
+                        onDeclineRequested(match)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(FitUpColors.Neon.pink)
+                            .frame(width: 34, height: 34)
+                            .background(
+                                Circle()
+                                    .fill(FitUpColors.Neon.pink.opacity(0.12))
+                                    .overlay(Circle().strokeBorder(FitUpColors.Neon.pink.opacity(0.25), lineWidth: 1))
+                            )
+                    }
+                    .buttonStyle(.plain)
 
-                if match.hasAcceptedByMe {
-                    acceptLockedButton
-                } else {
                     Button {
                         withAnimation(.spring(response: 0.38, dampingFraction: 0.72)) {
                             onAccept(match)
@@ -140,73 +155,80 @@ private struct PendingMatchRow: View {
                     }
                     .buttonStyle(.plain)
                 }
+            } else {
+                waitingIndicator
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .homeLiquidGlassCard(.pending)
+        .homeLiquidGlassCard(mode == .actionRequired ? .pending : .base)
+        .overlay {
+            if mode == .waitingOnOpponent {
+                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                    .strokeBorder(FitUpColors.Neon.orange.opacity(0.18), lineWidth: 1)
+            }
+        }
         .disabled(activeActionMatchID == match.id)
         .opacity(activeActionMatchID == match.id ? 0.6 : 1)
-        .onAppear {
-            guard match.hasAcceptedByMe else { return }
-            startLockedGlowPulse()
-        }
-        .onChange(of: match.hasAcceptedByMe) { wasAccepted, accepted in
-            guard accepted, !wasAccepted else { return }
-            ringExpand = false
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                ringExpand = true
+    }
+
+    private var titleText: String {
+        switch mode {
+        case .actionRequired:
+            if match.matchType == "direct_challenge" {
+                return "\(match.opponent.displayName) challenged you"
             }
-            startLockedGlowPulse()
-        }
-        .onChange(of: match.id) { _, _ in
-            ringExpand = true
-            glowPulse = false
+            return "Opponent found: \(match.opponent.displayName)"
+        case .waitingOnOpponent:
+            return "Invite sent to \(match.opponent.displayName)"
         }
     }
 
-    private func startLockedGlowPulse() {
-        glowPulse = true
+    private var subtitleText: String {
+        switch mode {
+        case .actionRequired:
+            return "Accept to start battle"
+        case .waitingOnOpponent:
+            return "Waiting on response"
+        }
     }
 
-    private var acceptLockedButton: some View {
-        ZStack {
-            Circle()
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            FitUpColors.Neon.cyan.opacity(0.85),
-                            FitUpColors.Neon.green.opacity(0.45),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 2
-                )
-                .frame(width: 36, height: 36)
-                .scaleEffect(ringExpand ? 1.45 : 1)
-                .opacity(ringExpand ? 0 : 0.75)
-
-            Image(systemName: "checkmark")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 34, height: 34)
-                .background(
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.cyan.opacity(0.75)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .overlay(Circle().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
-                )
-                .shadow(color: FitUpColors.Neon.cyan.opacity(0.5), radius: glowPulse ? 12 : 5)
-                .scaleEffect(glowPulse ? 1.05 : 1)
+    private var subtitleIconName: String {
+        switch mode {
+        case .actionRequired:
+            return "bolt.fill"
+        case .waitingOnOpponent:
+            return "clock.arrow.circlepath"
         }
-        .frame(width: 48, height: 48)
-        .accessibilityLabel("You accepted this match")
+    }
+
+    private var subtitleIconColor: Color {
+        switch mode {
+        case .actionRequired:
+            return FitUpColors.Neon.cyan
+        case .waitingOnOpponent:
+            return FitUpColors.Neon.orange
+        }
+    }
+
+    private var waitingIndicator: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "clock")
+                .font(.system(size: 11, weight: .bold))
+            Text("Waiting")
+                .font(FitUpFont.mono(10, weight: .bold))
+        }
+        .foregroundStyle(FitUpColors.Neon.orange)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(FitUpColors.Neon.orange.opacity(0.12))
+                .overlay(
+                    Capsule()
+                        .strokeBorder(FitUpColors.Neon.orange.opacity(0.28), lineWidth: 1)
+                )
+        )
     }
 
     private func color(from hex: String) -> Color {

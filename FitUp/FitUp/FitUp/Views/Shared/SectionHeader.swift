@@ -14,22 +14,23 @@ struct SectionHeader: View {
 
     var body: some View {
         HStack(alignment: .center) {
-            Text(title)
-                .font(FitUpFont.display(16, weight: .bold))
-                .fitUpGlobalTitleStyle(weight: .bold, tracking: 0.35)
+            Text(title.uppercased())
+                .font(FitUpFont.mono(11, weight: .bold))
+                .fitUpGlobalTitleStyle(weight: .bold, tracking: 0.9)
+                .foregroundStyle(FitUpColors.Text.tertiary.opacity(0.9))
 
             Spacer(minLength: 0)
 
             if let actionTitle, let onAction {
                 Button(action: onAction) {
                     Text(actionTitle)
-                        .font(FitUpFont.body(12, weight: .semibold))
-                        .foregroundStyle(FitUpColors.Neon.cyan)
+                        .font(FitUpFont.mono(10, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.92))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.bottom, 2)
+        .padding(.bottom, 3)
     }
 }
 

@@ -112,11 +112,9 @@ final class HomeRepository {
     func loadSnapshot(for currentUserId: UUID, showOnboardingSearching: Bool, profileTimeZoneIdentifier: String? = nil) async -> HomeSnapshot {
         async let searching = fetchSearchingRequests(currentUserId: currentUserId)
         async let cards = fetchActiveAndPendingCards(currentUserId: currentUserId, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
-        async let discover = fetchDiscoverUsers(currentUserId: currentUserId)
 
         var searchingRows = await searching
         let (activeRows, pendingRows) = await cards
-        let discoverRows = await discover
 
         if showOnboardingSearching && searchingRows.isEmpty && activeRows.isEmpty && pendingRows.isEmpty {
             searchingRows = [HomeSearchingRequest(
@@ -133,7 +131,7 @@ final class HomeRepository {
             searching: searchingRows,
             activeMatches: activeRows,
             pendingMatches: pendingRows,
-            discoverUsers: discoverRows
+            discoverUsers: []
         )
     }
 

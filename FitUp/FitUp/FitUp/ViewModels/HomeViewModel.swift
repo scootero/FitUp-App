@@ -29,6 +29,45 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
+    struct BattleSummaryStats: Equatable {
+        let totalActive: Int?
+        let winningCount: Int?
+        let losingCount: Int?
+        let closestLead: Int?
+        let closestDeficit: Int?
+    }
+
+    enum StatusStripState: Equatable {
+        case searching(activeSearchCount: Int)
+        case invitesWaiting(count: Int)
+        case waitingOnOpponent(count: Int)
+        case noActiveBattles
+        case allBattlesActive(activeCount: Int)
+    }
+
+    enum StatusStripPillKind: Equatable {
+        case invitesWaiting
+        case waitingOnOpponent
+        case searching
+    }
+
+    struct StatusStripPill: Identifiable, Equatable {
+        let kind: StatusStripPillKind
+        let count: Int
+
+        var id: String { "\(kind)-\(count)" }
+        var label: String {
+            switch kind {
+            case .invitesWaiting:
+                return count == 1 ? "1 invite waiting" : "\(count) invites waiting"
+            case .waitingOnOpponent:
+                return count == 1 ? "1 waiting" : "\(count) waiting"
+            case .searching:
+                return count == 1 ? "1 search active" : "\(count) search active"
+            }
+        }
+    }
+
     @Published private(set) var searchingRequests: [HomeSearchingRequest] = []
     @Published private(set) var activeMatches: [HomeActiveMatch] = []
     @Published private(set) var pendingMatches: [HomePendingMatch] = []
@@ -51,11 +90,6 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var isFriendRequestActionLoading = false
     /// Home hero stack is steps-only in this slice; kept for cache/logging compatibility.
     @Published var heroMetric: HomeBattleHeroCard.HeroMetric = .steps
-    @Published private(set) var dailyBattleMargins: [DailyBattleMargin] = []
-    @Published private(set) var isBattleMarginsRefreshing = false
-    @Published private(set) var battleMarginsSavedAt: Date?
-    /// 7 or 10 calendar days for the signed margin chart.
-    @Published var marginChartDayCount: Int = 7
     @Published private(set) var isHeroLoading = true
     @Published private(set) var isInitialLoading = true
     /// Full rows for the expandable Past Matches card (warmed by stats refresh; lazy-loaded if empty).
@@ -64,7 +98,6 @@ final class HomeViewModel: ObservableObject {
 
     var hasAnyContent: Bool {
         !searchingRequests.isEmpty || !activeMatches.isEmpty || !pendingMatches.isEmpty
-            || !discoverUsers.isEmpty
     }
 
     var activeStepMatches: [HomeActiveMatch] {
@@ -90,7 +123,6 @@ final class HomeViewModel: ObservableObject {
     private let friendshipRepository = FriendshipRepository()
     private let snapshotCacheStore = HomeSnapshotCacheStore()
     private let battleStatsCacheStore = HomeBattleStatsCacheStore()
-    private let marginsCacheStore = HomeDailyBattleMarginsCacheStore()
     private var userId: UUID?
     private var profileTimeZoneIdentifier: String?
     private var myDisplayName: String = "You"
@@ -107,15 +139,160 @@ final class HomeViewModel: ObservableObject {
     private var deferredMatchActiveCelebration: HomeActiveMatch?
     private var heroHealthKitPatchTask: Task<Void, Never>?
     private var statsRefreshTask: Task<Void, Never>?
-    private var marginsRefreshTask: Task<Void, Never>?
     private var heroHealthKitValueByMetric: [String: Int] = [:]
     private var heroLoadStartedAt: Date?
     private var heroStateResolvedAt: Date?
     private var lastStatsRefreshAt: Date?
     private let statsRefreshMinInterval: TimeInterval = 300
-    private var marginsRefreshGeneration = 0
     private var lastHomeProfileLocalDate: String?
     private var completedMatchesListTask: Task<Void, Never>?
+    private var lastHomeLayoutLogSignature: String?
+
+    var battleSummaryStats: BattleSummaryStats {
+        guard !activeMatches.isEmpty else {
+            return BattleSummaryStats(
+                totalActive: 0,
+                winningCount: 0,
+                losingCount: 0,
+                closestLead: nil,
+                closestDeficit: nil
+            )
+        }
+        let margins = activeMatches.map { $0.myToday - $0.theirToday }
+        let winningCount = margins.filter { $0 > 0 }.count
+        let losingCount = margins.filter { $0 < 0 }.count
+        return BattleSummaryStats(
+            totalActive: activeMatches.count,
+            winningCount: winningCount,
+            losingCount: losingCount,
+            closestLead: margins.filter { $0 > 0 }.min(),
+            closestDeficit: margins.filter { $0 < 0 }.max()
+        )
+    }
+
+    var receivedPendingMatches: [HomePendingMatch] {
+        pendingMatches.filter { !$0.hasAcceptedByMe }
+    }
+
+    var sentPendingMatchesWaitingOnOpponent: [HomePendingMatch] {
+        pendingMatches.filter { $0.hasAcceptedByMe && !$0.hasAcceptedByOpponent }
+    }
+
+    var activeSearchCount: Int { searchingRequests.count }
+    var invitesWaitingCount: Int { receivedPendingMatches.count }
+    var waitingOnOpponentCount: Int { sentPendingMatchesWaitingOnOpponent.count }
+    var activeBattleCount: Int { activeMatches.count }
+
+    var heroSummaryText: String? {
+        guard let total = battleSummaryStats.totalActive, total > 0 else { return nil }
+        let wins = battleSummaryStats.winningCount ?? 0
+        if let closestLead = battleSummaryStats.closestLead {
+            return "Leading \(wins) / \(total) matches · Closest: +\(closestLead.formatted())"
+        }
+        return "Leading \(wins) / \(total) matches"
+    }
+
+    var statusStripState: StatusStripState {
+        if activeSearchCount > 0 {
+            return .searching(activeSearchCount: activeSearchCount)
+        }
+
+        if invitesWaitingCount > 0 {
+            return .invitesWaiting(count: invitesWaitingCount)
+        }
+
+        if waitingOnOpponentCount > 0 {
+            return .waitingOnOpponent(count: waitingOnOpponentCount)
+        }
+
+        if activeBattleCount == 0 {
+            return .noActiveBattles
+        }
+
+        return .allBattlesActive(activeCount: activeBattleCount)
+    }
+
+    var statusStripMessage: String {
+        switch statusStripState {
+        case .searching:
+            return "Searching for random opponent..."
+        case let .invitesWaiting(count):
+            return count == 1 ? "1 invite waiting" : "\(count) invites waiting"
+        case let .waitingOnOpponent(count):
+            return count == 1 ? "Waiting on opponent" : "Waiting on opponents"
+        case .noActiveBattles:
+            return "No active battles — find one now"
+        case let .allBattlesActive(activeCount):
+            if activeCount == 1 {
+                return "You’re active in 1 battle"
+            }
+            return "You’re active in \(activeCount) battles"
+        }
+    }
+
+    var statusStripSecondaryPills: [StatusStripPill] {
+        let primaryKind: StatusStripPillKind? = switch statusStripState {
+        case .searching:
+            .searching
+        case .invitesWaiting:
+            .invitesWaiting
+        case .waitingOnOpponent(_):
+            .waitingOnOpponent
+        case .noActiveBattles, .allBattlesActive:
+            nil
+        }
+
+        let candidates: [(StatusStripPillKind, Int)] = [
+            (.invitesWaiting, invitesWaitingCount),
+            (.waitingOnOpponent, waitingOnOpponentCount),
+            (.searching, activeSearchCount)
+        ]
+
+        return candidates.compactMap { kind, count in
+            guard count > 0 else { return nil }
+            guard primaryKind != kind else { return nil }
+            return StatusStripPill(kind: kind, count: count)
+        }
+    }
+
+    var sortedActiveMatchesForHome: [HomeActiveMatch] {
+        activeMatches.sorted { lhs, rhs in
+            let lhsMargin = lhs.myToday - lhs.theirToday
+            let rhsMargin = rhs.myToday - rhs.theirToday
+
+            let lhsCategory = sortCategory(for: lhsMargin)
+            let rhsCategory = sortCategory(for: rhsMargin)
+            if lhsCategory != rhsCategory {
+                return lhsCategory < rhsCategory
+            }
+
+            if lhsMargin != rhsMargin {
+                if lhsMargin < 0 && rhsMargin < 0 {
+                    return lhsMargin > rhsMargin
+                }
+                if lhsMargin > 0 && rhsMargin > 0 {
+                    return lhsMargin < rhsMargin
+                }
+            }
+
+            let lhsTs = lhs.opponentTodayUpdatedAt?.timeIntervalSince1970
+            let rhsTs = rhs.opponentTodayUpdatedAt?.timeIntervalSince1970
+            if lhsTs != rhsTs {
+                switch (lhsTs, rhsTs) {
+                case let (l?, r?):
+                    return l < r
+                case (.some, .none):
+                    return true
+                case (.none, .some):
+                    return false
+                case (.none, .none):
+                    break
+                }
+            }
+
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+    }
 
     func start(profile: Profile?, showOnboardingSearching: Bool, sessionStore: SessionStore) {
         guard let profileId = profile?.id else { return }
@@ -131,26 +308,22 @@ final class HomeViewModel: ObservableObject {
             stop()
             userId = profileId
             activeMatches = []
-            dailyBattleMargins = []
             isHeroLoading = true
             isInitialLoading = true
             stats = .unknown
             isStatsLoading = false
             isStatsRefreshing = false
-            isBattleMarginsRefreshing = false
-            battleMarginsSavedAt = nil
             heroHealthKitValueByMetric = [:]
             heroLoadStartedAt = Date()
             heroStateResolvedAt = nil
             lastStatsRefreshAt = nil
-            marginsRefreshGeneration += 1
             lastHomeProfileLocalDate = currentLocalDate
             completedMatches = []
             completedMatchesListTask?.cancel()
             completedMatchesListTask = nil
+            lastHomeLayoutLogSignature = nil
             loadHeroSnapshotFromDisk(profileId: profileId)
             loadCachedBattleStats(profileId: profileId)
-            loadMarginsFromCache(profileId: profileId)
         } else {
             handleHomeDayRolloverIfNeeded(currentLocalDate: currentLocalDate)
             if !isHeroLoading {
@@ -188,8 +361,6 @@ final class HomeViewModel: ObservableObject {
         heroHealthKitPatchTask = nil
         statsRefreshTask?.cancel()
         statsRefreshTask = nil
-        marginsRefreshTask?.cancel()
-        marginsRefreshTask = nil
         completedMatchesListTask?.cancel()
         completedMatchesListTask = nil
         matchFoundCelebration = nil
@@ -199,6 +370,7 @@ final class HomeViewModel: ObservableObject {
         pollingTask?.cancel()
         pollingTask = nil
         lastHomeProfileLocalDate = nil
+        lastHomeLayoutLogSignature = nil
     }
 
     func reload(force: Bool) async {
@@ -315,101 +487,26 @@ final class HomeViewModel: ObservableObject {
         if isInitialLoading {
             isInitialLoading = false
         }
+        logHomeLayoutSnapshotIfNeeded(userId: userId)
 
         if forceRefresh {
             await refreshHomeStatsAwaiting(userId: userId)
-            marginsRefreshTask?.cancel()
-            marginsRefreshTask = nil
-            await refreshBattleMargins()
             await executeHeroHealthKitPatch(userId: userId)
         } else {
             refreshHomeStatsInBackground(userId: userId, force: true)
-            marginsRefreshTask?.cancel()
-            marginsRefreshTask = Task { [weak self] in
-                await self?.refreshBattleMargins()
-            }
             scheduleHeroHealthKitPatch()
         }
         return true
     }
 
+    private func sortCategory(for margin: Int) -> Int {
+        if margin < 0 { return 0 }
+        if margin == 0 { return 1 }
+        return 2
+    }
+
     func syncHeroMetricWithActiveMatches() {
         heroMetric = .steps
-    }
-
-    func setMarginChartDayCount(_ n: Int) async {
-        let clamped = n >= 10 ? 10 : 7
-        guard marginChartDayCount != clamped else { return }
-        marginChartDayCount = clamped
-        await refreshBattleMargins()
-    }
-
-    func refreshBattleMargins() async {
-        guard let userId else {
-            dailyBattleMargins = []
-            battleMarginsSavedAt = nil
-            isBattleMarginsRefreshing = false
-            return
-        }
-        let didLoadCachedMargins = loadMarginsFromCache(profileId: userId)
-        if !didLoadCachedMargins {
-            dailyBattleMargins = []
-            battleMarginsSavedAt = nil
-        }
-        marginsRefreshGeneration += 1
-        let generation = marginsRefreshGeneration
-        isBattleMarginsRefreshing = true
-        defer {
-            if generation == marginsRefreshGeneration {
-                isBattleMarginsRefreshing = false
-            }
-        }
-        let rows = await repository.fetchDailyBattleMargins(
-            endDate: Date(),
-            dayCount: marginChartDayCount,
-            metricType: HomeBattleHeroCard.HeroMetric.steps.metricType,
-            profileTimeZoneIdentifier: profileTimeZoneIdentifier
-        )
-        guard !Task.isCancelled, self.userId == userId, generation == marginsRefreshGeneration else { return }
-        dailyBattleMargins = rows
-#if DEBUG
-        let series = rows.map { "\($0.calendarDate)=\($0.margin)" }.joined(separator: ", ")
-        let todayKey = HomeRepository.formatProfileCalendarDate(
-            Date(),
-            profileTimeZoneIdentifier: profileTimeZoneIdentifier
-        )
-        let todayRpcMargin = rows.first(where: { $0.calendarDate == todayKey })?.margin ?? 0
-        var seenMatchIds = Set<UUID>()
-        let todayLocalEdgeSum = activeMatches
-            .filter { normalizedHeroMetricType($0.metricType) == HomeBattleHeroCard.HeroMetric.steps.metricType }
-            .filter { seenMatchIds.insert($0.id).inserted }
-            .reduce(0) { $0 + ($1.myToday - $1.theirToday) }
-        AppLogger.log(
-            category: "matchmaking",
-            level: .debug,
-            message: "home_daily_battle_margins debug",
-            userId: userId,
-            metadata: [
-                "metric_type": HomeBattleHeroCard.HeroMetric.steps.metricType,
-                "day_count": String(marginChartDayCount),
-                "series": series,
-                "today_key": todayKey,
-                "today_rpc_margin": String(todayRpcMargin),
-                "today_local_edge_sum": String(todayLocalEdgeSum)
-            ]
-        )
-#endif
-        let savedAt = Date()
-        battleMarginsSavedAt = savedAt
-        let cached = marginsCacheStore.makeCached(
-            profileId: userId,
-            profileTimeZoneIdentifier: profileTimeZoneIdentifier,
-            metricKey: HomeBattleHeroCard.HeroMetric.steps.metricType,
-            dayCount: marginChartDayCount,
-            rows: rows,
-            savedAt: savedAt
-        )
-        marginsCacheStore.save(cached)
     }
 
     private func startPollingIfNeeded() {
@@ -671,21 +768,6 @@ final class HomeViewModel: ObservableObject {
         battleStatsCacheStore.saveTodayStats(cached)
     }
 
-    @discardableResult
-    private func loadMarginsFromCache(profileId: UUID) -> Bool {
-        guard let cached = marginsCacheStore.load(
-            profileId: profileId,
-            profileTimeZoneIdentifier: profileTimeZoneIdentifier,
-            metricKey: HomeBattleHeroCard.HeroMetric.steps.metricType,
-            dayCount: marginChartDayCount
-        ) else { return false }
-        dailyBattleMargins = cached.rows.map {
-            DailyBattleMargin(calendarDate: $0.calendarDate, margin: $0.margin)
-        }
-        battleMarginsSavedAt = cached.savedAt
-        return true
-    }
-
     // MARK: - Live Activity sync
 
     private func syncLiveActivity() {
@@ -844,6 +926,44 @@ final class HomeViewModel: ObservableObject {
 
     private func normalizedHeroMetricType(_ metricType: String) -> String {
         metricType == "active_calories" ? "active_calories" : "steps"
+    }
+
+    private func logHomeLayoutSnapshotIfNeeded(userId: UUID) {
+        let summary = battleSummaryStats
+        let signature = [
+            "wins:\(summary.winningCount ?? -1)",
+            "total:\(summary.totalActive ?? -1)",
+            "lead:\(summary.closestLead ?? -1)",
+            "deficit:\(summary.closestDeficit ?? -1)",
+            "strip:\(statusStripMessage)",
+            "active:\(sortedActiveMatchesForHome.count)",
+            "invites_waiting:\(invitesWaitingCount)",
+            "waiting_on_opponent:\(waitingOnOpponentCount)",
+            "searching:\(activeSearchCount)"
+        ].joined(separator: "|")
+        guard signature != lastHomeLayoutLogSignature else { return }
+        lastHomeLayoutLogSignature = signature
+
+        AppLogger.log(
+            category: "home_layout",
+            level: .debug,
+            message: "slice1_home_sections",
+            userId: userId,
+            metadata: [
+                "hero_summary": heroSummaryText ?? "none",
+                "winning_count": "\(summary.winningCount ?? 0)",
+                "losing_count": "\(summary.losingCount ?? 0)",
+                "total_active": "\(summary.totalActive ?? 0)",
+                "closest_lead": summary.closestLead.map(String.init) ?? "none",
+                "closest_deficit": summary.closestDeficit.map(String.init) ?? "none",
+                "status_strip": statusStripMessage,
+                "active_rows": "\(sortedActiveMatchesForHome.count)",
+                "searching_count": "\(activeSearchCount)",
+                "invites_waiting_count": "\(invitesWaitingCount)",
+                "waiting_on_opponent_count": "\(waitingOnOpponentCount)",
+                "active_battle_count": "\(activeBattleCount)"
+            ]
+        )
     }
 
     // MARK: - Home Hero Snapshot Cache

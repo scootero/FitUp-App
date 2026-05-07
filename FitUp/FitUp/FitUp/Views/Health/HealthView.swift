@@ -47,6 +47,20 @@ struct HealthView: View {
                 )
                 .padding(.bottom, 14)
 
+                HomeBattleMarginChart(
+                    title: "BATTLE MARGIN",
+                    subtitle: "Net steps across your active battles",
+                    points: viewModel.dailyBattleMargins,
+                    unitLabel: "steps",
+                    dayCount: viewModel.marginChartDayCount,
+                    freshnessSavedAt: viewModel.battleMarginsSavedAt,
+                    isRefreshing: viewModel.isBattleMarginsRefreshing,
+                    onDayCountSelected: { n in
+                        Task { await viewModel.setMarginChartDayCount(n) }
+                    }
+                )
+                .padding(.bottom, 14)
+
                 healthSectionLabel("Your Stats")
                 WeekChartCard(
                     statsTab: $viewModel.statsTab,
