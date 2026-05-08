@@ -24,6 +24,8 @@ struct HomeView: View {
     @State private var hasLoggedHeroFirstRender = false
     @State private var hasLoggedFirstDataLoaded = false
     @State private var isPastMatchesExpanded = false
+    @State private var inviteWaitingPulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -46,14 +48,14 @@ struct HomeView: View {
                                 onOpenMatchDetails(primaryMatch.id, primaryMatch.opponent.displayName)
                             } label: {
                                 HomeBattleHeroCard(
-                                    matches: viewModel.activeStepMatches
+                                    matches: heroSortedStepMatches
                                 )
                             }
                             .buttonStyle(.plain)
                             .padding(.top, 10)
                         } else {
                             HomeBattleHeroCard(
-                                matches: viewModel.activeStepMatches
+                                matches: heroSortedStepMatches
                             )
                             .padding(.top, 10)
                         }
@@ -172,6 +174,7 @@ struct HomeView: View {
             }
             clearSearchingFlagIfHasMatch()
             viewModel.syncHeroMetricWithActiveMatches()
+            startInviteWaitingPulse()
         }
         .onChange(of: profile?.id) { _, _ in
             hasLoggedHeroFirstRender = false
@@ -214,6 +217,12 @@ struct HomeView: View {
         }
         .onChange(of: viewModel.pendingMatches.count) { _, _ in
             clearSearchingFlagIfHasMatch()
+        }
+        .onChange(of: viewModel.invitesWaitingCount) { _, _ in
+            startInviteWaitingPulse()
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            startInviteWaitingPulse()
         }
         .onChange(of: viewModel.activeMatches.count) { _, _ in
             clearSearchingFlagIfHasMatch()
@@ -381,7 +390,23 @@ struct HomeView: View {
         }
     }
 
+    @ViewBuilder
     private var battleStatusStrip: some View {
+        let hasInviteWaiting = viewModel.invitesWaitingCount > 0
+        if hasInviteWaiting {
+            Button {
+                openOldestPendingInvite()
+            } label: {
+                battleStatusStripContent(showInviteAffordance: true)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Tap to open invite from \(viewModel.oldestReceivedPendingMatch?.opponent.displayName ?? "opponent")")
+        } else {
+            battleStatusStripContent(showInviteAffordance: false)
+        }
+    }
+
+    private func battleStatusStripContent(showInviteAffordance: Bool) -> some View {
         let state = viewModel.statusStripState
         return HStack(spacing: 10) {
             Circle()
@@ -393,28 +418,47 @@ struct HomeView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
             Spacer(minLength: 0)
-            HStack(spacing: 6) {
-                ForEach(viewModel.statusStripSecondaryPills) { pill in
-                    Text(pill.label)
-                        .font(FitUpFont.mono(8, weight: .bold))
-                        .foregroundStyle(statusPillColor(for: pill.kind))
-                        .lineLimit(1)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(statusPillColor(for: pill.kind).opacity(0.14))
-                                .overlay(
-                                    Capsule()
-                                        .strokeBorder(statusPillColor(for: pill.kind).opacity(0.22), lineWidth: 0.8)
-                                )
-                        )
-                }
+            if showInviteAffordance {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(FitUpColors.Neon.orange)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .homeLiquidGlassCard(.base)
+        .overlay(
+            Group {
+                if showInviteAffordance {
+                    RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                        .strokeBorder(FitUpColors.Neon.orange, lineWidth: 1.4)
+                        .opacity(inviteWaitingPulse ? 0.95 : 0.25)
+                        .shadow(color: FitUpColors.Neon.orange.opacity(0.55), radius: inviteWaitingPulse ? 10 : 2)
+                        .allowsHitTesting(false)
+                }
+            }
+        )
+        .contentShape(Rectangle())
+    }
+
+    private func openOldestPendingInvite() {
+        guard let oldest = viewModel.oldestReceivedPendingMatch else { return }
+        onOpenMatchDetails(oldest.id, oldest.opponent.displayName)
+    }
+
+    private func startInviteWaitingPulse() {
+        guard viewModel.invitesWaitingCount > 0 else {
+            inviteWaitingPulse = false
+            return
+        }
+        guard !reduceMotion else {
+            inviteWaitingPulse = true
+            return
+        }
+        inviteWaitingPulse = false
+        withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+            inviteWaitingPulse = true
+        }
     }
 
     private var battleMiniStatsGrid: some View {
@@ -477,20 +521,13 @@ struct HomeView: View {
         }
     }
 
-    private func statusPillColor(for kind: HomeViewModel.StatusStripPillKind) -> Color {
-        switch kind {
-        case .searching:
-            return FitUpColors.Neon.cyan
-        case .invitesWaiting:
-            return FitUpColors.Neon.orange
-        case .waitingOnOpponent:
-            return FitUpColors.Neon.purple
-        }
-    }
-
     private func formattedSignedMargin(_ value: Int) -> String {
         let sign = value >= 0 ? "+" : "-"
         return "\(sign)\(abs(value).formatted())"
+    }
+
+    private var heroSortedStepMatches: [HomeActiveMatch] {
+        viewModel.sortedActiveMatchesForHome.filter { $0.metricType != "active_calories" }
     }
 
     private var header: some View {

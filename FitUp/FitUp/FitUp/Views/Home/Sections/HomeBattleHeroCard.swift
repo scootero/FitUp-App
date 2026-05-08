@@ -8,6 +8,15 @@
 import SwiftUI
 
 struct HomeBattleHeroCard: View {
+    private struct OpponentOrb: Identifiable {
+        let id: String
+        let initials: String
+        let avatarColor: Color
+        let margin: Int
+        let marginColor: Color
+        let isUrgent: Bool
+    }
+
     private struct RankedCompetitor: Identifiable {
         let id: String
         let name: String
@@ -42,6 +51,7 @@ struct HomeBattleHeroCard: View {
     @State private var animatedCenterValue: Int = 0
     @State private var pulseGlow = false
     @State private var isBreathingExpanded = false
+    @State private var urgentOrbPulse = false
     @State private var centerCountTask: Task<Void, Never>?
 
     private var matchesForSelectedMetric: [HomeActiveMatch] {
@@ -196,6 +206,22 @@ struct HomeBattleHeroCard: View {
         matchesForSelectedMetric.map(\.myToday).max() ?? 0
     }
 
+    private var displayedOpponentOrbs: [OpponentOrb] {
+        Array(matchesForSelectedMetric.prefix(4).enumerated()).map { index, match in
+            let margin = match.myToday - match.theirToday
+            let rawInitials = match.opponent.initials.trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallback = String(match.opponent.displayName.prefix(2)).uppercased()
+            return OpponentOrb(
+                id: match.id.uuidString,
+                initials: rawInitials.isEmpty ? fallback : rawInitials,
+                avatarColor: ProfileAccentColor.swiftUIColor(hex: match.opponent.colorHex),
+                margin: margin,
+                marginColor: marginColor(for: margin),
+                isUrgent: index == 0
+            )
+        }
+    }
+
     private var rankedCompetitors: [RankedCompetitor] {
         var byOpponent: [String: RankedCompetitor] = [:]
         for match in matchesForSelectedMetric {
@@ -269,6 +295,9 @@ struct HomeBattleHeroCard: View {
                         .frame(maxWidth: .infinity, alignment: .center)
 
                     if hasAnyActiveMatch {
+                        if !displayedOpponentOrbs.isEmpty {
+                            opponentOrbCard
+                        }
                         opponentRow
                         Text(heroCtaLine)
                             .font(FitUpFont.body(13, weight: .semibold))
@@ -304,6 +333,7 @@ struct HomeBattleHeroCard: View {
             }
             startRingBreathing()
             animateHeroRing()
+            startUrgentOrbPulse()
         }
         .onDisappear {
             centerCountTask?.cancel()
@@ -311,15 +341,20 @@ struct HomeBattleHeroCard: View {
         }
         .onChange(of: reduceMotion) { _, _ in
             startRingBreathing()
+            startUrgentOrbPulse()
         }
         .onChange(of: matches.map(\.id)) { _, _ in
             animateHeroRing()
+            startUrgentOrbPulse()
         }
         .onChange(of: myToday) { _, _ in
             animateHeroRing()
         }
         .onChange(of: topOpponentToday) { _, _ in
             animateHeroRing()
+        }
+        .onChange(of: displayedOpponentOrbs.map(\.id)) { _, _ in
+            startUrgentOrbPulse()
         }
     }
 
@@ -474,6 +509,67 @@ struct HomeBattleHeroCard: View {
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
+    private var opponentOrbCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("LIVE OPPONENTS")
+                .font(FitUpFont.mono(9, weight: .bold))
+                .foregroundStyle(FitUpColors.Text.tertiary)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(displayedOpponentOrbs) { orb in
+                        opponentOrbChip(orb)
+                    }
+                }
+                .padding(.vertical, 1)
+                .padding(.horizontal, 1)
+            }
+            .scrollClipDisabled()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+    }
+
+    private func opponentOrbChip(_ orb: OpponentOrb) -> some View {
+        HStack(spacing: 6) {
+            AvatarView(initials: orb.initials, color: orb.avatarColor, size: 22)
+            ViewThatFits(in: .horizontal) {
+                Text(formattedDelta(orb.margin))
+                    .font(FitUpFont.mono(11, weight: .bold))
+                    .foregroundStyle(orb.marginColor)
+                    .lineLimit(1)
+                Text(orb.margin == 0 ? "0" : (orb.margin > 0 ? "+" : "-"))
+                    .font(FitUpFont.mono(11, weight: .bold))
+                    .foregroundStyle(orb.marginColor)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule(style: .continuous)
+                .fill(orb.marginColor.opacity(0.14))
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(orb.marginColor.opacity(0.32), lineWidth: 1)
+                )
+        )
+        .scaleEffect(orb.isUrgent && urgentOrbPulse ? 1.03 : 1)
+        .opacity(orb.isUrgent && urgentOrbPulse ? 1 : 0.95)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(orb.initials), \(formattedDelta(orb.margin)) steps")
+    }
+
     private var nearbyOpponentsCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -590,6 +686,12 @@ struct HomeBattleHeroCard: View {
         .foregroundStyle(isMe ? FitUpColors.Text.secondary : FitUpColors.Text.tertiary)
     }
 
+    private func marginColor(for margin: Int) -> Color {
+        if margin > 0 { return FitUpColors.Neon.cyan }
+        if margin < 0 { return FitUpColors.Neon.orange }
+        return FitUpColors.Text.secondary
+    }
+
     private func formattedDelta(_ delta: Int) -> String {
         let sign = delta >= 0 ? "+" : "-"
         return "\(sign)\(abs(delta).formatted())"
@@ -616,6 +718,21 @@ struct HomeBattleHeroCard: View {
         isBreathingExpanded = false
         withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
             isBreathingExpanded = true
+        }
+    }
+
+    private func startUrgentOrbPulse() {
+        guard !displayedOpponentOrbs.isEmpty else {
+            urgentOrbPulse = false
+            return
+        }
+        guard !reduceMotion else {
+            urgentOrbPulse = false
+            return
+        }
+        urgentOrbPulse = false
+        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+            urgentOrbPulse = true
         }
     }
 

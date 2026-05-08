@@ -174,6 +174,12 @@ final class HomeViewModel: ObservableObject {
         pendingMatches.filter { !$0.hasAcceptedByMe }
     }
 
+    /// Oldest invite the current user still needs to act on, used by the home status
+    /// strip to deep-link directly into the match detail when the strip is tapped.
+    var oldestReceivedPendingMatch: HomePendingMatch? {
+        receivedPendingMatches.min { $0.createdAt < $1.createdAt }
+    }
+
     var sentPendingMatchesWaitingOnOpponent: [HomePendingMatch] {
         pendingMatches.filter { $0.hasAcceptedByMe && !$0.hasAcceptedByOpponent }
     }
@@ -193,12 +199,15 @@ final class HomeViewModel: ObservableObject {
     }
 
     var statusStripState: StatusStripState {
-        if activeSearchCount > 0 {
-            return .searching(activeSearchCount: activeSearchCount)
-        }
-
+        // Invites waiting are action-required, so they take priority over a passive
+        // matchmaking search. This also keeps the blinking/tappable strip in HomeView
+        // semantically aligned with its message.
         if invitesWaitingCount > 0 {
             return .invitesWaiting(count: invitesWaitingCount)
+        }
+
+        if activeSearchCount > 0 {
+            return .searching(activeSearchCount: activeSearchCount)
         }
 
         if waitingOnOpponentCount > 0 {
