@@ -76,6 +76,16 @@ struct HealthIntradayCumulativePoint: Equatable, Identifiable {
     var id: Date { date }
 }
 
+/// One bucket of hour-level activity (e.g. 9–10 AM produced this many steps). Used by the Stats 1D charts.
+struct HealthIntradayHourlyBucket: Equatable, Identifiable, Sendable {
+    /// Start of the hour bucket (anchored to the local timezone).
+    let hourStart: Date
+    /// Sum of the metric (steps or active calories) accumulated within this hour. Always ≥ 0.
+    let value: Int
+
+    var id: Date { hourStart }
+}
+
 enum HealthKitService {
 #if DEBUG
     private static let sleepPipelineLogger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FitUp", category: "healthkit_sleep")
@@ -448,6 +458,94 @@ enum HealthKitService {
         }
 
         return downsampleIntradaySeries(bucketPoints, maxPoints: max(4, maxPoints))
+    }
+
+    /// Hourly delta buckets for `calendarDate`, anchored to local timezone hours. Each bucket's `value` is the per-hour
+    /// sum of the metric (e.g. steps walked between 9–10 AM). Leading buckets with `value == 0` are dropped so the
+    /// returned series starts at the first hour with real activity. For "today", the final bucket may be partial (covers
+    /// up through `now`).
+    static func fetchIntradayHourlyDeltas(
+        metricType: HealthMetricType,
+        for calendarDate: Date,
+        timeZone: TimeZone? = nil
+    ) async throws -> [HealthIntradayHourlyBucket] {
+        let quantityIdentifier: HKQuantityTypeIdentifier
+        let unit: HKUnit
+        switch metricType {
+        case .steps:
+            quantityIdentifier = .stepCount
+            unit = .count()
+        case .activeCalories:
+            quantityIdentifier = .activeEnergyBurned
+            unit = .kilocalorie()
+        }
+
+        guard isHealthDataAvailable else {
+            throw HealthKitError.notAvailable
+        }
+        guard let quantityType = HKObjectType.quantityType(forIdentifier: quantityIdentifier) else {
+            throw typeError(for: quantityIdentifier)
+        }
+
+        var calendar = Calendar.current
+        calendar.timeZone = timeZone ?? .current
+        let dayStart = calendar.startOfDay(for: calendarDate)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+            throw HealthKitError.invalidDateRange
+        }
+
+        let now = Date()
+        let todayStart = calendar.startOfDay(for: now)
+        let chartEnd = dayStart == todayStart ? min(now, dayEnd) : dayEnd
+        if chartEnd <= dayStart {
+            return []
+        }
+
+        let predicate = HKQuery.predicateForSamples(
+            withStart: dayStart,
+            end: chartEnd,
+            options: [.strictStartDate]
+        )
+
+        let interval = DateComponents(hour: 1)
+        var hourlyBuckets: [HealthIntradayHourlyBucket] = []
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: quantityType,
+                quantitySamplePredicate: predicate,
+                options: [.cumulativeSum],
+                anchorDate: dayStart,
+                intervalComponents: interval
+            )
+
+            query.initialResultsHandler = { _, collection, error in
+                if let error {
+                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchIntradayHourlyDeltas"))
+                    return
+                }
+                guard let collection else {
+                    continuation.resume()
+                    return
+                }
+
+                collection.enumerateStatistics(from: dayStart, to: chartEnd) { statistics, _ in
+                    let delta = statistics.sumQuantity()?.doubleValue(for: unit) ?? 0
+                    let value = max(0, Int(delta.rounded()))
+                    hourlyBuckets.append(
+                        HealthIntradayHourlyBucket(hourStart: statistics.startDate, value: value)
+                    )
+                }
+                continuation.resume()
+            }
+
+            store.execute(query)
+        }
+
+        if let firstActiveIndex = hourlyBuckets.firstIndex(where: { $0.value > 0 }) {
+            return Array(hourlyBuckets[firstActiveIndex...])
+        }
+        return []
     }
 
     /// Most recent resting heart rate sample (bpm), if any.

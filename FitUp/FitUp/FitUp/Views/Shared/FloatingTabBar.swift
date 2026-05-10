@@ -2,7 +2,7 @@
 //  FloatingTabBar.swift
 //  FitUp
 //
-//  Maps JSX `BottomNav` — floating card, five slots: Home, Health, Battle, Ranks, Profile.
+//  Maps JSX `BottomNav` — floating card, five slots: Home, Stats, Battle, Ranks, Profile.
 //  Center Battle opens the challenge flow; label lives inside the gradient card.
 //
 
@@ -19,7 +19,7 @@ enum MainTab: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .home: return "HOME"
-        case .health: return "HEALTH"
+        case .health: return "STATS"
         case .ranks: return "RANKS"
         case .profile: return "PROFILE"
         }
@@ -28,7 +28,7 @@ enum MainTab: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .home: return "house.fill"
-        case .health: return "heart.fill"
+        case .health: return "chart.bar.fill"
         case .ranks: return "trophy.fill"
         case .profile: return "person.fill"
         }

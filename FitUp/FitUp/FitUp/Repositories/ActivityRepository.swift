@@ -11,6 +11,7 @@ import Supabase
 
 struct ActivityCompletedMatch: Identifiable, Equatable {
     let id: UUID
+    let opponentProfileId: UUID
     let opponentName: String
     let opponentInitials: String
     let opponentColorHex: String
@@ -60,6 +61,7 @@ final class ActivityRepository {
                 rows.append(
                     ActivityCompletedMatch(
                         id: matchId,
+                        opponentProfileId: opponentId,
                         opponentName: displayName(from: opponent),
                         opponentInitials: initials(from: opponent),
                         opponentColorHex: colorHex(for: opponentId),

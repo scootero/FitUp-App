@@ -51,15 +51,11 @@ struct CompetitionEdgeTodaySection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("COMPETITION EDGE TODAY")
-                    .font(FitUpFont.body(13, weight: .heavy))
-                    .fitUpGlobalTitleStyle(weight: .heavy, tracking: 2)
-                Spacer()
-            }
-            .padding(.top, 4)
-            .padding(.bottom, 8)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("COMPETITION EDGE TODAY")
+                .font(FitUpFont.body(13, weight: .heavy))
+                .fitUpGlobalTitleStyle(weight: .heavy, tracking: 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             Text("Per opponent, see who is ahead right now.")
                 .font(FitUpFont.body(12, weight: .medium))
@@ -70,7 +66,7 @@ struct CompetitionEdgeTodaySection: View {
                         endPoint: .trailing
                     )
                 )
-                .padding(.bottom, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(spacing: 8) {
                 if displayRows.isEmpty {
@@ -78,16 +74,17 @@ struct CompetitionEdgeTodaySection: View {
                         .font(FitUpFont.body(13, weight: .medium))
                         .foregroundStyle(FitUpColors.Text.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
+                        .padding(.vertical, 6)
                 } else {
                     ForEach(displayRows) { row in
                         CompetitionEdgeTodayRow(row: row)
                     }
                 }
             }
-            .padding(14)
-            .modifier(CompetitionEdgeSectionLiquidGlassModifier())
+            .padding(.top, 2)
         }
+        .padding(12)
+        .modifier(CompetitionEdgeSectionLiquidGlassModifier())
     }
 }
 
@@ -142,6 +139,11 @@ private struct CompetitionEdgeTodayRowData: Identifiable, Equatable {
 private struct CompetitionEdgeTodayRow: View {
     let row: CompetitionEdgeTodayRowData
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isPressed = false
+    @State private var introGlow = false
+    @State private var hasIntroGlowed = false
+
     private var delta: Int { row.myToday - row.theirToday }
     private var isAhead: Bool { delta >= 0 }
     private var unitLabel: String { row.metricType == "steps" ? "steps" : "cal" }
@@ -156,6 +158,13 @@ private struct CompetitionEdgeTodayRow: View {
     private var opponentAccent: Color {
         let sanitized = row.opponent.colorHex.replacingOccurrences(of: "#", with: "")
         return ProfileAccentColor.swiftUIColor(hex: sanitized)
+    }
+
+    /// 0 when idle, 1 at full press; intro contributes a brief partial pulse on first appear. Single scalar drives shadow/stroke/scale to keep the glow cheap.
+    private var glowLevel: Double {
+        let press = isPressed ? 1.0 : 0.0
+        let intro = introGlow ? 0.55 : 0.0
+        return max(press, intro)
     }
 
     /// Single shadow + stroke keeps glow cheap vs. multi-layer blurs.
@@ -224,7 +233,7 @@ private struct CompetitionEdgeTodayRow: View {
         .padding(.vertical, 12)
         .background {
             RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                .fill(Color.white.opacity(0.04))
+                .fill(Color.white.opacity(0.04 + glowLevel * 0.05))
                 .overlay {
                     RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
                         .strokeBorder(
@@ -233,10 +242,31 @@ private struct CompetitionEdgeTodayRow: View {
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
-                            lineWidth: 1.25
+                            lineWidth: 1.25 + glowLevel * 0.55
                         )
                 }
-                .shadow(color: edgeGlow.opacity(0.85), radius: 10, x: 0, y: 0)
+                .shadow(
+                    color: edgeGlow.opacity(0.85 + glowLevel * 0.25),
+                    radius: 10 + glowLevel * 7,
+                    x: 0,
+                    y: 0
+                )
+        }
+        .scaleEffect(reduceMotion ? 1.0 : (1.0 + glowLevel * 0.012))
+        .animation(.easeOut(duration: 0.22), value: isPressed)
+        .animation(.easeOut(duration: 0.55), value: introGlow)
+        .contentShape(RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous))
+        .onLongPressGesture(minimumDuration: .infinity, maximumDistance: 30, perform: {}) { pressing in
+            isPressed = pressing
+        }
+        .onScrollVisibilityChange(threshold: 0.4) { visible in
+            guard visible, !hasIntroGlowed, !reduceMotion else { return }
+            hasIntroGlowed = true
+            introGlow = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(420))
+                introGlow = false
+            }
         }
     }
 }

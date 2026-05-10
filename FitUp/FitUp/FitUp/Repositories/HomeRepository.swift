@@ -47,7 +47,7 @@ struct HomeDayPip: Identifiable, Equatable {
     var id: Int { dayNumber }
 }
 
-struct DailyBattleMargin: Identifiable, Equatable, Sendable {
+struct DailyBattleMargin: Identifiable, Equatable, Sendable, Codable {
     /// `yyyy-MM-dd` (match calendar date from server).
     let calendarDate: String
     /// Sum of (your total − opponent total) across active/completed matches for that calendar date.
@@ -108,7 +108,57 @@ struct HomeDiscoverUser: Identifiable, Equatable {
     let losses: Int?
 }
 
+struct HomeStatsSnapshot {
+    let effectiveRangeKey: String
+    let margins: [DailyBattleMargin]
+    let previousPeriodPercent: Int?
+    let battleStats: HealthBattleStats
+    let battleStatsScope: String
+    let rangeSupport: String
+}
+
+struct HomeRivalStat: Identifiable, Equatable, Sendable {
+    let opponentProfileId: UUID
+    let opponentDisplayName: String
+    let opponentInitials: String
+    let opponentAvatarURL: String?
+    let finalizedDaysCompeted: Int
+    let matchWins: Int
+    let matchLosses: Int
+    let matchTies: Int
+    let winPercentage: Int
+    let avgFinalizedDailyMargin: Double?
+    let lastPlayedOn: Date?
+    let activeMatchId: UUID?
+    let computedAt: Date?
+
+    var id: UUID { opponentProfileId }
+}
+
 final class HomeRepository {
+    func fetchStatsSnapshot(rangeKey: String, metricType: String = "steps") async -> HomeStatsSnapshot? {
+        guard let client = SupabaseProvider.client else { return nil }
+        let params = HomeStatsSnapshotRPCParams(
+            p_range_key: rangeKey,
+            p_metric_type: metricType
+        )
+        do {
+            let response: PostgrestResponse<HomeStatsSnapshotRPCResult> = try await client
+                .rpc("get_profile_stats_snapshot", params: params)
+                .execute()
+            return response.value.toDomain()
+        } catch {
+            if error is CancellationError { return nil }
+            AppLogger.log(
+                category: "matchmaking",
+                level: .warning,
+                message: "get_profile_stats_snapshot rpc failed",
+                metadata: ["error": error.localizedDescription, "range_key": rangeKey]
+            )
+            return nil
+        }
+    }
+
     func loadSnapshot(for currentUserId: UUID, showOnboardingSearching: Bool, profileTimeZoneIdentifier: String? = nil) async -> HomeSnapshot {
         async let searching = fetchSearchingRequests(currentUserId: currentUserId)
         async let cards = fetchActiveAndPendingCards(currentUserId: currentUserId, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
@@ -138,6 +188,26 @@ final class HomeRepository {
     func loadActiveMatches(for currentUserId: UUID, profileTimeZoneIdentifier: String? = nil) async -> [HomeActiveMatch] {
         let (activeMatches, _) = await fetchActiveAndPendingCards(currentUserId: currentUserId, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
         return activeMatches
+    }
+
+    func fetchMyRivalStats(limit: Int = 3) async -> [HomeRivalStat] {
+        guard let client = SupabaseProvider.client else { return [] }
+        let params = HomeMyRivalStatsRPCParams(p_limit: max(1, limit))
+        do {
+            let response: PostgrestResponse<[HomeMyRivalStatsRPCRow]> = try await client
+                .rpc("get_my_rival_stats", params: params)
+                .execute()
+            return response.value.map(\.toDomain)
+        } catch {
+            if error is CancellationError { return [] }
+            AppLogger.log(
+                category: "matchmaking",
+                level: .warning,
+                message: "get_my_rival_stats rpc failed",
+                metadata: ["error": error.localizedDescription, "limit": "\(limit)"]
+            )
+            return []
+        }
     }
 
     /// End date should be “today” in the user’s profile timezone when available (same convention as live match days).
@@ -173,7 +243,7 @@ final class HomeRepository {
         }
     }
 
-    private static func safeInt(from int64: Int64) -> Int {
+    fileprivate static func safeInt(from int64: Int64) -> Int {
         if int64 >= Int64(Int.max) { return Int.max }
         if int64 <= Int64(Int.min) { return Int.min }
         return Int(int64)
@@ -963,6 +1033,186 @@ extension HomeDailyBattleMarginsRPCParams: Encodable {
 private struct HomeDailyBattleMarginsRow: Decodable, Sendable {
     let date: String
     let margin: Int64
+}
+
+private struct HomeStatsSnapshotRPCParams: Sendable {
+    let p_range_key: String
+    let p_metric_type: String
+}
+
+extension HomeStatsSnapshotRPCParams: Encodable {
+    nonisolated func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(p_range_key, forKey: .p_range_key)
+        try c.encode(p_metric_type, forKey: .p_metric_type)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case p_range_key
+        case p_metric_type
+    }
+}
+
+private struct HomeMyRivalStatsRPCParams: Sendable {
+    let p_limit: Int
+}
+
+extension HomeMyRivalStatsRPCParams: Encodable {
+    nonisolated func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(p_limit, forKey: .p_limit)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case p_limit
+    }
+}
+
+private struct HomeMyRivalStatsRPCRow: Decodable, Sendable {
+    let opponent_profile_id: UUID
+    let opponent_display_name: String
+    let opponent_initials: String
+    let opponent_avatar_url: String?
+    let finalized_days_competed: Int
+    let match_wins: Int
+    let match_losses: Int
+    let match_ties: Int
+    let win_percentage: Int
+    let avg_finalized_daily_margin: Double?
+    let last_played_on: Date?
+    let active_match_id: UUID?
+    let computed_at: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case opponent_profile_id
+        case opponent_display_name
+        case opponent_initials
+        case opponent_avatar_url
+        case finalized_days_competed
+        case match_wins
+        case match_losses
+        case match_ties
+        case win_percentage
+        case avg_finalized_daily_margin
+        case last_played_on
+        case active_match_id
+        case computed_at
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        opponent_profile_id = try c.decode(UUID.self, forKey: .opponent_profile_id)
+        opponent_display_name = try c.decode(String.self, forKey: .opponent_display_name)
+        opponent_initials = try c.decode(String.self, forKey: .opponent_initials)
+        opponent_avatar_url = try c.decodeIfPresent(String.self, forKey: .opponent_avatar_url)
+        finalized_days_competed = Self.decodeInt(c, key: .finalized_days_competed)
+        match_wins = Self.decodeInt(c, key: .match_wins)
+        match_losses = Self.decodeInt(c, key: .match_losses)
+        match_ties = Self.decodeInt(c, key: .match_ties)
+        win_percentage = Self.decodeInt(c, key: .win_percentage)
+        avg_finalized_daily_margin = Self.decodeOptionalNumericDouble(c, key: .avg_finalized_daily_margin)
+        last_played_on = Self.decodeOptionalPostgresDate(c, key: .last_played_on)
+        active_match_id = try c.decodeIfPresent(UUID.self, forKey: .active_match_id)
+        computed_at = try c.decodeIfPresent(Date.self, forKey: .computed_at)
+    }
+
+    private static func decodeInt(_ c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Int {
+        if let v = try? c.decode(Int.self, forKey: key) { return v }
+        if let d = try? c.decode(Double.self, forKey: key) { return Int(d.rounded()) }
+        if let s = try? c.decode(String.self, forKey: key), let v = Int(s) { return v }
+        return 0
+    }
+
+    private static func decodeOptionalNumericDouble(_ c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Double? {
+        guard c.contains(key) else { return nil }
+        if (try? c.decodeNil(forKey: key)) == true { return nil }
+        if let v = try? c.decode(Double.self, forKey: key) { return v }
+        if let v = try? c.decode(Int.self, forKey: key) { return Double(v) }
+        if let s = try? c.decode(String.self, forKey: key), let v = Double(s) { return v }
+        return nil
+    }
+
+    private static func decodeOptionalPostgresDate(_ c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Date? {
+        guard c.contains(key) else { return nil }
+        if (try? c.decodeNil(forKey: key)) == true { return nil }
+        if let d = try? c.decode(Date.self, forKey: key) { return d }
+        guard let s = try? c.decode(String.self, forKey: key), !s.isEmpty else { return nil }
+        let isoDate = DateFormatter()
+        isoDate.calendar = Calendar(identifier: .gregorian)
+        isoDate.locale = Locale(identifier: "en_US_POSIX")
+        isoDate.timeZone = TimeZone(secondsFromGMT: 0)
+        isoDate.dateFormat = "yyyy-MM-dd"
+        return isoDate.date(from: s)
+    }
+
+    var toDomain: HomeRivalStat {
+        HomeRivalStat(
+            opponentProfileId: opponent_profile_id,
+            opponentDisplayName: opponent_display_name,
+            opponentInitials: opponent_initials,
+            opponentAvatarURL: opponent_avatar_url,
+            finalizedDaysCompeted: max(0, finalized_days_competed),
+            matchWins: max(0, match_wins),
+            matchLosses: max(0, match_losses),
+            matchTies: max(0, match_ties),
+            winPercentage: max(0, min(100, win_percentage)),
+            avgFinalizedDailyMargin: avg_finalized_daily_margin,
+            lastPlayedOn: last_played_on,
+            activeMatchId: active_match_id,
+            computedAt: computed_at
+        )
+    }
+}
+
+private struct HomeStatsSnapshotRPCResult: Decodable, Sendable {
+    let effective_range_key: String
+    let summary: Summary
+    let chart: Chart
+    let scope_flags: ScopeFlags
+
+    struct Summary: Decodable, Sendable {
+        let net_margin: Int64?
+        let previous_period_percent: Int?
+        let wins: Int
+        let losses: Int
+        let ties: Int
+        let win_rate_percent: Int
+        let current_streak_type: String
+        let current_streak_count: Int
+    }
+
+    struct Chart: Decodable, Sendable {
+        let points: [Point]
+    }
+
+    struct Point: Decodable, Sendable {
+        let date: String
+        let margin: Int64
+    }
+
+    struct ScopeFlags: Decodable, Sendable {
+        let battle_stats_scope: String
+        let range_support: String
+    }
+
+    func toDomain() -> HomeStatsSnapshot {
+        HomeStatsSnapshot(
+            effectiveRangeKey: effective_range_key,
+            margins: chart.points.map { DailyBattleMargin(calendarDate: $0.date, margin: HomeRepository.safeInt(from: $0.margin)) },
+            previousPeriodPercent: summary.previous_period_percent,
+            battleStats: HealthBattleStats(
+                matchesPlayed: max(0, summary.wins + summary.losses + summary.ties),
+                wins: max(0, summary.wins),
+                losses: max(0, summary.losses),
+                ties: max(0, summary.ties),
+                winRate: max(0, min(100, summary.win_rate_percent)),
+                currentStreakType: HealthBattleStats.StreakType(rawValue: summary.current_streak_type) ?? .none,
+                currentStreakCount: max(0, summary.current_streak_count)
+            ),
+            battleStatsScope: scope_flags.battle_stats_scope,
+            rangeSupport: scope_flags.range_support
+        )
+    }
 }
 
 // MARK: - decline_pending_match RPC (see supabase/sql/slice4e-decline-pending-match.sql)

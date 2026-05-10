@@ -8,8 +8,8 @@
 import Foundation
 import Supabase
 
-struct HealthBattleStats: Equatable {
-    enum StreakType: String, Equatable {
+struct HealthBattleStats: Equatable, Codable {
+    enum StreakType: String, Equatable, Codable {
         case win
         case loss
         case none

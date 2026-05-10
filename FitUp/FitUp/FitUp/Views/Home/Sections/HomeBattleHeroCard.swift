@@ -10,11 +10,14 @@ import SwiftUI
 struct HomeBattleHeroCard: View {
     private struct OpponentOrb: Identifiable {
         let id: String
+        let name: String
         let initials: String
         let avatarColor: Color
         let margin: Int
+        let totalSteps: Int
         let marginColor: Color
         let isUrgent: Bool
+        let opponentUpdatedAt: Date?
     }
 
     private struct RankedCompetitor: Identifiable {
@@ -47,7 +50,7 @@ struct HomeBattleHeroCard: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var animatedMyRingProgress: Double = 0
+    @State private var animatedRingProgressTotal: Double = 0
     @State private var animatedCenterValue: Int = 0
     @State private var pulseGlow = false
     @State private var isBreathingExpanded = false
@@ -86,12 +89,26 @@ struct HomeBattleHeroCard: View {
         matchesForSelectedMetric.map(\.myToday).max() ?? 0
     }
 
-    private var topOpponentToday: Int {
+    /// Pace target for the ring: closest opponent ahead, else closest behind, else highest opponent total.
+    private var focusOpponentToday: Int {
         focusOpponentMatch?.theirToday ?? 0
     }
 
     private var targetOpponentName: String {
         focusOpponentMatch?.opponent.displayName ?? "Opponent"
+    }
+
+    /// Leaderboard leader vs you — shown only when multiple battles and focus rival differs from top step total.
+    private var topOpponentLineText: String? {
+        guard hasAnyActiveMatch,
+              matchesForSelectedMetric.count > 1,
+              let top = topOpponentMatch,
+              let focus = focusOpponentMatch,
+              top.opponent.id != focus.opponent.id
+        else { return nil }
+        let topMargin = myToday - top.theirToday
+        let status = topMargin == 0 ? "TIED" : (topMargin > 0 ? "AHEAD" : "BEHIND")
+        return "Top: \(top.opponent.displayName) · \(status) \(formattedDelta(topMargin))"
     }
 
     private var isWinningState: Bool {
@@ -107,18 +124,46 @@ struct HomeBattleHeroCard: View {
         return abs(marginVsTopOpponent) + 1
     }
 
-    private var ringScaleMax: Int {
-        max(1, myToday, topOpponentToday)
+    private let ringOpenGapFraction: Double = 0.08
+
+    private var ringTrackStart: Double {
+        ringOpenGapFraction / 2
+    }
+
+    private var ringTrackSpan: Double {
+        1 - ringOpenGapFraction
     }
 
     private var opponentComparableRingProgress: Double {
-        Double(topOpponentToday) / Double(ringScaleMax)
+        guard hasAnyActiveMatch else { return 0 }
+        let scale = max(1, myToday, focusOpponentToday)
+        return min(max(Double(focusOpponentToday) / Double(scale), 0), 1)
     }
 
-    private var marginRingProgress: Double {
-        let leaderTotal = max(myToday, topOpponentToday, 1)
+    /// Relative pace proxy until 7-day baselines are threaded into HomeActiveMatch.
+    /// Uses today's observed pace from both users so lead/deficit feels proportional.
+    private var relativeDailyBaseline: Int {
+        let nonZeroTotals = [myToday, focusOpponentToday].filter { $0 > 0 }
+        guard !nonZeroTotals.isEmpty else { return 3_000 }
+        let mean = Double(nonZeroTotals.reduce(0, +)) / Double(nonZeroTotals.count)
+        return max(1_500, Int(mean.rounded()))
+    }
+
+    private var totalRelativeRingProgress: Double {
         let gap = abs(marginVsTopOpponent)
-        return min(max(Double(gap) / Double(leaderTotal), 0), 1)
+        return Double(gap) / Double(max(relativeDailyBaseline, 1))
+    }
+
+    private var primaryLapProgress: Double {
+        min(max(animatedRingProgressTotal, 0), 1)
+    }
+
+    private var overflowLapProgress: Double {
+        min(max(animatedRingProgressTotal - 1, 0), 1)
+    }
+
+    private func ringTrimEnd(for progress: Double) -> Double {
+        ringTrackStart + (min(max(progress, 0), 1) * ringTrackSpan)
     }
 
     private var accentColor: Color {
@@ -138,11 +183,11 @@ struct HomeBattleHeroCard: View {
         return isWinningState ? FitUpColors.Neon.purple : FitUpColors.Neon.blue
     }
 
-    private var battleStatusLine: String {
-        guard hasAnyActiveMatch, focusOpponentMatch != nil else { return "No step battle yet" }
-        if marginVsTopOpponent > 0 { return "Ahead by \(marginVsTopOpponent.formatted()) steps" }
-        if marginVsTopOpponent < 0 { return "Behind by \(abs(marginVsTopOpponent).formatted()) steps" }
-        return "Tied right now"
+    private var ringLeadStatusLabel: String {
+        guard hasAnyActiveMatch, focusOpponentMatch != nil else { return "NO BATTLE" }
+        if marginVsTopOpponent > 0 { return "AHEAD BY" }
+        if marginVsTopOpponent < 0 { return "BEHIND BY" }
+        return "TIED"
     }
 
     private var heroCtaLine: String {
@@ -160,7 +205,7 @@ struct HomeBattleHeroCard: View {
     }
 
     private var marginVsTopOpponent: Int {
-        myToday - topOpponentToday
+        myToday - focusOpponentToday
     }
 
     private var isBehindState: Bool {
@@ -177,6 +222,11 @@ struct HomeBattleHeroCard: View {
 
     private var ringCenterContextText: String {
         stateTextForRing
+    }
+
+    private var ringOpponentTotalText: String? {
+        guard hasAnyActiveMatch, let focusOpponentMatch else { return nil }
+        return "\(focusOpponentMatch.theirToday.formatted()) total"
     }
 
     private var accessibilityMetricUnit: String {
@@ -213,11 +263,14 @@ struct HomeBattleHeroCard: View {
             let fallback = String(match.opponent.displayName.prefix(2)).uppercased()
             return OpponentOrb(
                 id: match.id.uuidString,
+                name: match.opponent.displayName,
                 initials: rawInitials.isEmpty ? fallback : rawInitials,
                 avatarColor: ProfileAccentColor.swiftUIColor(hex: match.opponent.colorHex),
                 margin: margin,
+                totalSteps: match.theirToday,
                 marginColor: marginColor(for: margin),
-                isUrgent: index == 0
+                isUrgent: index == 0,
+                opponentUpdatedAt: match.opponentTodayUpdatedAt
             )
         }
     }
@@ -291,25 +344,34 @@ struct HomeBattleHeroCard: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .center, spacing: 12) {
                 VStack(spacing: 10) {
+                    if hasAnyActiveMatch {
+                        Text(heroCtaLine)
+                            .font(FitUpFont.body(13, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                            .multilineTextAlignment(.trailing)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 2)
+                    }
+
                     ringView
                         .frame(maxWidth: .infinity, alignment: .center)
 
                     if hasAnyActiveMatch {
+                        if let topOpponentLineText {
+                            Text(topOpponentLineText)
+                                .font(FitUpFont.body(11, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Text.secondary)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.7)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 8)
+                        }
                         if !displayedOpponentOrbs.isEmpty {
                             opponentOrbCard
                         }
-                        opponentRow
-                        Text(heroCtaLine)
-                            .font(FitUpFont.body(13, weight: .semibold))
-                            .foregroundStyle(FitUpColors.Text.primary)
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(battleStatusLine)
-                            .font(FitUpFont.body(12, weight: .medium))
-                            .foregroundStyle(FitUpColors.Text.secondary)
-                            .multilineTextAlignment(.center)
-                        freshnessLineView
-                            .padding(.top, 4)
                     } else {
                         Text("No step battle yet")
                             .font(FitUpFont.body(13, weight: .semibold))
@@ -327,6 +389,7 @@ struct HomeBattleHeroCard: View {
             .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 2)
+        .padding(.top, -25)
         .onAppear {
             withAnimation(.easeInOut(duration: 0.35)) {
                 pulseGlow = true
@@ -350,7 +413,7 @@ struct HomeBattleHeroCard: View {
         .onChange(of: myToday) { _, _ in
             animateHeroRing()
         }
-        .onChange(of: topOpponentToday) { _, _ in
+        .onChange(of: focusOpponentToday) { _, _ in
             animateHeroRing()
         }
         .onChange(of: displayedOpponentOrbs.map(\.id)) { _, _ in
@@ -361,6 +424,7 @@ struct HomeBattleHeroCard: View {
     private var ringView: some View {
         ZStack {
             Circle()
+                .trim(from: ringTrackStart, to: ringTrackStart + ringTrackSpan)
                 .stroke(
                     LinearGradient(
                         colors: [
@@ -374,6 +438,7 @@ struct HomeBattleHeroCard: View {
                 )
                 .overlay {
                     Circle()
+                        .trim(from: ringTrackStart, to: ringTrackStart + ringTrackSpan)
                         .stroke(
                             AngularGradient(
                                 colors: [
@@ -390,7 +455,7 @@ struct HomeBattleHeroCard: View {
 
             if !isBehindState {
                 Circle()
-                    .trim(from: 0, to: CGFloat(min(max(opponentComparableRingProgress, 0), 1)))
+                    .trim(from: ringTrackStart, to: ringTrimEnd(for: opponentComparableRingProgress))
                     .stroke(
                         AngularGradient(
                             colors: [
@@ -408,7 +473,7 @@ struct HomeBattleHeroCard: View {
             }
 
             Circle()
-                .trim(from: 0, to: CGFloat(animatedMyRingProgress))
+                .trim(from: ringTrackStart, to: ringTrimEnd(for: primaryLapProgress))
                 .stroke(
                     AngularGradient(
                         colors: isBehindState
@@ -441,7 +506,7 @@ struct HomeBattleHeroCard: View {
                 .overlay {
                     if isBehindState {
                         Circle()
-                            .trim(from: 0, to: CGFloat(animatedMyRingProgress))
+                            .trim(from: ringTrackStart, to: ringTrimEnd(for: primaryLapProgress))
                             .stroke(Color.white.opacity(0.22), style: StrokeStyle(lineWidth: 8, lineCap: .round))
                             .rotationEffect(.degrees(-90))
                             .scaleEffect(x: -1, y: 1)
@@ -449,7 +514,44 @@ struct HomeBattleHeroCard: View {
                     }
                 }
 
+            if overflowLapProgress > 0 {
+                Circle()
+                    .trim(from: ringTrackStart, to: ringTrimEnd(for: overflowLapProgress))
+                    .stroke(
+                        AngularGradient(
+                            colors: isBehindState
+                                ? [
+                                    FitUpColors.Neon.red.opacity(0.86),
+                                    FitUpColors.Neon.orange.opacity(0.96),
+                                    FitUpColors.Neon.pink.opacity(0.9),
+                                ]
+                                : [
+                                    FitUpColors.Neon.green.opacity(0.52),
+                                    FitUpColors.Neon.cyan.opacity(0.92),
+                                    FitUpColors.Neon.blue.opacity(0.84),
+                                ],
+                            center: .center
+                        ),
+                        style: StrokeStyle(lineWidth: 12 + (ringBreathLineWidthDelta * 0.7), lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .scaleEffect(x: isBehindState ? -1 : 1, y: 1)
+                    .shadow(
+                        color: (isBehindState ? FitUpColors.Neon.red : FitUpColors.Neon.green)
+                            .opacity(0.5),
+                        radius: pulseGlow ? 12 : 8
+                    )
+                    .opacity(0.92)
+            }
+
             VStack(spacing: 2) {
+                Text(ringLeadStatusLabel)
+                    .font(FitUpFont.body(10, weight: .heavy))
+                    .tracking(1.0)
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.75)
+                    .lineLimit(1)
                 Text(hasAnyActiveMatch ? formattedDelta(animatedCenterValue) : animatedCenterValue.formatted())
                     .font(FitUpFont.display(28, weight: .black))
                     .foregroundStyle(FitUpColors.Text.primary)
@@ -459,6 +561,13 @@ struct HomeBattleHeroCard: View {
                     .font(FitUpFont.body(11, weight: .heavy))
                     .tracking(1.2)
                     .foregroundStyle(FitUpColors.Text.secondary)
+                if let ringOpponentTotalText {
+                    Text(ringOpponentTotalText)
+                        .font(FitUpFont.body(10, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Text.secondary.opacity(0.85))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
                 Text(ringCenterContextText)
                     .font(FitUpFont.body(10, weight: .semibold))
                     .foregroundStyle(FitUpColors.Text.tertiary)
@@ -474,98 +583,82 @@ struct HomeBattleHeroCard: View {
         .frame(width: 238, height: 238)
     }
 
-    @ViewBuilder
-    private var freshnessLineView: some View {
-        if let focusOpponentMatch {
-            TimelineView(.periodic(from: .now, by: 60)) { context in
-                if let freshnessLine = opponentFreshnessLine(
-                    opponentUpdatedAt: focusOpponentMatch.opponentTodayUpdatedAt,
-                    now: context.date
-                ) {
-                    Text(freshnessLine)
-                        .font(FitUpFont.body(11, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-        }
-    }
-
-    private var opponentRow: some View {
-        HStack(spacing: 10) {
-            if let focusOpponentMatch {
-                AvatarView(
-                    initials: focusOpponentMatch.opponent.initials,
-                    color: ProfileAccentColor.swiftUIColor(hex: focusOpponentMatch.opponent.colorHex),
-                    size: 28
-                )
-                Text(focusOpponentMatch.opponent.displayName)
-                    .font(FitUpFont.body(13, weight: .semibold))
-                    .foregroundStyle(FitUpColors.Text.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-    }
-
     private var opponentOrbCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("LIVE OPPONENTS")
                 .font(FitUpFont.mono(9, weight: .bold))
                 .foregroundStyle(FitUpColors.Text.tertiary)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(displayedOpponentOrbs) { orb in
-                        opponentOrbChip(orb)
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(displayedOpponentOrbs) { orb in
+                            opponentOrbChip(orb, now: context.date)
+                        }
                     }
+                    .padding(.vertical, 1)
+                    .padding(.horizontal, 1)
                 }
-                .padding(.vertical, 1)
-                .padding(.horizontal, 1)
+                .scrollClipDisabled()
             }
-            .scrollClipDisabled()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
     }
 
-    private func opponentOrbChip(_ orb: OpponentOrb) -> some View {
-        HStack(spacing: 6) {
-            AvatarView(initials: orb.initials, color: orb.avatarColor, size: 22)
-            ViewThatFits(in: .horizontal) {
-                Text(formattedDelta(orb.margin))
-                    .font(FitUpFont.mono(11, weight: .bold))
-                    .foregroundStyle(orb.marginColor)
-                    .lineLimit(1)
-                Text(orb.margin == 0 ? "0" : (orb.margin > 0 ? "+" : "-"))
-                    .font(FitUpFont.mono(11, weight: .bold))
-                    .foregroundStyle(orb.marginColor)
-                    .lineLimit(1)
+    private func opponentOrbChip(_ orb: OpponentOrb, now: Date) -> some View {
+        let chipColor = opponentChipColor(for: orb.margin)
+        return VStack(alignment: .center, spacing: 4) {
+            HStack(spacing: 6) {
+                AvatarView(initials: orb.initials, color: orb.avatarColor, size: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(orb.name)
+                        .font(FitUpFont.body(11, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.primary)
+                        .lineLimit(1)
+                    Text("\(formattedDelta(orb.margin)) steps")
+                        .font(FitUpFont.mono(13, weight: .bold))
+                        .foregroundStyle(chipColor)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 8)
+            .padding(.trailing, 12)
+            .padding(.vertical, 10)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(chipColor.opacity(0.24))
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .strokeBorder(chipColor.opacity(0.50), lineWidth: 1.2)
+                    )
+            )
+            .scaleEffect(orb.isUrgent && urgentOrbPulse ? 1.03 : 1)
+            .opacity(orb.isUrgent && urgentOrbPulse ? 1 : 0.95)
+
+            Text("\(orb.totalSteps.formatted()) total")
+                .font(FitUpFont.mono(10, weight: .semibold))
+                .foregroundStyle(FitUpColors.Text.secondary)
+                .lineLimit(1)
+
+            if let freshnessShort = opponentFreshnessShortLine(opponentUpdatedAt: orb.opponentUpdatedAt, now: now) {
+                let pillTextColor = freshnessColor(opponentUpdatedAt: orb.opponentUpdatedAt, now: now)
+                Text(freshnessShort)
+                    .font(FitUpFont.mono(9, weight: .medium))
+                    .foregroundStyle(pillTextColor.opacity(0.78))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(pillTextColor.opacity(0.12))
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(pillTextColor.opacity(0.22), lineWidth: 1)
+                            )
+                    )
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
         }
-        .padding(.leading, 4)
-        .padding(.trailing, 8)
-        .padding(.vertical, 4)
-        .background(
-            Capsule(style: .continuous)
-                .fill(orb.marginColor.opacity(0.14))
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(orb.marginColor.opacity(0.32), lineWidth: 1)
-                )
-        )
-        .scaleEffect(orb.isUrgent && urgentOrbPulse ? 1.03 : 1)
-        .opacity(orb.isUrgent && urgentOrbPulse ? 1 : 0.95)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(orb.initials), \(formattedDelta(orb.margin)) steps")
     }
@@ -702,9 +795,9 @@ struct HomeBattleHeroCard: View {
     }
 
     private func animateHeroRing() {
-        animatedMyRingProgress = 0
+        animatedRingProgressTotal = 0
         withAnimation(.easeOut(duration: 0.75)) {
-            animatedMyRingProgress = marginRingProgress
+            animatedRingProgressTotal = totalRelativeRingProgress
         }
         animateCenterValue(to: displayedCenterTarget)
     }
@@ -736,14 +829,26 @@ struct HomeBattleHeroCard: View {
         }
     }
 
-    private func opponentFreshnessLine(opponentUpdatedAt: Date?, now: Date) -> String? {
+    private func opponentFreshnessShortLine(opponentUpdatedAt: Date?, now: Date) -> String? {
         guard let opponentUpdatedAt else { return nil }
         let elapsedSeconds = max(0, Int(now.timeIntervalSince(opponentUpdatedAt)))
-        let elapsedMinutes = elapsedSeconds / 60
-        if elapsedMinutes < 1 { return "Rival data updated just now" }
-        if elapsedMinutes < 60 { return "Rival data updated \(elapsedMinutes)m ago" }
-        let elapsedHours = max(1, elapsedMinutes / 60)
-        return "Rival data updated \(elapsedHours)h ago"
+        let elapsedHours = elapsedSeconds / 3600
+        return "\(elapsedHours)h ago"
+    }
+
+    private func freshnessColor(opponentUpdatedAt: Date?, now: Date) -> Color {
+        guard let opponentUpdatedAt else { return FitUpColors.Text.tertiary }
+        let elapsedHours = max(0, now.timeIntervalSince(opponentUpdatedAt) / 3600)
+        if elapsedHours <= 2 { return Color(red: 0.58, green: 0.95, blue: 0.62) }
+        if elapsedHours <= 4 { return Color(red: 0.97, green: 0.84, blue: 0.46) }
+        return Color(red: 1.0, green: 0.50, blue: 0.50)
+    }
+
+    private func opponentChipColor(for margin: Int) -> Color {
+        if margin == 0 { return Color(red: 0.20, green: 0.70, blue: 1.0) } // tied: bright blue
+        if margin < 0 { return Color(red: 0.30, green: 1.0, blue: 0.45) } // they are ahead: bright green
+        if margin <= 400 { return Color(red: 1.0, green: 0.84, blue: 0.25) } // small lead: yellow
+        return Color(red: 1.0, green: 0.38, blue: 0.33) // large lead: red
     }
 
     private func animateCenterValue(to target: Int) {

@@ -63,6 +63,34 @@ final class HealthViewModel: ObservableObject {
         var id: String { rawValue }
     }
 
+    enum StatsRangeKey: String, CaseIterable, Identifiable, Codable {
+        case oneDay = "1D"
+        case sevenDays = "7D"
+        case thirtyDays = "30D"
+        case threeMonths = "3M"
+        case oneYear = "1Y"
+        case all = "ALL"
+
+        var id: String { rawValue }
+
+        var dayCountIfSupported: Int? {
+            switch self {
+            case .oneDay: return 1
+            case .sevenDays: return 7
+            case .thirtyDays: return 30
+            case .threeMonths, .oneYear, .all: return nil
+            }
+        }
+
+        var fallbackDayCount: Int {
+            dayCountIfSupported ?? 30
+        }
+
+        init(apiRawValue: String) {
+            self = StatsRangeKey(rawValue: apiRawValue) ?? .oneDay
+        }
+    }
+
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
     /// Shown when HealthKit reports read access denied; use Open Settings in the UI.
@@ -92,11 +120,25 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var isBattleMarginsRefreshing = false
     @Published private(set) var battleMarginsSavedAt: Date?
     @Published var marginChartDayCount: Int = 7
+    @Published var statsSelectedRange: StatsRangeKey = .oneDay
+    @Published private(set) var statsRangeDateChipText: String = "—"
+    @Published private(set) var statsRangeScopeNote: String? = nil
+    @Published private(set) var statsRangeMargins: [DailyBattleMargin] = []
+    @Published private(set) var statsEffectiveRange: StatsRangeKey = .oneDay
+    @Published private(set) var statsPreviousPeriodPercent: Int? = nil
+    @Published private(set) var statsBattleStatsScopeLabel: String = "lifetime"
+    @Published private(set) var isStatsRangeMarginsRefreshing = false
+    /// Hourly step buckets for today (first hour with activity through the current hour). Populated only while `statsSelectedRange == .oneDay`.
+    @Published private(set) var oneDayHourlySteps: [HealthIntradayHourlyBucket] = []
+    @Published private(set) var isOneDayHourlyLoading = false
 
     @Published private(set) var activeMatchEdges: [HomeActiveMatch] = []
     @Published private(set) var completedMatches: [ActivityCompletedMatch] = []
     @Published private(set) var isLoadingCompletedMatches = false
     @Published private(set) var hasLoadedCompletedMatches = false
+    @Published private(set) var rivalStats: [HomeRivalStat] = []
+    @Published private(set) var isRivalStatsLoading = false
+    @Published private(set) var hasLoadedRivalStats = false
 
     @Published private(set) var showSyncedBadge = false
     @Published private(set) var lastLoadFinishedAt: Date?
@@ -110,10 +152,14 @@ final class HealthViewModel: ObservableObject {
     private let battleStatsRepository = BattleStatsRepository()
     private let homeRepository = HomeRepository()
     private let activityRepository = ActivityRepository()
+    private let statsSnapshotCacheStore = StatsPageSnapshotCacheStore()
+    private let statsSnapshotSoftTTL: TimeInterval = 60 * 5
 
     private var profileId: UUID?
     private var profileTimeZoneIdentifier: String?
     private var completedMatchesTask: Task<Void, Never>?
+    private var rivalStatsTask: Task<Void, Never>?
+    private var statsSnapshotSavedAt: Date?
 
     var selectedWeekComparison: HealthWeekComparison? {
         statsTab == .steps ? weekComparisonSteps : weekComparisonCalories
@@ -138,10 +184,64 @@ final class HealthViewModel: ObservableObject {
             completedMatches = []
             isLoadingCompletedMatches = false
             hasLoadedCompletedMatches = false
+            rivalStatsTask?.cancel()
+            rivalStatsTask = nil
+            rivalStats = []
+            isRivalStatsLoading = false
+            hasLoadedRivalStats = false
+            statsRangeMargins = []
+            isStatsRangeMarginsRefreshing = false
+            statsRangeScopeNote = nil
+            statsEffectiveRange = .oneDay
+            statsPreviousPeriodPercent = nil
+            statsBattleStatsScopeLabel = "lifetime"
+            statsSnapshotSavedAt = nil
+            oneDayHourlySteps = []
+            isOneDayHourlyLoading = false
         }
         profileId = newProfileId
         profileTimeZoneIdentifier = profile?.timezone
+        updateStatsDateChipText()
+        if let newProfileId {
+            loadStatsSnapshotIfAvailable(profileId: newProfileId)
+        }
         Task { await reload(source: "profile_task") }
+    }
+
+    func setStatsRange(_ range: StatsRangeKey) async {
+        guard statsSelectedRange != range else { return }
+        statsSelectedRange = range
+        statsEffectiveRange = range.dayCountIfSupported == nil ? .oneDay : range
+        updateStatsDateChipText()
+        if let profileId {
+            loadStatsSnapshotIfAvailable(profileId: profileId)
+        }
+        async let marginsTask: Void = refreshStatsRangeMargins(source: "stats_range_change", forceNetworkRefresh: true)
+        async let hourlyTask: Void = refreshOneDayHourlyStepsIfNeeded()
+        _ = await (marginsTask, hourlyTask)
+        saveStatsSnapshotIfPossible()
+    }
+
+    /// HealthKit hourly buckets for today; only refreshed while the stats range is 1D so we skip the HK round-trip in other ranges.
+    private func refreshOneDayHourlyStepsIfNeeded() async {
+        guard statsSelectedRange == .oneDay else {
+            oneDayHourlySteps = []
+            isOneDayHourlyLoading = false
+            return
+        }
+        isOneDayHourlyLoading = true
+        defer { isOneDayHourlyLoading = false }
+        do {
+            let tz = profileTimeZoneIdentifier.flatMap(TimeZone.init(identifier:)) ?? .current
+            let buckets = try await HealthKitService.fetchIntradayHourlyDeltas(
+                metricType: .steps,
+                for: Date(),
+                timeZone: tz
+            )
+            oneDayHourlySteps = buckets
+        } catch {
+            oneDayHourlySteps = []
+        }
     }
 
     func reload(source: String = "unknown") async {
@@ -295,15 +395,19 @@ final class HealthViewModel: ObservableObject {
         sleepSummary = sleepAgg
 
         async let weekComparisonResult = buildWeekComparisons()
-        async let battleStatsResult = battleStatsRepository.fetchHealthBattleStats()
         async let activeMatches = homeRepository.loadActiveMatches(for: userId, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
 
         let comparisonResolved = await weekComparisonResult
         weekComparisonSteps = comparisonResolved.steps
         weekComparisonCalories = comparisonResolved.calories
-        battleStats = await battleStatsResult
         activeMatchEdges = await activeMatches
         await refreshBattleMargins(source: source)
+        let forceStatsRefresh = source == "pull_refresh"
+        await refreshStatsRangeMargins(source: source, forceNetworkRefresh: forceStatsRefresh)
+        await refreshOneDayHourlyStepsIfNeeded()
+        await loadRivalStats(force: source == "pull_refresh")
+        saveStatsSnapshotIfPossible()
+        await loadCompletedMatchesIfNeeded()
 
         lastLoadFinishedAt = Date()
 
@@ -366,6 +470,29 @@ final class HealthViewModel: ObservableObject {
         await completedMatchesTask?.value
     }
 
+    func loadRivalStatsIfNeeded() async {
+        await loadRivalStats(force: false)
+    }
+
+    func loadRivalStats(force: Bool) async {
+        guard let requestedProfileId = profileId else { return }
+        if isRivalStatsLoading { return }
+        if hasLoadedRivalStats, !force { return }
+        isRivalStatsLoading = true
+        defer { isRivalStatsLoading = false }
+
+        rivalStatsTask?.cancel()
+        rivalStatsTask = Task { [weak self] in
+            guard let self else { return }
+            let rows = await homeRepository.fetchMyRivalStats(limit: 3)
+            guard !Task.isCancelled else { return }
+            guard self.profileId == requestedProfileId else { return }
+            self.rivalStats = rows
+            self.hasLoadedRivalStats = true
+        }
+        await rivalStatsTask?.value
+    }
+
     private func resetHealthDisplayToEmpty() {
         battleReadinessScore = 0
         battleReadinessLabel = ""
@@ -386,9 +513,18 @@ final class HealthViewModel: ObservableObject {
         weekComparisonCalories = nil
         battleStats = .empty
         activeMatchEdges = []
+        rivalStats = []
+        isRivalStatsLoading = false
+        hasLoadedRivalStats = false
         dailyBattleMargins = []
         isBattleMarginsRefreshing = false
         battleMarginsSavedAt = nil
+        statsRangeMargins = []
+        isStatsRangeMarginsRefreshing = false
+        statsRangeScopeNote = nil
+        statsEffectiveRange = .oneDay
+        statsPreviousPeriodPercent = nil
+        statsBattleStatsScopeLabel = "lifetime"
     }
 
     func setMarginChartDayCount(_ n: Int) async {
@@ -427,6 +563,121 @@ final class HealthViewModel: ObservableObject {
                 "day_count": "\(marginChartDayCount)"
             ]
         )
+    }
+
+    private func refreshStatsRangeMargins(source: String, forceNetworkRefresh: Bool = false) async {
+        guard profileId != nil else {
+            statsRangeMargins = []
+            isStatsRangeMarginsRefreshing = false
+            statsRangeScopeNote = nil
+            return
+        }
+        if !forceNetworkRefresh, !shouldRefreshStatsSnapshot() {
+            return
+        }
+        isStatsRangeMarginsRefreshing = true
+        defer { isStatsRangeMarginsRefreshing = false }
+
+        let resolvedDayCount = statsSelectedRange.fallbackDayCount
+        if let snapshot = await homeRepository.fetchStatsSnapshot(
+            rangeKey: statsSelectedRange.rawValue,
+            metricType: HomeBattleHeroCard.HeroMetric.steps.metricType
+        ) {
+            statsEffectiveRange = StatsRangeKey(apiRawValue: snapshot.effectiveRangeKey)
+            statsRangeMargins = snapshot.margins
+            statsPreviousPeriodPercent = snapshot.previousPeriodPercent
+            battleStats = snapshot.battleStats
+            statsBattleStatsScopeLabel = snapshot.battleStatsScope
+            statsRangeScopeNote = snapshot.rangeSupport == "native"
+                ? nil
+                : "\(statsSelectedRange.rawValue) uses 30D data until expanded backend range support lands."
+        } else {
+            statsEffectiveRange = statsSelectedRange.dayCountIfSupported == nil ? .oneDay : statsSelectedRange
+            statsRangeScopeNote = statsSelectedRange.dayCountIfSupported == nil
+                ? "\(statsSelectedRange.rawValue) uses 30D data until backend snapshot support lands."
+                : nil
+            statsPreviousPeriodPercent = nil
+            let rows = await homeRepository.fetchDailyBattleMargins(
+                endDate: Date(),
+                dayCount: resolvedDayCount,
+                metricType: HomeBattleHeroCard.HeroMetric.steps.metricType,
+                profileTimeZoneIdentifier: profileTimeZoneIdentifier
+            )
+            statsRangeMargins = rows
+            battleStats = await battleStatsRepository.fetchHealthBattleStats()
+            statsBattleStatsScopeLabel = "lifetime"
+        }
+        AppLogger.log(
+            category: "healthkit_read",
+            level: .info,
+            message: "stats range battle margin refreshed",
+            userId: profileId,
+            metadata: [
+                "source": source,
+                "point_count": "\(statsRangeMargins.count)",
+                "day_count": "\(resolvedDayCount)",
+                "selected_range": statsSelectedRange.rawValue,
+            ]
+        )
+        statsSnapshotSavedAt = Date()
+    }
+
+    private func updateStatsDateChipText(now: Date = Date()) {
+        let tz = profileTimeZoneIdentifier.flatMap(TimeZone.init(identifier:)) ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = tz
+        let endDate = calendar.startOfDay(for: now)
+        let dayCount = statsSelectedRange.fallbackDayCount
+        guard let startDate = calendar.date(byAdding: .day, value: -(dayCount - 1), to: endDate) else {
+            statsRangeDateChipText = "—"
+            return
+        }
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = tz
+        formatter.dateFormat = "MMM d"
+        statsRangeDateChipText = "\(formatter.string(from: startDate)) – \(formatter.string(from: endDate))"
+    }
+
+    private func loadStatsSnapshotIfAvailable(profileId: UUID) {
+        guard let cached = statsSnapshotCacheStore.load(
+            profileId: profileId,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier,
+            rangeKeyRaw: statsSelectedRange.rawValue
+        ) else { return }
+        statsRangeMargins = cached.margins
+        battleStats = cached.battleStats
+        statsEffectiveRange = StatsRangeKey(apiRawValue: cached.effectiveRangeKeyRaw)
+        statsPreviousPeriodPercent = cached.previousPeriodPercent
+        statsBattleStatsScopeLabel = cached.battleStatsScopeLabel
+        statsRangeDateChipText = cached.dateChipText
+        statsRangeScopeNote = cached.fallbackScopeNote
+        statsSnapshotSavedAt = cached.savedAt
+    }
+
+    private func saveStatsSnapshotIfPossible() {
+        guard let profileId else { return }
+        let snapshot = statsSnapshotCacheStore.makeSnapshot(
+            profileId: profileId,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier,
+            rangeKeyRaw: statsSelectedRange.rawValue,
+            effectiveRangeKeyRaw: statsEffectiveRange.rawValue,
+            dateChipText: statsRangeDateChipText,
+            fallbackScopeNote: statsRangeScopeNote,
+            margins: statsRangeMargins,
+            previousPeriodPercent: statsPreviousPeriodPercent,
+            battleStatsScopeLabel: statsBattleStatsScopeLabel,
+            battleStats: battleStats,
+            savedAt: Date()
+        )
+        statsSnapshotCacheStore.save(snapshot)
+        statsSnapshotSavedAt = snapshot.savedAt
+    }
+
+    private func shouldRefreshStatsSnapshot(now: Date = Date()) -> Bool {
+        guard let savedAt = statsSnapshotSavedAt else { return true }
+        return now.timeIntervalSince(savedAt) > statsSnapshotSoftTTL
     }
 
     private func healthKitRead<T>(

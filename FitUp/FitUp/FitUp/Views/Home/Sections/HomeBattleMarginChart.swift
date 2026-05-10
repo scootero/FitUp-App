@@ -59,7 +59,7 @@ struct HomeBattleMarginChart: View {
                 .clipShape(Capsule())
             }
 
-            Text(subtitle ?? "Net \(unitLabel) across your matches · ahead up, behind down")
+            Text(subtitle ?? "Net \(unitLabel) vs your closest rival each day · ahead up, behind down")
                 .font(FitUpFont.body(11, weight: .medium))
                 .foregroundStyle(
                     LinearGradient(
@@ -87,29 +87,21 @@ struct HomeBattleMarginChart: View {
             } else {
                 Chart {
                     ForEach(points) { point in
-                        if point.calendarDate == highlightedDayKey {
-                            BarMark(
-                                x: .value("Day", point.calendarDate),
-                                y: .value("Margin Highlight", point.margin),
-                                width: .fixed(barWidth + 6)
-                            )
-                            .foregroundStyle(
-                                point.margin >= 0
-                                    ? FitUpColors.Neon.cyan.opacity(0.22)
-                                    : FitUpColors.Neon.orange.opacity(0.24)
-                            )
-                            .cornerRadius(5)
-                            .shadow(color: barGlow(for: point.margin).opacity(0.62), radius: 10, x: 0, y: 0)
-                        }
+                        let isHighlightedDay = point.calendarDate == highlightedDayKey
 
                         BarMark(
                             x: .value("Day", point.calendarDate),
                             y: .value("Margin", point.margin),
-                            width: .fixed(barWidth)
+                            width: .fixed(isHighlightedDay ? barWidth + 4 : barWidth)
                         )
                         .foregroundStyle(barGradient(for: point.margin))
-                        .cornerRadius(4)
-                        .shadow(color: barGlow(for: point.margin), radius: 6, x: 0, y: 0)
+                        .cornerRadius(isHighlightedDay ? 5 : 4)
+                        .shadow(
+                            color: barGlow(for: point.margin).opacity(isHighlightedDay ? 1.0 : 0.85),
+                            radius: isHighlightedDay ? 11 : 6,
+                            x: 0,
+                            y: 0
+                        )
                     }
 
                     RuleMark(y: .value("Even", 0))
@@ -166,7 +158,7 @@ struct HomeBattleMarginChart: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 16)
-        .homeLiquidGlassCard(.base)
+        .glassCard(.base)
     }
 
     private func rangeButton(title: String, value: Int) -> some View {

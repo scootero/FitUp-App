@@ -19,6 +19,57 @@ struct HealthView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                StatsMockShellView(
+                    selectedRange: viewModel.statsSelectedRange,
+                    effectiveRange: viewModel.statsEffectiveRange,
+                    onSelectRange: { range in
+                        Task { await viewModel.setStatsRange(range) }
+                    },
+                    dateChipText: viewModel.statsRangeDateChipText,
+                    rangeScopeNote: viewModel.statsRangeScopeNote,
+                    previousPeriodPercent: viewModel.statsPreviousPeriodPercent,
+                    battleStatsScopeLabel: viewModel.statsBattleStatsScopeLabel,
+                    rangeMargins: viewModel.statsRangeMargins,
+                    isRangeMarginsLoading: viewModel.isStatsRangeMarginsRefreshing,
+                    dailyMargins: viewModel.dailyBattleMargins,
+                    dailyMarginDayCount: viewModel.marginChartDayCount,
+                    dailyMarginsSavedAt: viewModel.battleMarginsSavedAt,
+                    isDailyMarginsRefreshing: viewModel.isBattleMarginsRefreshing,
+                    onSelectDailyMarginDayCount: { n in
+                        Task { await viewModel.setMarginChartDayCount(n) }
+                    },
+                    battleStats: viewModel.battleStats,
+                    weekSteps: viewModel.weekSteps,
+                    activeMatchEdges: viewModel.activeMatchEdges,
+                    rivalStats: viewModel.rivalStats,
+                    isRivalStatsLoading: viewModel.isRivalStatsLoading,
+                    hasLoadedRivalStats: viewModel.hasLoadedRivalStats,
+                    oneDayHourlySteps: viewModel.oneDayHourlySteps,
+                    isOneDayHourlyLoading: viewModel.isOneDayHourlyLoading
+                )
+                    .padding(.bottom, 10)
+
+                healthSectionLabel("Your Stats")
+                WeekChartCard(
+                    statsTab: $viewModel.statsTab,
+                    weekSteps: viewModel.weekSteps,
+                    weekCalories: viewModel.weekCalories,
+                    stepsGoal: viewModel.goals.stepsGoal,
+                    caloriesGoal: viewModel.goals.calsGoal,
+                    todaySteps: viewModel.stepsTodayValue,
+                    todayCalories: viewModel.caloriesTodayValue
+                )
+                .padding(.bottom, 14)
+
+                WeekComparisonCard(comparison: viewModel.selectedWeekComparison)
+                    .padding(.bottom, 14)
+
+                ConsistencyCard(consistency: viewModel.goalConsistency)
+                    .padding(.bottom, 14)
+
+                legacyHealthDivider
+                    .padding(.bottom, 14)
+
                 header
                     .padding(.bottom, 14)
 
@@ -47,38 +98,6 @@ struct HealthView: View {
                 )
                 .padding(.bottom, 14)
 
-                HomeBattleMarginChart(
-                    title: "BATTLE MARGIN",
-                    subtitle: "Net steps across your active battles",
-                    points: viewModel.dailyBattleMargins,
-                    unitLabel: "steps",
-                    dayCount: viewModel.marginChartDayCount,
-                    freshnessSavedAt: viewModel.battleMarginsSavedAt,
-                    isRefreshing: viewModel.isBattleMarginsRefreshing,
-                    onDayCountSelected: { n in
-                        Task { await viewModel.setMarginChartDayCount(n) }
-                    }
-                )
-                .padding(.bottom, 14)
-
-                healthSectionLabel("Your Stats")
-                WeekChartCard(
-                    statsTab: $viewModel.statsTab,
-                    weekSteps: viewModel.weekSteps,
-                    weekCalories: viewModel.weekCalories,
-                    stepsGoal: viewModel.goals.stepsGoal,
-                    caloriesGoal: viewModel.goals.calsGoal,
-                    todaySteps: viewModel.stepsTodayValue,
-                    todayCalories: viewModel.caloriesTodayValue
-                )
-                .padding(.bottom, 14)
-
-                WeekComparisonCard(comparison: viewModel.selectedWeekComparison)
-                    .padding(.bottom, 14)
-
-                ConsistencyCard(consistency: viewModel.goalConsistency)
-                    .padding(.bottom, 14)
-
                 BattleStatsCard(stats: viewModel.battleStats)
                     .padding(.bottom, 14)
 
@@ -106,9 +125,6 @@ struct HealthView: View {
                 .padding(.bottom, 10)
                 SevenNightSleepAverageCard(summary: viewModel.sleepSummary)
                     .padding(.bottom, 14)
-
-                CompetitionEdgeTodaySection(matches: viewModel.activeMatchEdges)
-                    .padding(.bottom, 20)
 
                 if let err = viewModel.errorMessage {
                     Text(err)
@@ -174,6 +190,23 @@ struct HealthView: View {
             }
         }
         .padding(.top, 10)
+    }
+
+    private var legacyHealthDivider: some View {
+        HStack(spacing: 10) {
+            Rectangle()
+                .fill(Color.white.opacity(0.12))
+                .frame(height: 1)
+
+            Text("Legacy Health content below — temporary")
+                .font(FitUpFont.body(10, weight: .medium))
+                .foregroundStyle(FitUpColors.Text.tertiary)
+
+            Rectangle()
+                .fill(Color.white.opacity(0.12))
+                .frame(height: 1)
+        }
+        .padding(.vertical, 8)
     }
 
     private func healthSectionLabel(_ text: String) -> some View {
