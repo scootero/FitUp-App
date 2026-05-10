@@ -2,7 +2,7 @@
 //  HomeBattleMarginChart.swift
 //  FitUp
 //
-//  Signed daily bars: net sum of (you − opponent) across matches per calendar day (`home_daily_battle_margins`).
+//  Signed daily bars: per-calendar-day margin from `home_daily_battle_margins` (you − closest relevant rival).
 //
 
 import Charts
@@ -18,12 +18,58 @@ struct HomeBattleMarginChart: View {
     var isRefreshing: Bool = false
     var onDayCountSelected: (Int) -> Void
 
-    private let barWidth: CGFloat = 17
     private let chartHeight: CGFloat = 168
 
     private var maxAbsMargin: CGFloat {
         let m = points.map { abs($0.margin) }.max() ?? 0
         return CGFloat(max(m, 1))
+    }
+
+    private var marginStubHeight: Int {
+        guard !points.isEmpty else { return 1 }
+        let vals = points.map(\.margin)
+        guard let mn = vals.min(), let mx = vals.max() else { return 1 }
+        let span = max(mx - mn, 400)
+        return max(1, span / 45)
+    }
+
+    private var battleMarginYDomain: ClosedRange<Int> {
+        guard !points.isEmpty else { return -400...400 }
+        let vals = points.map(\.margin)
+        guard let mn = vals.min(), let mx = vals.max() else { return -400...400 }
+        let hasZeroDay = vals.contains(0)
+        let effectiveMax = hasZeroDay ? max(mx, marginStubHeight) : mx
+        return SignedChartYDomain.domain(dataMin: mn, dataMax: effectiveMax)
+    }
+
+    private func adaptiveBarWidth(plotWidth: CGFloat, highlighted: Bool) -> CGFloat {
+        let n = max(points.count, 1)
+        let slot = plotWidth / CGFloat(n)
+        let gap: CGFloat = 5
+        let minW: CGFloat = 6
+        let maxW: CGFloat = 21
+        let base = min(max(slot - gap, minW), maxW)
+        let boosted = base + (highlighted ? 4 : 0)
+        return min(max(boosted, minW), max(slot - 2, minW))
+    }
+
+    private func displayedMargin(_ margin: Int) -> Int {
+        margin == 0 ? marginStubHeight : margin
+    }
+
+    private func barFill(for margin: Int) -> LinearGradient {
+        if margin == 0 {
+            return LinearGradient(
+                colors: [FitUpColors.Neon.blue.opacity(0.92), FitUpColors.Neon.cyan.opacity(0.55)],
+                startPoint: .bottom,
+                endPoint: .top
+            )
+        }
+        return barGradient(for: margin)
+    }
+
+    private func barGlowDisplay(for margin: Int) -> Color {
+        margin == 0 ? FitUpColors.Neon.blue.opacity(0.5) : barGlow(for: margin)
     }
 
     private var highlightedDayKey: String? {
@@ -85,74 +131,79 @@ struct HomeBattleMarginChart: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 24)
             } else {
-                Chart {
-                    ForEach(points) { point in
-                        let isHighlightedDay = point.calendarDate == highlightedDayKey
+                GeometryReader { geo in
+                    let plotW = geo.size.width
+                    Chart {
+                        ForEach(points) { point in
+                            let isHighlightedDay = point.calendarDate == highlightedDayKey
+                            let barW = adaptiveBarWidth(plotWidth: plotW, highlighted: isHighlightedDay)
+                            let yVal = displayedMargin(point.margin)
 
-                        BarMark(
-                            x: .value("Day", point.calendarDate),
-                            y: .value("Margin", point.margin),
-                            width: .fixed(isHighlightedDay ? barWidth + 4 : barWidth)
-                        )
-                        .foregroundStyle(barGradient(for: point.margin))
-                        .cornerRadius(isHighlightedDay ? 5 : 4)
-                        .shadow(
-                            color: barGlow(for: point.margin).opacity(isHighlightedDay ? 1.0 : 0.85),
-                            radius: isHighlightedDay ? 11 : 6,
-                            x: 0,
-                            y: 0
-                        )
-                    }
-
-                    RuleMark(y: .value("Even", 0))
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                        .foregroundStyle(Color.white.opacity(0.22))
-                }
-                .chartXAxis {
-                    AxisMarks { value in
-                        AxisValueLabel {
-                            if let key = value.as(String.self) {
-                                Text(shortWeekdayLabel(key))
-                                    .font(FitUpFont.mono(10, weight: .semibold))
-                                    .foregroundStyle(
-                                        key == highlightedDayKey
-                                            ? LinearGradient(
-                                                colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                            : LinearGradient(
-                                                colors: [FitUpColors.Text.tertiary, FitUpColors.Neon.blue.opacity(0.74)],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                    )
-                                    .shadow(
-                                        color: key == highlightedDayKey ? FitUpColors.Neon.blue.opacity(0.35) : .clear,
-                                        radius: key == highlightedDayKey ? 5 : 0
-                                    )
-                            }
+                            BarMark(
+                                x: .value("Day", point.calendarDate),
+                                y: .value("Margin", yVal),
+                                width: .fixed(barW)
+                            )
+                            .foregroundStyle(barFill(for: point.margin))
+                            .cornerRadius(isHighlightedDay ? 5 : 4)
+                            .shadow(
+                                color: barGlowDisplay(for: point.margin).opacity(isHighlightedDay ? 1.0 : 0.85),
+                                radius: isHighlightedDay ? 11 : 6,
+                                x: 0,
+                                y: 0
+                            )
                         }
+
+                        RuleMark(y: .value("Even", 0))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .foregroundStyle(Color.white.opacity(0.22))
                     }
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading) { value in
-                        AxisValueLabel {
-                            if let n = value.as(Int.self) {
-                                Text("\(n)")
-                                    .font(FitUpFont.mono(9, weight: .medium))
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [FitUpColors.Neon.cyan.opacity(0.95), FitUpColors.Text.tertiary],
-                                            startPoint: .top,
-                                            endPoint: .bottom
+                    .chartXAxis {
+                        AxisMarks { value in
+                            AxisValueLabel {
+                                if let key = value.as(String.self) {
+                                    Text(shortWeekdayLabel(key))
+                                        .font(FitUpFont.mono(10, weight: .semibold))
+                                        .foregroundStyle(
+                                            key == highlightedDayKey
+                                                ? LinearGradient(
+                                                    colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                )
+                                                : LinearGradient(
+                                                    colors: [FitUpColors.Text.tertiary, FitUpColors.Neon.blue.opacity(0.74)],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                )
                                         )
-                                    )
+                                        .shadow(
+                                            color: key == highlightedDayKey ? FitUpColors.Neon.blue.opacity(0.35) : .clear,
+                                            radius: key == highlightedDayKey ? 5 : 0
+                                        )
+                                }
                             }
                         }
                     }
+                    .chartYAxis {
+                        AxisMarks(position: .leading, values: SignedChartYDomain.axisTickValues(for: battleMarginYDomain)) { value in
+                            AxisValueLabel {
+                                if let n = value.as(Int.self) {
+                                    Text(homeMarginAxisLabel(n))
+                                        .font(FitUpFont.mono(9, weight: .medium))
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [FitUpColors.Neon.cyan.opacity(0.95), FitUpColors.Text.tertiary],
+                                                startPoint: .top,
+                                                endPoint: .bottom
+                                            )
+                                        )
+                                }
+                            }
+                        }
+                    }
+                    .chartYScale(domain: battleMarginYDomain)
                 }
-                .chartYScale(domain: -maxAbsMargin...maxAbsMargin)
                 .frame(height: chartHeight)
             }
         }
@@ -179,6 +230,20 @@ struct HomeBattleMarginChart: View {
                 }
         }
         .buttonStyle(.plain)
+    }
+
+    private func homeMarginAxisLabel(_ value: Int) -> String {
+        if value == 0 { return "0" }
+        let absV = abs(value)
+        if absV < 1_000 {
+            return "\(value)"
+        }
+        let sign = value > 0 ? "+" : "-"
+        let k = Double(absV) / 1_000
+        if absV % 1_000 == 0 || k >= 100 {
+            return "\(sign)\(Int(k))K"
+        }
+        return String(format: "%@%.1fK", sign, k)
     }
 
     private func shortWeekdayLabel(_ ymd: String) -> String {

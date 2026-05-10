@@ -73,13 +73,16 @@ struct StatsMockShellView: View {
         .onChange(of: marginMode) { _, _ in
             startMarginChartAnimation()
         }
-        .onChange(of: displayChartPoints.map(\.id)) { _, _ in
+        .onChange(of: rangeMargins.map(\.id)) { _, _ in
             guard marginMode == .net else { return }
             startMarginChartAnimation()
         }
-        .onChange(of: displayChartPoints.map(\.margin)) { _, _ in
+        .onChange(of: rangeMargins.map(\.margin)) { _, _ in
             guard marginMode == .net else { return }
             startMarginChartAnimation()
+        }
+        .onChange(of: rangeMargins) { _, _ in
+            logStatsMarginSeriesDebug()
         }
         .onChange(of: dailyMargins.map(\.id)) { _, _ in
             guard marginMode == .daily else { return }
@@ -268,6 +271,7 @@ struct StatsMockShellView: View {
                 }
             }
             .pickerStyle(.segmented)
+            .tint(marginMode == .net ? FitUpColors.Neon.green.opacity(0.95) : FitUpColors.Neon.cyan.opacity(0.95))
 
             HStack(alignment: .firstTextBaseline) {
                 Text(currentChartHeaderText)
@@ -393,12 +397,12 @@ struct StatsMockShellView: View {
         ZStack(alignment: .bottomTrailing) {
             Chart {
                 if !useCompactChartStyle {
-                    ForEach(displayChartPoints) { point in
+                    ForEach(cumulativeNetChartPoints) { point in
                         AreaMark(
                             x: .value("Date", point.label),
                             y: .value("Margin", point.margin)
                         )
-                        .interpolationMethod(.catmullRom)
+                        .interpolationMethod(.linear)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [
@@ -413,12 +417,12 @@ struct StatsMockShellView: View {
                     }
                 }
 
-                ForEach(displayChartPoints) { point in
+                ForEach(cumulativeNetChartPoints) { point in
                     LineMark(
                         x: .value("Date", point.label),
                         y: .value("Margin", point.margin)
                     )
-                    .interpolationMethod(.catmullRom)
+                    .interpolationMethod(.linear)
                     .lineStyle(StrokeStyle(lineWidth: useCompactChartStyle ? 2.2 : 4, lineCap: .round))
                     .foregroundStyle(
                         LinearGradient(
@@ -438,7 +442,7 @@ struct StatsMockShellView: View {
                             x: .value("Date", point.label),
                             y: .value("Margin", point.margin)
                         )
-                        .interpolationMethod(.catmullRom)
+                        .interpolationMethod(.linear)
                         .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round))
                         .foregroundStyle(
                             LinearGradient(
@@ -454,7 +458,7 @@ struct StatsMockShellView: View {
                     }
                 }
 
-                if let lastPoint = displayChartPoints.last {
+                if let lastPoint = cumulativeNetChartPoints.last {
                     if !useCompactChartStyle {
                         PointMark(
                             x: .value("Date", lastPoint.label),
@@ -478,7 +482,7 @@ struct StatsMockShellView: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     .foregroundStyle(Color.white.opacity(0.25))
             }
-            .chartYScale(domain: -20_000...20_000)
+            .chartYScale(domain: cumulativeNetYDomain)
             .chartXAxis {
                 AxisMarks(values: chartAxisLabels) { value in
                     AxisValueLabel {
@@ -491,10 +495,10 @@ struct StatsMockShellView: View {
                 }
             }
             .chartYAxis {
-                AxisMarks(position: .leading, values: [-20_000, -10_000, 0, 10_000, 20_000]) { value in
+                AxisMarks(position: .leading, values: cumulativeNetAxisTickValues) { value in
                     AxisValueLabel {
                         if let y = value.as(Int.self) {
-                            Text(formattedYAxis(y))
+                            Text(formattedNetMarginAxisLabel(y))
                                 .font(FitUpFont.mono(9, weight: .medium))
                                 .foregroundStyle(FitUpColors.Text.secondary)
                         }
@@ -515,8 +519,8 @@ struct StatsMockShellView: View {
                 )
             }
 
-            if !displayChartPoints.isEmpty {
-                Text(signedFormatted(displayChartPoints.last?.margin ?? 0))
+            if let total = netMarginTotal {
+                Text(signedFormatted(total))
                     .font(FitUpFont.mono(11, weight: .heavy))
                     .foregroundStyle(FitUpColors.Neon.green)
                     .padding(.horizontal, 9)
@@ -534,81 +538,89 @@ struct StatsMockShellView: View {
     }
 
     private var dailyMarginBarChart: some View {
-        Chart {
-            ForEach(Array(animatedDailyMargins.enumerated()), id: \.element.id) { index, point in
-                let progress = progressForDailyBar(at: index)
-                let animatedMargin = Int((Double(point.margin) * progress).rounded())
-                let isHighlightedDay = point.calendarDate == highlightedDailyKey
+        GeometryReader { geo in
+            let plotW = geo.size.width
+            let count = animatedDailyMargins.count
+            Chart {
+                ForEach(Array(animatedDailyMargins.enumerated()), id: \.element.id) { index, point in
+                    let progress = progressForDailyBar(at: index)
+                    let animatedMargin = Int((Double(point.margin) * progress).rounded())
+                    let displayed = dailyDisplayedMargin(animated: animatedMargin, raw: point.margin)
+                    let isHighlightedDay = point.calendarDate == highlightedDailyKey
+                    let barW = categoricalBarWidth(plotWidth: plotW, count: max(count, 1), highlighted: isHighlightedDay)
 
-                BarMark(
-                    x: .value("Day", point.calendarDate),
-                    y: .value("Margin", animatedMargin),
-                    width: .fixed(isHighlightedDay ? 21 : 17)
-                )
-                .foregroundStyle(dailyBarGradient(for: point.margin))
-                .cornerRadius(isHighlightedDay ? 5 : 4)
-                .shadow(
-                    color: dailyBarGlow(for: point.margin).opacity(isHighlightedDay ? 1.0 : 0.85),
-                    radius: isHighlightedDay ? 11 : 6,
-                    x: 0,
-                    y: 0
-                )
-                .annotation(position: animatedMargin >= 0 ? .top : .bottom, spacing: 4) {
-                    Text(signedFormatted(animatedMargin))
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(dailyBarValueColor(for: point.margin))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color.black.opacity(0.22))
-                        .clipShape(Capsule())
-                }
-            }
-
-            RuleMark(y: .value("Even", 0))
-                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                .foregroundStyle(Color.white.opacity(0.22))
-        }
-        .chartXAxis {
-            AxisMarks { value in
-                AxisValueLabel {
-                    if let key = value.as(String.self) {
-                        Text(shortWeekdayLabel(key))
-                            .font(FitUpFont.mono(10, weight: .semibold))
-                            .foregroundStyle(
-                                key == highlightedDailyKey
-                                    ? LinearGradient(
-                                        colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                    : LinearGradient(
-                                        colors: [FitUpColors.Text.tertiary, FitUpColors.Neon.blue.opacity(0.74)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                            )
+                    BarMark(
+                        x: .value("Day", point.calendarDate),
+                        y: .value("Margin", displayed),
+                        width: .fixed(barW)
+                    )
+                    .foregroundStyle(dailyBarFill(for: point.margin))
+                    .cornerRadius(isHighlightedDay ? 5 : 4)
+                    .shadow(
+                        color: dailyBarGlowColor(for: point.margin).opacity(isHighlightedDay ? 1.0 : 0.85),
+                        radius: isHighlightedDay ? 11 : 6,
+                        x: 0,
+                        y: 0
+                    )
+                    .annotation(position: displayed >= 0 ? .top : .bottom, spacing: 4) {
+                        if point.margin != 0, animatedMargin != 0 {
+                            Text(signedFormatted(animatedMargin))
+                                .font(FitUpFont.mono(9, weight: .bold))
+                                .foregroundStyle(dailyBarValueColor(for: point.margin))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.black.opacity(0.22))
+                                .clipShape(Capsule())
+                        }
                     }
                 }
+
+                RuleMark(y: .value("Even", 0))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .foregroundStyle(Color.white.opacity(0.22))
             }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { value in
-                AxisValueLabel {
-                    if let n = value.as(Int.self) {
-                        Text("\(n)")
-                            .font(FitUpFont.mono(9, weight: .medium))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [FitUpColors.Neon.cyan.opacity(0.95), FitUpColors.Text.tertiary],
-                                    startPoint: .top,
-                                    endPoint: .bottom
+            .chartXAxis {
+                AxisMarks { value in
+                    AxisValueLabel {
+                        if let key = value.as(String.self) {
+                            Text(shortWeekdayLabel(key))
+                                .font(FitUpFont.mono(10, weight: .semibold))
+                                .foregroundStyle(
+                                    key == highlightedDailyKey
+                                        ? LinearGradient(
+                                            colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                        : LinearGradient(
+                                            colors: [FitUpColors.Text.tertiary, FitUpColors.Neon.blue.opacity(0.74)],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
                                 )
-                            )
+                        }
                     }
                 }
             }
+            .chartYAxis {
+                AxisMarks(position: .leading, values: SignedChartYDomain.axisTickValues(for: dailyMarginYDomain)) { value in
+                    AxisValueLabel {
+                        if let n = value.as(Int.self) {
+                            Text(formattedNetMarginAxisLabel(n))
+                                .font(FitUpFont.mono(9, weight: .medium))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [FitUpColors.Neon.cyan.opacity(0.95), FitUpColors.Text.tertiary],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                        }
+                    }
+                }
+            }
+            .chartYScale(domain: dailyMarginYDomain)
         }
-        .chartYScale(domain: -dailyChartMaxAbs...dailyChartMaxAbs)
         .frame(height: 208)
     }
 
@@ -693,72 +705,71 @@ struct StatsMockShellView: View {
     }
 
     private var oneDayHourlyBarChart: some View {
-        Chart {
-            ForEach(oneDayHourlySteps) { bucket in
-                BarMark(
-                    x: .value("Hour", bucket.hourStart, unit: .hour),
-                    y: .value("Steps", bucket.value),
-                    width: .fixed(17)
-                )
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [
-                            FitUpColors.Neon.blue.opacity(0.86),
-                            FitUpColors.Neon.cyan.opacity(0.97),
-                            FitUpColors.Neon.green,
-                        ],
-                        startPoint: .bottom,
-                        endPoint: .top
+        GeometryReader { geo in
+            let plotW = geo.size.width
+            let nBuckets = oneDayHourlySteps.count
+            Chart {
+                ForEach(oneDayHourlySteps) { bucket in
+                    let displayed = hourlyDisplayedSteps(bucket.value)
+                    let barW = categoricalBarWidth(plotWidth: plotW, count: max(nBuckets, 1), highlighted: false)
+
+                    BarMark(
+                        x: .value("Hour", bucket.hourStart, unit: .hour),
+                        y: .value("Steps", displayed),
+                        width: .fixed(barW)
                     )
-                )
-                .cornerRadius(4)
-                .shadow(color: FitUpColors.Neon.cyan.opacity(0.55), radius: 6)
-                .annotation(position: .top, spacing: 4) {
-                    Text(bucket.value.formatted())
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Neon.cyan)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color.black.opacity(0.22))
-                        .clipShape(Capsule())
-                }
-            }
-        }
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .hour, count: oneDayHourAxisStride)) { value in
-                AxisValueLabel {
-                    if let date = value.as(Date.self) {
-                        Text(oneDayHourLabel(for: date))
-                            .font(FitUpFont.mono(9, weight: .semibold))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [FitUpColors.Text.tertiary, FitUpColors.Neon.blue.opacity(0.74)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
+                    .foregroundStyle(hourlyBarFill(isZero: bucket.value == 0))
+                    .cornerRadius(4)
+                    .shadow(color: (bucket.value == 0 ? FitUpColors.Text.tertiary : FitUpColors.Neon.cyan).opacity(0.45), radius: bucket.value == 0 ? 2 : 6)
+                    .annotation(position: .top, spacing: 4) {
+                        if bucket.value != 0 {
+                            Text(bucket.value.formatted())
+                                .font(FitUpFont.mono(9, weight: .bold))
+                                .foregroundStyle(FitUpColors.Neon.cyan)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.black.opacity(0.22))
+                                .clipShape(Capsule())
+                        }
                     }
                 }
             }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { value in
-                AxisValueLabel {
-                    if let n = value.as(Int.self) {
-                        Text(formattedHourlyStepsLabel(n))
-                            .font(FitUpFont.mono(9, weight: .medium))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [FitUpColors.Neon.cyan.opacity(0.95), FitUpColors.Text.tertiary],
-                                    startPoint: .top,
-                                    endPoint: .bottom
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .hour, count: oneDayHourAxisStride)) { value in
+                    AxisValueLabel {
+                        if let date = value.as(Date.self) {
+                            Text(oneDayHourLabel(for: date))
+                                .font(FitUpFont.mono(9, weight: .semibold))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [FitUpColors.Text.tertiary, FitUpColors.Neon.blue.opacity(0.74)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
                                 )
-                            )
+                        }
                     }
                 }
             }
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    AxisValueLabel {
+                        if let n = value.as(Int.self) {
+                            Text(formattedHourlyStepsLabel(n))
+                                .font(FitUpFont.mono(9, weight: .medium))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [FitUpColors.Neon.cyan.opacity(0.95), FitUpColors.Text.tertiary],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                        }
+                    }
+                }
+            }
+            .chartYScale(domain: oneDayChartYDomain)
         }
-        .chartYScale(domain: oneDayChartYDomain)
         .frame(height: 208)
     }
 
@@ -986,10 +997,19 @@ struct StatsMockShellView: View {
         .frame(width: 52, alignment: .leading)
     }
 
-    private func formattedYAxis(_ value: Int) -> String {
+    /// Y-axis labels for the cumulative net chart (supports magnitudes beyond ±20K).
+    private func formattedNetMarginAxisLabel(_ value: Int) -> String {
         if value == 0 { return "0" }
+        let absV = abs(value)
+        if absV < 1_000 {
+            return "\(value)"
+        }
         let sign = value > 0 ? "+" : "-"
-        return "\(sign)\(abs(value) / 1_000)K"
+        let k = Double(absV) / 1_000
+        if absV % 1_000 == 0 || k >= 100 {
+            return "\(sign)\(Int(k))K"
+        }
+        return String(format: "%@%.1fK", sign, k)
     }
 
     private var netMarginTotal: Int? {
@@ -1015,8 +1035,8 @@ struct StatsMockShellView: View {
     }
 
     private var netMarginTotalLabelText: String {
-        guard let total = netMarginTotal else { return "— TOTAL" }
-        return "\(signedFormatted(total)) TOTAL"
+        guard let total = netMarginTotal else { return "— RANGE" }
+        return "\(signedFormatted(total)) RANGE"
     }
 
     private var lifetimeWinRateText: String {
@@ -1033,10 +1053,32 @@ struct StatsMockShellView: View {
         "\(battleStats.currentStreakCount)"
     }
 
-    private var displayChartPoints: [MarginPoint] {
-        return rangeMargins.map { row in
+    /// Daily battle margins (same values as the bar chart).
+    private var dailyMarginChartPoints: [MarginPoint] {
+        rangeMargins.map { row in
             MarginPoint(label: chartLabel(from: row.calendarDate), margin: row.margin)
         }
+    }
+
+    /// Running sum of `daily_margin`; powers the Net line chart and matches `netMarginTotal` at the last day.
+    private var cumulativeNetChartPoints: [MarginPoint] {
+        var running = 0
+        return rangeMargins.map { row in
+            running += row.margin
+            return MarginPoint(label: chartLabel(from: row.calendarDate), margin: running)
+        }
+    }
+
+    private var cumulativeNetYDomain: ClosedRange<Int> {
+        let pts = cumulativeNetChartPoints
+        guard !pts.isEmpty else { return -20_000...20_000 }
+        let vals = pts.map(\.margin)
+        guard let mn = vals.min(), let mx = vals.max() else { return -20_000...20_000 }
+        return SignedChartYDomain.domain(dataMin: mn, dataMax: mx, minimumCoreSpan: 4_000)
+    }
+
+    private var cumulativeNetAxisTickValues: [Int] {
+        SignedChartYDomain.axisTickValues(for: cumulativeNetYDomain)
     }
 
     private var animatedDailyMargins: [DailyBattleMargin] {
@@ -1051,8 +1093,88 @@ struct StatsMockShellView: View {
         max(currentMarginRows.map { abs($0.margin) }.max() ?? 0, 1)
     }
 
+    /// Visible height for tied days (`margin == 0`) so the bar reads without implying real magnitude.
+    private var dailyMarginStubHeight: Int {
+        let rows = currentMarginRows
+        guard !rows.isEmpty else { return 1 }
+        let vals = rows.map(\.margin)
+        guard let mn = vals.min(), let mx = vals.max() else { return 1 }
+        let span = max(mx - mn, 400)
+        return max(1, span / 45)
+    }
+
+    private var dailyMarginYDomain: ClosedRange<Int> {
+        let rows = currentMarginRows
+        guard !rows.isEmpty else { return -400...400 }
+        let vals = rows.map(\.margin)
+        guard let mn = vals.min(), let mx = vals.max() else { return -400...400 }
+        let hasZeroDay = vals.contains(0)
+        let effectiveMax = hasZeroDay ? max(mx, dailyMarginStubHeight) : mx
+        return SignedChartYDomain.domain(dataMin: mn, dataMax: effectiveMax)
+    }
+
+    private func categoricalBarWidth(plotWidth: CGFloat, count: Int, highlighted: Bool) -> CGFloat {
+        let n = max(count, 1)
+        let slot = plotWidth / CGFloat(n)
+        let gap: CGFloat = 5
+        let minW: CGFloat = 6
+        let maxW: CGFloat = 21
+        let base = min(max(slot - gap, minW), maxW)
+        let boosted = base + (highlighted ? 4 : 0)
+        return min(max(boosted, minW), max(slot - 2, minW))
+    }
+
+    private func dailyDisplayedMargin(animated: Int, raw: Int) -> Int {
+        if raw == 0 { return dailyMarginStubHeight }
+        return animated
+    }
+
+    private func dailyBarFill(for margin: Int) -> LinearGradient {
+        if margin == 0 {
+            return LinearGradient(
+                colors: [FitUpColors.Neon.blue.opacity(0.92), FitUpColors.Neon.cyan.opacity(0.55)],
+                startPoint: .bottom,
+                endPoint: .top
+            )
+        }
+        return dailyBarGradient(for: margin)
+    }
+
+    private func dailyBarGlowColor(for margin: Int) -> Color {
+        if margin == 0 { return FitUpColors.Neon.blue.opacity(0.5) }
+        return dailyBarGlow(for: margin)
+    }
+
+    private var hourlyStepsStub: Int {
+        let m = oneDayHourlySteps.map(\.value).max() ?? 0
+        return max(2, m / 45)
+    }
+
+    private func hourlyDisplayedSteps(_ value: Int) -> Int {
+        value == 0 ? hourlyStepsStub : value
+    }
+
+    private func hourlyBarFill(isZero: Bool) -> LinearGradient {
+        if isZero {
+            return LinearGradient(
+                colors: [FitUpColors.Neon.blue.opacity(0.35), FitUpColors.Text.tertiary.opacity(0.45)],
+                startPoint: .bottom,
+                endPoint: .top
+            )
+        }
+        return LinearGradient(
+            colors: [
+                FitUpColors.Neon.blue.opacity(0.86),
+                FitUpColors.Neon.cyan.opacity(0.97),
+                FitUpColors.Neon.green,
+            ],
+            startPoint: .bottom,
+            endPoint: .top
+        )
+    }
+
     private var useCompactChartStyle: Bool {
-        displayChartPoints.count > 21
+        dailyMarginChartPoints.count > 21
     }
 
     private func startMarginChartAnimation() {
@@ -1073,7 +1195,7 @@ struct StatsMockShellView: View {
     }
 
     private func animateNetMarginLine() {
-        guard !displayChartPoints.isEmpty else {
+        guard !cumulativeNetChartPoints.isEmpty else {
             netLineRevealProgress = 0
             return
         }
@@ -1131,7 +1253,7 @@ struct StatsMockShellView: View {
     }
 
     private var chartAxisLabels: [String] {
-        let labels = displayChartPoints.map(\.label)
+        let labels = dailyMarginChartPoints.map(\.label)
         guard labels.count > 7 else { return labels }
         let strideSize = max(1, labels.count / 6)
         var sampled: [String] = stride(from: 0, to: labels.count, by: strideSize).map { labels[$0] }
@@ -1139,6 +1261,28 @@ struct StatsMockShellView: View {
             sampled.append(labels.last!)
         }
         return sampled
+    }
+
+    private func logStatsMarginSeriesDebug() {
+#if DEBUG
+        guard !rangeMargins.isEmpty else { return }
+        var prior = 0
+        for row in rangeMargins {
+            let daily = row.margin
+            AppLogger.log(
+                category: "stats_chart",
+                level: .debug,
+                message: "[stats_margin_day] date=\(row.calendarDate) daily_margin=\(daily)"
+            )
+            let running = prior + daily
+            AppLogger.log(
+                category: "stats_chart",
+                level: .debug,
+                message: "[stats_net_running] date=\(row.calendarDate) prior_running_total=\(prior) daily_margin=\(daily) running_total=\(running)"
+            )
+            prior = running
+        }
+#endif
     }
 
     private func chartLabel(from ymd: String) -> String {
@@ -1234,7 +1378,7 @@ struct StatsMockShellView: View {
             Image(systemName: marginMode == .net ? "chart.line.uptrend.xyaxis" : "chart.bar")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(FitUpColors.Text.tertiary)
-            Text(marginMode == .net ? "No battle margin data available for this range yet." : "No daily margin bars available yet.")
+            Text(marginMode == .net ? "No cumulative net data for this range yet." : "No daily margins for this range yet.")
                 .font(FitUpFont.body(11, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
         }
@@ -1360,16 +1504,16 @@ private enum MarginMode: String, CaseIterable, Identifiable {
     var descriptionText: String {
         switch self {
         case .net:
-            return "Net battle margin = your finalized daily total minus the closest rival that matters for your standing each day."
+            return "Running total of your daily battle margins across this range."
         case .daily:
-            return "Daily battle margin tracks each day versus your closest relevant rival: positive when ahead, negative when behind."
+            return "Each bar compares your full-day steps against the closest rival affecting your standing that day."
         }
     }
 
     func trailingHeadline(valueText: String) -> String {
         switch self {
         case .net: return valueText
-        case .daily: return "BARS"
+        case .daily: return "PER DAY"
         }
     }
 }

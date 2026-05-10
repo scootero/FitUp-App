@@ -50,8 +50,8 @@ struct HomeDayPip: Identifiable, Equatable {
 struct DailyBattleMargin: Identifiable, Equatable, Sendable, Codable {
     /// `yyyy-MM-dd` (match calendar date from server).
     let calendarDate: String
-    /// Sum of (your total − opponent total) across active/completed matches for that calendar date.
-    /// The RPC dedupes by `(match_day, opponent)` before summing.
+    /// Signed daily margin from `home_daily_battle_margins`: your total minus the **closest relevant rival**
+    /// for that calendar day (nearest opponent ahead if any are ahead; else nearest behind).
     let margin: Int
 
     var id: String { calendarDate }
@@ -1007,7 +1007,7 @@ final class HomeRepository {
     }
 }
 
-// MARK: - home_daily_battle_margins RPC (net per-day sum of match deltas; see supabase/scripts/sql-editor/04_home_daily_battle_margins_rpc.sql)
+// MARK: - home_daily_battle_margins RPC (closest-rival daily margin; see supabase/scripts/sql-editor/04_home_daily_battle_margins_rpc.sql)
 
 private struct HomeDailyBattleMarginsRPCParams: Sendable {
     let p_end_date: String
