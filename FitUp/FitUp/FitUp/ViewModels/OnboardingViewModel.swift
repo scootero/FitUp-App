@@ -17,12 +17,32 @@ final class OnboardingViewModel: ObservableObject {
         case findFirstMatch
     }
 
+    enum StepGoalTier: String, CaseIterable, Identifiable {
+        case easy
+        case moderate
+        case aggressive
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .easy: return "Easy"
+            case .moderate: return "Moderate"
+            case .aggressive: return "Aggressive"
+            }
+        }
+    }
+
     @Published private(set) var step: Step = .hero
     @Published private(set) var sevenDayStepAverage: Double?
+    @Published private(set) var thirtyDayStepAverage: Double?
+    @Published private(set) var ninetyDayStepAverage: Double?
     @Published private(set) var isLoadingAverage = false
     @Published private(set) var isAuthorizingHealth = false
     @Published private(set) var isAuthorizingNotifications = false
     @Published private(set) var isSubmittingSearch = false
+    @Published var stepGoalTier: StepGoalTier = .moderate
+    @Published var dailyStepGoalText: String = ""
     @Published var statusMessage: String?
     @Published var errorMessage: String?
 
@@ -99,7 +119,7 @@ final class OnboardingViewModel: ObservableObject {
         }
 
         onHealthPromptFinished()
-        await refreshSevenDayStepAverage()
+        await refreshAllStepAverages()
 
         isAuthorizingNotifications = true
         defer { isAuthorizingNotifications = false }
@@ -122,17 +142,64 @@ final class OnboardingViewModel: ObservableObject {
         step = .findFirstMatch
     }
 
-    func refreshSevenDayStepAverage() async {
+    /// Rounds to nearest 50; floors at 500 for a sensible minimum display target.
+    private static func roundStepGoalSuggestion(_ raw: Double) -> Int {
+        max(500, Int((raw / 50.0).rounded() * 50))
+    }
+
+    /// 30d average when available, else 7d, else a neutral default for suggestion math only.
+    private var suggestionBaselineSteps: Double {
+        if let t = thirtyDayStepAverage, t > 0 { return t }
+        if let s = sevenDayStepAverage, s > 0 { return s }
+        return 10_000
+    }
+
+    func suggestedGoal(for tier: StepGoalTier) -> Int {
+        let base = suggestionBaselineSteps
+        let mult: Double
+        switch tier {
+        case .easy: mult = 1.05
+        case .moderate: mult = 1.15
+        case .aggressive: mult = 1.30
+        }
+        return Self.roundStepGoalSuggestion(base * mult)
+    }
+
+    func selectStepGoalTier(_ tier: StepGoalTier) {
+        stepGoalTier = tier
+        dailyStepGoalText = "\(suggestedGoal(for: tier))"
+        AppLogger.log(
+            category: "onboarding",
+            level: .info,
+            message: "step goal tier selected",
+            userId: analyticsUserId,
+            metadata: [
+                "tier": tier.rawValue,
+                "suggested_goal": "\(suggestedGoal(for: tier))",
+            ]
+        )
+    }
+
+    private func applyDefaultGoalFromTier() {
+        dailyStepGoalText = "\(suggestedGoal(for: stepGoalTier))"
+    }
+
+    func refreshAllStepAverages() async {
         isLoadingAverage = true
         errorMessage = nil
         defer { isLoadingAverage = false }
 
+        async let v7 = HealthKitService.fetchSevenDayStepAverage()
+        async let v30 = HealthKitService.fetchNDayStepAverage(days: 30)
+        async let v90 = HealthKitService.fetchNDayStepAverage(days: 90)
+
+        var anyOk = false
+
         do {
-            let value = try await HealthKitService.fetchSevenDayStepAverage()
-            sevenDayStepAverage = value
+            sevenDayStepAverage = try await v7
+            if let sevenDayStepAverage, sevenDayStepAverage > 0 { anyOk = true }
         } catch {
             sevenDayStepAverage = nil
-            errorMessage = "Could not read your step average right now."
             AppLogger.log(
                 category: "onboarding",
                 level: .warning,
@@ -140,6 +207,54 @@ final class OnboardingViewModel: ObservableObject {
                 metadata: ["error": error.localizedDescription]
             )
         }
+
+        do {
+            thirtyDayStepAverage = try await v30
+            if let thirtyDayStepAverage, thirtyDayStepAverage > 0 { anyOk = true }
+        } catch {
+            thirtyDayStepAverage = nil
+            AppLogger.log(
+                category: "onboarding",
+                level: .warning,
+                message: "30-day step average load failed",
+                metadata: ["error": error.localizedDescription]
+            )
+        }
+
+        do {
+            ninetyDayStepAverage = try await v90
+            if let ninetyDayStepAverage, ninetyDayStepAverage > 0 { anyOk = true }
+        } catch {
+            ninetyDayStepAverage = nil
+            AppLogger.log(
+                category: "onboarding",
+                level: .warning,
+                message: "90-day step average load failed",
+                metadata: ["error": error.localizedDescription]
+            )
+        }
+
+        if !anyOk {
+            errorMessage = "Could not read your step averages right now."
+        }
+
+        let d7 = sevenDayStepAverage.map { String(Int($0.rounded())) } ?? "nil"
+        let d30 = thirtyDayStepAverage.map { String(Int($0.rounded())) } ?? "nil"
+        let d90 = ninetyDayStepAverage.map { String(Int($0.rounded())) } ?? "nil"
+        AppLogger.log(
+            category: "onboarding",
+            level: .info,
+            message: "step averages load finished",
+            userId: analyticsUserId,
+            metadata: [
+                "d7": d7,
+                "d30": d30,
+                "d90": d90,
+                "any_ok": anyOk ? "true" : "false",
+            ]
+        )
+
+        applyDefaultGoalFromTier()
     }
 
     func submitFindOpponent(profileId: UUID?) async -> Bool {
@@ -149,15 +264,49 @@ final class OnboardingViewModel: ObservableObject {
             return false
         }
 
+        let normalized = dailyStepGoalText
+            .replacingOccurrences(of: ",", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let goal = Int(normalized), goal >= 1_000, goal <= 200_000 else {
+            errorMessage = "Enter a realistic daily step goal (1,000 – 200,000)."
+            return false
+        }
+        ReadinessGoals.saveStepsGoal(goal)
+        AppLogger.log(
+            category: "onboarding",
+            level: .info,
+            message: "daily step goal saved locally",
+            userId: profileId,
+            metadata: ["readiness_steps_goal": "\(goal)", "tier": stepGoalTier.rawValue]
+        )
+
         isSubmittingSearch = true
         statusMessage = "Finding opponent..."
         errorMessage = nil
         defer { isSubmittingSearch = false }
 
         do {
+            let avg30: Double?
+            if let cached = thirtyDayStepAverage, cached > 0 {
+                avg30 = cached
+            } else {
+                avg30 = try? await HealthKitService.fetchNDayStepAverage(days: 30)
+            }
             try await matchSearchRepository.createOnboardingSearchRequest(
                 creatorId: profileId,
-                creatorBaseline: sevenDayStepAverage
+                creatorBaseline: sevenDayStepAverage,
+                creatorAvg30dSteps: avg30
+            )
+            AppLogger.log(
+                category: "onboarding",
+                level: .info,
+                message: "onboarding match search created",
+                userId: profileId,
+                metadata: [
+                    "scoring_mode": "balanced",
+                    "difficulty": "nil",
+                    "has_avg30": (avg30 != nil) ? "true" : "false",
+                ]
             )
             ProductAnalytics.track(
                 ProductAnalytics.Event.onboardingFindOpponentSubmitted,

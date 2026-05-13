@@ -25,6 +25,7 @@ enum SettingsRowAction {
 struct SettingsRowView: View {
     let sfSymbol: String
     let label: String
+    var detail: String? = nil
     var isDanger: Bool = false
     var showSeparator: Bool = true
     var action: SettingsRowAction = .chevron()
@@ -36,7 +37,13 @@ struct SettingsRowView: View {
                 Text(label)
                     .font(FitUpFont.body(14))
                     .foregroundStyle(isDanger ? FitUpColors.Neon.pink : FitUpColors.Text.primary)
-                Spacer()
+                Spacer(minLength: 8)
+                if let detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(FitUpFont.body(13, weight: .medium))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .lineLimit(1)
+                }
                 actionWidget
             }
             .padding(.horizontal, 14)

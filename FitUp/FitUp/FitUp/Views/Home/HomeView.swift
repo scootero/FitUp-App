@@ -35,6 +35,10 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     header
 
+                    #if DEBUG
+                    HomeStepAveragesDebugCard(profileId: profile?.id)
+                    #endif
+
                     if viewModel.isHeroLoading {
                         skeletonBlock(height: 200)
                             .homeLiquidGlassCard(.base)

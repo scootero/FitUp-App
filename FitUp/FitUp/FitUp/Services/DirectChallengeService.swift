@@ -24,14 +24,18 @@ final class DirectChallengeService {
         opponentId: UUID,
         metricType: ChallengeMetricType,
         format: ChallengeFormatType,
-        startMode: ChallengeStartMode = .today
+        startMode: ChallengeStartMode = .today,
+        scoringMode: MatchScoringModePreference?,
+        difficulty: MatchDifficultyPreference?
     ) async throws -> DirectChallengeSubmissionResult {
         let result = try await repository.createDirectChallenge(
             challengerId: challengerId,
             recipientId: opponentId,
             metricType: metricType,
             durationDays: format.durationDays,
-            startMode: startMode
+            startMode: startMode,
+            scoringMode: scoringMode,
+            difficulty: difficulty
         )
 
         AppLogger.log(

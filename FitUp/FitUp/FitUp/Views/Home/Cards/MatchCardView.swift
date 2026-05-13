@@ -60,6 +60,19 @@ struct MatchCardView: View {
         match.isWinning ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange
     }
 
+    private var rawDifficultySubtitle: String? {
+        guard match.metricType == "steps", match.scoringMode == "raw",
+              let raw = match.difficulty?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        switch raw.lowercased() {
+        case "easy": return "Easy"
+        case "fair": return "Fair"
+        case "hard": return "Hard"
+        default: return raw.capitalized
+        }
+    }
+
     private var headerRow: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: match.metricType == "active_calories" ? "flame.fill" : "figure.walk")
@@ -72,6 +85,18 @@ struct MatchCardView: View {
                 .tracking(0.8)
 
             NeonBadge(label: match.seriesLabel, color: accentColor)
+
+            if match.metricType == "steps" {
+                if match.isBalancedStepsBattle {
+                    Text("Balanced Battle")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                } else if let diff = rawDifficultySubtitle {
+                    Text("Raw Battle · \(diff)")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                }
+            }
 
             Spacer(minLength: 0)
 
@@ -171,9 +196,30 @@ struct MatchCardView: View {
                     Text("You")
                         .font(FitUpFont.display(13, weight: .bold))
                         .foregroundStyle(FitUpColors.Text.primary)
-                    Text(match.myToday.formatted())
-                        .font(FitUpFont.body(10, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                    if match.isBalancedStepsBattle {
+                        Text("Battle Score")
+                            .font(FitUpFont.mono(8, weight: .bold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                        Text("\(match.myBattleScore)")
+                            .font(FitUpFont.display(15, weight: .heavy))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        Text("Actual Steps")
+                            .font(FitUpFont.mono(8, weight: .bold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                            .padding(.top, 2)
+                        Text("\(match.myToday.formatted())")
+                            .font(FitUpFont.body(10, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                    } else {
+                        Text(match.myToday.formatted())
+                            .font(FitUpFont.display(15, weight: .heavy))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        if let diff = rawDifficultySubtitle {
+                            Text("Raw · \(diff)")
+                                .font(FitUpFont.mono(8, weight: .bold))
+                                .foregroundStyle(FitUpColors.Text.tertiary)
+                        }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -210,9 +256,30 @@ struct MatchCardView: View {
                         .font(FitUpFont.display(13, weight: .bold))
                         .foregroundStyle(FitUpColors.Text.primary)
                         .lineLimit(1)
-                    Text(match.theirToday.formatted())
-                        .font(FitUpFont.body(10, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                    if match.isBalancedStepsBattle {
+                        Text("Battle Score")
+                            .font(FitUpFont.mono(8, weight: .bold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                        Text("\(match.theirBattleScore)")
+                            .font(FitUpFont.display(15, weight: .heavy))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        Text("Actual Steps")
+                            .font(FitUpFont.mono(8, weight: .bold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                            .padding(.top, 2)
+                        Text("\(match.theirToday.formatted())")
+                            .font(FitUpFont.body(10, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                    } else {
+                        Text(match.theirToday.formatted())
+                            .font(FitUpFont.display(15, weight: .heavy))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        if let diff = rawDifficultySubtitle {
+                            Text("Raw · \(diff)")
+                                .font(FitUpFont.mono(8, weight: .bold))
+                                .foregroundStyle(FitUpColors.Text.tertiary)
+                        }
+                    }
                 }
                 AvatarView(
                     initials: match.opponent.initials,

@@ -33,6 +33,28 @@ enum ProfileRepositoryError: LocalizedError {
     }
 }
 
+/// Public fields for another user's profile (no auth id, tokens, or settings).
+struct PeerPublicProfile: Equatable, Sendable {
+    let id: UUID
+    let displayName: String
+    let initials: String
+    let avatarURL: String?
+}
+
+private struct PeerPublicProfileRow: Decodable {
+    let id: UUID
+    let displayName: String
+    let initials: String
+    let avatarURL: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayName = "display_name"
+        case initials
+        case avatarURL = "avatar_url"
+    }
+}
+
 struct ProfileRepository {
     private var client: SupabaseClient {
         get throws {
@@ -53,6 +75,55 @@ struct ProfileRepository {
             .limit(1)
             .execute()
         return try decodeProfiles(from: response.data).first
+    }
+
+    /// Lightweight read for viewing another competitor (`profiles.id`).
+    func fetchPeerPublicProfile(id: UUID) async throws -> PeerPublicProfile? {
+        let response = try await client
+            .from("profiles")
+            .select("id, display_name, initials, avatar_url")
+            .eq("id", value: id.uuidString)
+            .limit(1)
+            .execute()
+        let rows = try JSONDecoder().decode([PeerPublicProfileRow].self, from: response.data)
+        guard let row = rows.first else { return nil }
+        let name = row.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ini = row.initials.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawAvatar = row.avatarURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let avatar = (rawAvatar?.isEmpty ?? true) ? nil : rawAvatar
+        return PeerPublicProfile(
+            id: row.id,
+            displayName: name.isEmpty ? "Player" : name,
+            initials: ini.isEmpty ? String(name.prefix(2)).uppercased() : ini.uppercased(),
+            avatarURL: avatar
+        )
+    }
+
+    /// Batch public peer fields for inbox / lists.
+    func fetchPeerPublicProfiles(ids: [UUID]) async throws -> [UUID: PeerPublicProfile] {
+        guard !ids.isEmpty else { return [:] }
+        let unique = Array(Set(ids))
+        let response = try await client
+            .from("profiles")
+            .select("id, display_name, initials, avatar_url")
+            .in("id", values: unique)
+            .execute()
+        let rows = try JSONDecoder().decode([PeerPublicProfileRow].self, from: response.data)
+        var map: [UUID: PeerPublicProfile] = [:]
+        for row in rows {
+            let name = row.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            let ini = row.initials.trimmingCharacters(in: .whitespacesAndNewlines)
+            let rawAvatar = row.avatarURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let avatar = (rawAvatar?.isEmpty ?? true) ? nil : rawAvatar
+            let peer = PeerPublicProfile(
+                id: row.id,
+                displayName: name.isEmpty ? "Player" : name,
+                initials: ini.isEmpty ? String(name.prefix(2)).uppercased() : ini.uppercased(),
+                avatarURL: avatar
+            )
+            map[row.id] = peer
+        }
+        return map
     }
 
     /// Patches `apns_token` and/or `live_activity_push_token` on the caller's own profile.

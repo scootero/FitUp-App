@@ -147,6 +147,21 @@ function normalizePayload(payload) {
   }
   return payload;
 }
+/** Short footer for steps battles when `scoring_mode` is present (day/match outcome). */
+function stepsResultFooter(payload) {
+  const m = stringFromPayload(payload, "metric_type", "steps");
+  if (m !== "steps") {
+    return "";
+  }
+  const sm = stringFromPayload(payload, "scoring_mode", "").toLowerCase();
+  if (sm === "balanced") {
+    return " Final result uses Battle Score.";
+  }
+  if (sm === "raw") {
+    return " Final result uses actual steps.";
+  }
+  return "";
+}
 function buildMessage(eventType, payload, explicitTitle, explicitBody) {
   if (explicitBody && explicitBody.trim().length > 0) {
     return {
@@ -183,16 +198,36 @@ function buildMessage(eventType, payload, explicitTitle, explicitBody) {
         title: "FitUp",
         body: "Your match is live. Day 1 starts now."
       };
-    case "lead_changed":
+    case "lead_changed": {
+      const scoringModeLc = stringFromPayload(payload, "scoring_mode", "").toLowerCase();
+      const isBalancedSteps = scoringModeLc === "balanced" && metricLabel === "steps";
+      if (isBalancedSteps) {
+        return {
+          title: "FitUp",
+          body: `${opponent} passed you in Battle Score.`
+        };
+      }
+      const unitLead = metricLabel === "steps" ? "steps" : metricLabel;
       return {
         title: "FitUp",
-        body: `${opponent} just passed you - they're up ${leadDelta} ${metricLabel}`
+        body: `${opponent} just passed you - they're up ${leadDelta} ${unitLead}`
       };
-    case "morning_checkin":
+    }
+    case "morning_checkin": {
+      const mTypeMc = stringFromPayload(payload, "metric_type", "steps");
+      const scoringModeMc = stringFromPayload(payload, "scoring_mode", "").toLowerCase();
+      const balancedMorning = scoringModeMc === "balanced" && mTypeMc === "steps";
+      let standingPhrase = morningState;
+      if (balancedMorning) {
+        if (morningState === "tied") standingPhrase = "tied on Battle Score";
+        else if (morningState === "ahead") standingPhrase = "ahead on Battle Score";
+        else standingPhrase = "behind on Battle Score";
+      }
       return {
         title: "FitUp",
-        body: `Day ${dayNumber} of ${durationDays} - you're ${morningState}. Today matters.`
+        body: `Day ${dayNumber} of ${durationDays} - you're ${standingPhrase}. Today matters.`
       };
+    }
     case "evening_checkin": {
       const matchIdForEvening = stringFromPayload(payload, "match_id", "");
       if (!matchIdForEvening) {
@@ -202,13 +237,18 @@ function buildMessage(eventType, payload, explicitTitle, explicitBody) {
         };
       }
       const mType = stringFromPayload(payload, "metric_type", "steps");
-      const unitShort = mType === "active_calories" ? "cal" : "steps";
+      const scoringModeEv = stringFromPayload(payload, "scoring_mode", "").toLowerCase();
+      const isBalancedStepsEv = scoringModeEv === "balanced" && mType === "steps";
       const myD = numberFromPayload(payload, "my_day_total", 0);
       const thD = numberFromPayload(payload, "their_day_total", 0);
       const st = stringFromPayload(payload, "standing_label", "tied");
       let dayPart = "tied today";
-      if (st !== "tied" && myD !== thD) {
-        const gap = Math.abs(myD - thD);
+      if (isBalancedStepsEv) {
+        dayPart = "tied on Battle Score today";
+      }
+      if (st !== "tied") {
+        const gap = isBalancedStepsEv ? numberFromPayload(payload, "checkin_gap", 0) : Math.abs(myD - thD);
+        const unitShort = mType === "active_calories" ? "cal" : isBalancedStepsEv ? "Battle Score" : "steps";
         if (st === "ahead") {
           dayPart = `${gap} ${unitShort} ahead today`;
         } else {
@@ -225,31 +265,39 @@ function buildMessage(eventType, payload, explicitTitle, explicitBody) {
         title: "FitUp",
         body: `You have a pending match - ${opponent} is waiting`
       };
-    case "day_won":
+    case "day_won": {
+      const footDay = stepsResultFooter(payload);
       return {
         title: "FitUp",
-        body: `You won Day ${dayNumber}! Series: ${myScore}-${theirScore}`
+        body: `You won Day ${dayNumber}! Series: ${myScore}-${theirScore}.${footDay}`
       };
-    case "day_lost":
+    }
+    case "day_lost": {
+      const footDayL = stepsResultFooter(payload);
       return {
         title: "FitUp",
-        body: `${opponent} won Day ${dayNumber}. Series: ${myScore}-${theirScore} - fight back tomorrow.`
+        body: `${opponent} won Day ${dayNumber}. Series: ${myScore}-${theirScore} - fight back tomorrow.${footDayL}`
       };
+    }
     case "day_void":
       return {
         title: "FitUp",
         body: `Day ${dayNumber} was voided - data unavailable for both.`
       };
-    case "match_won":
+    case "match_won": {
+      const footMw = stepsResultFooter(payload);
       return {
         title: "FitUp",
-        body: `You won the match ${myScore}-${theirScore}. Rematch?`
+        body: `You won the match ${myScore}-${theirScore}. Rematch?${footMw}`
       };
-    case "match_lost":
+    }
+    case "match_lost": {
+      const footMl = stepsResultFooter(payload);
       return {
         title: "FitUp",
-        body: `${opponent} won ${theirScore}-${myScore}. Rematch?`
+        body: `${opponent} won ${theirScore}-${myScore}. Rematch?${footMl}`
       };
+    }
     case "friend_request_received": {
       const fromName = stringFromPayload(
         payload,

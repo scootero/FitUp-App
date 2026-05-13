@@ -1,0 +1,16 @@
+-- ============================================================================
+-- Slice 5 — First-match flow QA / polish (FitUp)
+-- ============================================================================
+--
+-- No database migrations or RPC/RLS changes are required for Slice 5 as scoped.
+--
+-- Product notes (reference):
+-- - Onboarding "Start My First Match" always writes match_search_requests with
+--   scoring_mode = 'balanced' and difficulty = NULL (see iOS MatchSearchRepository).
+-- - Daily step goal remains on-device: UserDefaults key readiness_steps_goal.
+-- - Raw Battle + difficulty apply only to the post-onboarding Challenge / quick
+--   match flow (not onboarding).
+--
+-- Safe to run in Supabase SQL Editor: file is comments only (no executable SQL).
+-- App build does not depend on running this file.
+-- ============================================================================

@@ -20,7 +20,7 @@ serve(async (request)=>{
         error: "match_id is required."
       });
     }
-    const { data: match, error: matchError } = await supabaseAdmin.from("matches").select("id, state, metric_type, duration_days").eq("id", matchId).limit(1).maybeSingle();
+    const { data: match, error: matchError } = await supabaseAdmin.from("matches").select("id, state, metric_type, duration_days, scoring_mode").eq("id", matchId).limit(1).maybeSingle();
     if (matchError) {
       throw matchError;
     }
@@ -72,6 +72,7 @@ serve(async (request)=>{
           payload: {
             match_id: matchId,
             metric_type: match.metric_type ?? "steps",
+            scoring_mode: match.scoring_mode ?? undefined,
             duration_days: Number(match.duration_days ?? 1),
             opponent_display_name: opponentName,
             my_score: myScore,

@@ -72,7 +72,9 @@ final class MetricSnapshotRepository {
 
     func upsertRollingBaselines(
         userId: UUID,
-        stepsAverage: Double?,
+        stepsAverage7d: Double?,
+        stepsAverage30d: Double?,
+        stepsAverage90d: Double?,
         caloriesAverage: Double?
     ) async throws {
         let existsResponse = try await client
@@ -84,7 +86,9 @@ final class MetricSnapshotRepository {
 
         let payload = BaselineWrite(
             userId: userId,
-            rollingAvg7dSteps: stepsAverage,
+            rollingAvg7dSteps: stepsAverage7d,
+            rollingAvg30dSteps: stepsAverage30d,
+            rollingAvg90dSteps: stepsAverage90d,
             rollingAvg7dCalories: caloriesAverage,
             updatedAt: Self.isoFormatter.string(from: Date())
         )
@@ -99,7 +103,9 @@ final class MetricSnapshotRepository {
                 .from("user_health_baselines")
                 .update(
                     BaselineUpdate(
-                        rollingAvg7dSteps: stepsAverage,
+                        rollingAvg7dSteps: stepsAverage7d,
+                        rollingAvg30dSteps: stepsAverage30d,
+                        rollingAvg90dSteps: stepsAverage90d,
                         rollingAvg7dCalories: caloriesAverage,
                         updatedAt: payload.updatedAt
                     )
@@ -107,6 +113,30 @@ final class MetricSnapshotRepository {
                 .eq("user_id", value: userId.uuidString)
                 .execute()
         }
+    }
+
+    /// Debug read of aggregates stored for matchmaking (no HealthKit samples).
+    func fetchRollingStepBaselines(userId: UUID) async throws -> (d7: Double?, d30: Double?, d90: Double?, updatedAt: String?) {
+        let client = try client
+        let response = try await client
+            .from("user_health_baselines")
+            .select("rolling_avg_7d_steps, rolling_avg_30d_steps, rolling_avg_90d_steps, updated_at")
+            .eq("user_id", value: userId.uuidString)
+            .limit(1)
+            .execute()
+        let row = jsonRows(from: response.data).first
+        let d7 = row.flatMap { double(from: $0["rolling_avg_7d_steps"]) }
+        let d30 = row.flatMap { double(from: $0["rolling_avg_30d_steps"]) }
+        let d90 = row.flatMap { double(from: $0["rolling_avg_90d_steps"]) }
+        let updated = row.flatMap { $0["updated_at"] as? String }
+        return (d7, d30, d90, updated)
+    }
+
+    private func double(from value: Any?) -> Double? {
+        if let doubleValue = value as? Double { return doubleValue }
+        if let intValue = value as? Int { return Double(intValue) }
+        if let stringValue = value as? String { return Double(stringValue) }
+        return nil
     }
 
     private func shouldFlag(metricType: HealthMetricType, value: Int) -> Bool {
@@ -160,12 +190,16 @@ private struct MetricSnapshotInsert: Encodable {
 private struct BaselineWrite: Encodable {
     let userId: UUID
     let rollingAvg7dSteps: Double?
+    let rollingAvg30dSteps: Double?
+    let rollingAvg90dSteps: Double?
     let rollingAvg7dCalories: Double?
     let updatedAt: String
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
         case rollingAvg7dSteps = "rolling_avg_7d_steps"
+        case rollingAvg30dSteps = "rolling_avg_30d_steps"
+        case rollingAvg90dSteps = "rolling_avg_90d_steps"
         case rollingAvg7dCalories = "rolling_avg_7d_calories"
         case updatedAt = "updated_at"
     }
@@ -173,11 +207,15 @@ private struct BaselineWrite: Encodable {
 
 private struct BaselineUpdate: Encodable {
     let rollingAvg7dSteps: Double?
+    let rollingAvg30dSteps: Double?
+    let rollingAvg90dSteps: Double?
     let rollingAvg7dCalories: Double?
     let updatedAt: String
 
     enum CodingKeys: String, CodingKey {
         case rollingAvg7dSteps = "rolling_avg_7d_steps"
+        case rollingAvg30dSteps = "rolling_avg_30d_steps"
+        case rollingAvg90dSteps = "rolling_avg_90d_steps"
         case rollingAvg7dCalories = "rolling_avg_7d_calories"
         case updatedAt = "updated_at"
     }

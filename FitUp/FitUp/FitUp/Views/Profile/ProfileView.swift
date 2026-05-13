@@ -30,6 +30,11 @@ struct ProfileView: View {
     @State private var isSavingDisplayName = false
     @State private var showFeedback = false
 
+    @State private var showEditDailyStepGoal = false
+    @State private var dailyStepGoalDraft = ""
+    @State private var dailyStepGoalSaveError: String?
+    @State private var displayedDailyStepGoal: Int = ReadinessGoals.loadFromUserDefaults().stepsGoal
+
 #if DEBUG
     @AppStorage("devMode") private var devMode = false
 #endif
@@ -56,6 +61,7 @@ struct ProfileView: View {
                 if let enabled = profile?.notificationsEnabled {
                     notificationsEnabled = enabled
                 }
+                syncDisplayedDailyStepGoal()
             }
             .onChange(of: notificationsEnabled) { _, newValue in
                 guard let authUserId = profile?.authUserId else { return }
@@ -74,6 +80,9 @@ struct ProfileView: View {
             }
             .sheet(isPresented: $showEditDisplayName) {
                 editDisplayNameSheet
+            }
+            .sheet(isPresented: $showEditDailyStepGoal) {
+                editDailyStepGoalSheet
             }
         }
     }
@@ -221,6 +230,37 @@ struct ProfileView: View {
                 }
             }
             .buttonStyle(.plain)
+            NavigationLink {
+                MessagesInboxView(profile: profile)
+            } label: {
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.07))
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "bubble.left.and.text.bubble.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Text.secondary)
+                        }
+                        Text("Messages")
+                            .font(FitUpFont.body(14))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 13)
+                    .contentShape(Rectangle())
+                    Rectangle()
+                        .fill(Color.white.opacity(0.05))
+                        .frame(height: 1)
+                        .padding(.leading, 54)
+                }
+            }
+            .buttonStyle(.plain)
             SettingsRowView(
                 sfSymbol: "bubble.left.and.bubble.right",
                 label: "Send feedback",
@@ -280,6 +320,17 @@ struct ProfileView: View {
 
     private var healthDataInfoGroup: some View {
         SettingsGroupView(title: "DATA") {
+            SettingsRowView(
+                sfSymbol: "figure.walk",
+                label: "Daily Step Goal",
+                detail: displayedDailyStepGoal.formatted(),
+                showSeparator: true,
+                action: .chevron {
+                    dailyStepGoalDraft = "\(displayedDailyStepGoal)"
+                    dailyStepGoalSaveError = nil
+                    showEditDailyStepGoal = true
+                }
+            )
             NavigationLink {
                 HealthDataBreakdownView(profile: profile)
             } label: {
@@ -381,6 +432,65 @@ struct ProfileView: View {
 
     // MARK: - Edit display name
 
+    private var editDailyStepGoalSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Used for the Stats goal line and readiness. Stored on this device only.")
+                    .font(FitUpFont.body(13))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+
+                TextField("Daily steps", text: $dailyStepGoalDraft)
+                    .keyboardType(.numberPad)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .foregroundStyle(FitUpColors.Text.primary)
+                    .background(
+                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                            .fill(FitUpColors.Bg.base.opacity(0.55))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                            )
+                    )
+
+                if let err = dailyStepGoalSaveError, !err.isEmpty {
+                    Text(err)
+                        .font(FitUpFont.body(13, weight: .medium))
+                        .foregroundStyle(FitUpColors.Neon.pink)
+                }
+
+                Spacer()
+            }
+            .padding(20)
+            .background(BackgroundGradientView())
+            .navigationTitle("Daily Step Goal")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dailyStepGoalSaveError = nil
+                        showEditDailyStepGoal = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let normalized = dailyStepGoalDraft
+                            .replacingOccurrences(of: ",", with: "")
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard let goal = Int(normalized), goal >= 1_000, goal <= 200_000 else {
+                            dailyStepGoalSaveError = "Enter a value between 1,000 and 200,000."
+                            return
+                        }
+                        ReadinessGoals.saveStepsGoal(goal)
+                        displayedDailyStepGoal = goal
+                        dailyStepGoalSaveError = nil
+                        showEditDailyStepGoal = false
+                    }
+                }
+            }
+        }
+    }
+
     private var editDisplayNameSheet: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
@@ -448,6 +558,10 @@ struct ProfileView: View {
             .replacingOccurrences(of: " ", with: "")
             .prefix(20)
             .description
+    }
+
+    private func syncDisplayedDailyStepGoal() {
+        displayedDailyStepGoal = ReadinessGoals.loadFromUserDefaults().stepsGoal
     }
 }
 

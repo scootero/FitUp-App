@@ -78,6 +78,82 @@ struct HomeActiveMatch: Identifiable, Equatable {
     /// Opponent's sync write time for today's match_day row.
     let opponentTodayUpdatedAt: Date?
     let dayPips: [HomeDayPip]
+    /// `balanced` | `raw` | nil (legacy raw scoring).
+    let scoringMode: String?
+    /// Raw Battle difficulty from `matches.difficulty`; nil for Balanced / legacy.
+    let difficulty: String?
+    let myBaselineSteps: Double?
+    let theirBaselineSteps: Double?
+
+    var isBalancedStepsBattle: Bool {
+        metricType == "steps" && scoringMode == "balanced"
+    }
+
+    func balancedPercent(forSteps steps: Int, baseline: Double?) -> Double {
+        Self.balancePercentValue(steps: steps, baseline: baseline)
+    }
+
+    var myBalancedPercent: Double {
+        balancedPercent(forSteps: myToday, baseline: myBaselineSteps)
+    }
+
+    var theirBalancedPercent: Double {
+        balancedPercent(forSteps: theirToday, baseline: theirBaselineSteps)
+    }
+
+    /// Effective baseline steps: same floor rule as `finalize-match-day` / `balancePercentValue` denominator.
+    static func effectiveBaselineSteps(baseline: Double?) -> Double {
+        if let baseline, baseline > 0 {
+            return max(3000, baseline)
+        }
+        return 3000
+    }
+
+    /// Fairness multiplier for Battle Score: `max(myEff, theirEff) / myEff`.
+    static func balanceMultiplier(myEffective: Double, theirEffective: Double) -> Double {
+        let higher = max(myEffective, theirEffective)
+        guard myEffective > 0 else { return 1 }
+        return higher / myEffective
+    }
+
+    /// Battle Score for the player whose actual steps are `actualSteps`, using their baseline as `myBaseline` and rival as `theirBaseline`.
+    static func battleScore(actualSteps: Int, myBaseline: Double?, theirBaseline: Double?) -> Int {
+        let myEff = effectiveBaselineSteps(baseline: myBaseline)
+        let theirEff = effectiveBaselineSteps(baseline: theirBaseline)
+        let mult = balanceMultiplier(myEffective: myEff, theirEffective: theirEff)
+        return Int((Double(actualSteps) * mult).rounded())
+    }
+
+    var myBattleScore: Int {
+        Self.battleScore(actualSteps: myToday, myBaseline: myBaselineSteps, theirBaseline: theirBaselineSteps)
+    }
+
+    var theirBattleScore: Int {
+        Self.battleScore(actualSteps: theirToday, myBaseline: theirBaselineSteps, theirBaseline: myBaselineSteps)
+    }
+
+    var myBalanceMultiplierDisplay: String {
+        let m = Self.balanceMultiplier(
+            myEffective: Self.effectiveBaselineSteps(baseline: myBaselineSteps),
+            theirEffective: Self.effectiveBaselineSteps(baseline: theirBaselineSteps)
+        )
+        return String(format: "%.1f×", m)
+    }
+
+    var theirBalanceMultiplierDisplay: String {
+        let m = Self.balanceMultiplier(
+            myEffective: Self.effectiveBaselineSteps(baseline: theirBaselineSteps),
+            theirEffective: Self.effectiveBaselineSteps(baseline: myBaselineSteps)
+        )
+        return String(format: "%.1f×", m)
+    }
+
+    /// Shared semantics with server finalize (floor denominator 3000 when baseline missing).
+    static func balancePercentValue(steps: Int, baseline: Double?) -> Double {
+        let denominator = effectiveBaselineSteps(baseline: baseline)
+        guard denominator > 0 else { return 0 }
+        return Double(steps) / denominator * 100
+    }
 }
 
 struct HomePendingMatch: Identifiable, Equatable {
@@ -355,7 +431,7 @@ final class HomeRepository {
             let profileTimeZone = profileTimeZoneIdentifier.flatMap { TimeZone(identifier: $0) }
             let matchRowsResponse = try await client
                 .from("matches")
-                .select("id, state, metric_type, duration_days, match_type, created_at")
+                .select("id, state, metric_type, duration_days, match_type, created_at, scoring_mode, difficulty")
                 .in("id", values: Array(matchIds))
                 .in("state", values: ["active", "pending"])
                 .execute()
@@ -367,7 +443,7 @@ final class HomeRepository {
 
             let participantRowsResponse = try await client
                 .from("match_participants")
-                .select("match_id, user_id, accepted_at")
+                .select("match_id, user_id, accepted_at, baseline_steps")
                 .in("match_id", values: Array(filteredMatchIds))
                 .execute()
             let participantRows = jsonRows(from: participantRowsResponse.data)
@@ -465,6 +541,8 @@ final class HomeRepository {
 
                 let metricType = string(from: match["metric_type"]) ?? "steps"
                 let durationDays = int(from: match["duration_days"]) ?? 1
+                let scoringMode = string(from: match["scoring_mode"])
+                let matchDifficulty = string(from: match["difficulty"])
                 let participants = participantsByMatch[matchId] ?? []
                 guard let opponentId = participants.compactMap({ uuid(from: $0["user_id"]) }).first(where: { $0 != currentUserId }) else {
                     continue
@@ -491,6 +569,29 @@ final class HomeRepository {
                     opponentId: opponentId,
                     todayString: profileTodayKey
                 )
+                let myBaseline = participants
+                    .first(where: { uuid(from: $0["user_id"]) == currentUserId })
+                    .flatMap { double(from: $0["baseline_steps"]) }
+                let theirBaseline = participants
+                    .first(where: { uuid(from: $0["user_id"]) == opponentId })
+                    .flatMap { double(from: $0["baseline_steps"]) }
+                let useBalancedUI = scoringMode == "balanced" && metricType == "steps"
+                let isWinning: Bool
+                if useBalancedUI {
+                    let myBS = HomeActiveMatch.battleScore(
+                        actualSteps: totals.myTotal,
+                        myBaseline: myBaseline,
+                        theirBaseline: theirBaseline
+                    )
+                    let theirBS = HomeActiveMatch.battleScore(
+                        actualSteps: totals.theirTotal,
+                        myBaseline: theirBaseline,
+                        theirBaseline: myBaseline
+                    )
+                    isWinning = myBS >= theirBS
+                } else {
+                    isWinning = totals.myTotal >= totals.theirTotal
+                }
                 let dayPips = deriveDayPips(
                     dayRows: dayRows,
                     durationDays: durationDays,
@@ -534,10 +635,14 @@ final class HomeRepository {
                             theirToday: totals.theirTotal,
                             myScore: scores.myScore,
                             theirScore: scores.theirScore,
-                            isWinning: totals.myTotal >= totals.theirTotal,
+                            isWinning: isWinning,
                             opponent: opponent,
                             opponentTodayUpdatedAt: totals.opponentTodayUpdatedAt,
-                            dayPips: dayPips
+                            dayPips: dayPips,
+                            scoringMode: scoringMode,
+                            difficulty: matchDifficulty,
+                            myBaselineSteps: myBaseline,
+                            theirBaselineSteps: theirBaseline
                         )
                     )
                 } else if state == "pending" {
@@ -961,6 +1066,13 @@ final class HomeRepository {
         if let stringValue = value as? String, let doubleValue = Double(stringValue) {
             return Int(doubleValue.rounded())
         }
+        return nil
+    }
+
+    private func double(from value: Any?) -> Double? {
+        if let doubleValue = value as? Double { return doubleValue }
+        if let intValue = value as? Int { return Double(intValue) }
+        if let stringValue = value as? String { return Double(stringValue) }
         return nil
     }
 

@@ -51,6 +51,19 @@ struct MatchDetailDisplayModel {
         case .completed:
             return snapshot.isWinning
         case .active:
+            if snapshot.isBalancedStepsBattle {
+                let myBS = HomeActiveMatch.battleScore(
+                    actualSteps: myTodayDisplay,
+                    myBaseline: snapshot.myBaselineSteps,
+                    theirBaseline: snapshot.theirBaselineSteps
+                )
+                let theirBS = HomeActiveMatch.battleScore(
+                    actualSteps: theirToday,
+                    myBaseline: snapshot.theirBaselineSteps,
+                    theirBaseline: snapshot.myBaselineSteps
+                )
+                return myBS >= theirBS
+            }
             return myTodayDisplay >= theirToday
         case .pending:
             return true
@@ -73,7 +86,7 @@ struct MatchDetailDisplayModel {
         case .completed:
             return snapshot.isWinning ? "YOU WON" : "YOU LOST"
         case .active:
-            return myTodayDisplay >= theirToday ? "YOU'RE UP" : "YOU'RE DOWN"
+            return isAheadToday ? "YOU'RE UP" : "YOU'RE DOWN"
         }
     }
 
@@ -107,6 +120,26 @@ struct MatchDetailDisplayModel {
     }
 
     var todayDeltaLabel: String {
+        if snapshot.isBalancedStepsBattle, snapshot.state == .active {
+            let myB = HomeActiveMatch.battleScore(
+                actualSteps: myTodayDisplay,
+                myBaseline: snapshot.myBaselineSteps,
+                theirBaseline: snapshot.theirBaselineSteps
+            )
+            let theirB = HomeActiveMatch.battleScore(
+                actualSteps: theirToday,
+                myBaseline: snapshot.theirBaselineSteps,
+                theirBaseline: snapshot.myBaselineSteps
+            )
+            let d = myB - theirB
+            if d == 0 {
+                return "Even on Battle Score (\(myB))"
+            }
+            if d > 0 {
+                return "You: \(myB) · Rival: \(theirB) · +\(d) Battle Score ahead"
+            }
+            return "You: \(myB) · Rival: \(theirB) · \(d) Battle Score behind"
+        }
         let d = todayDelta
         let unit = metricIsCalories ? "kcal" : "steps"
         if d == 0 {

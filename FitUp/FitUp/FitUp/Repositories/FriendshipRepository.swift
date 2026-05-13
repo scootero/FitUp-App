@@ -60,6 +60,15 @@ enum FriendshipRepositoryError: LocalizedError {
     }
 }
 
+/// Resolved relationship with a single peer; matches `FriendListItem` semantics.
+enum PeerFriendshipPhase: Equatable, Sendable {
+    case unknown
+    case none
+    case incomingPending
+    case outgoingPending
+    case accepted
+}
+
 final class FriendshipRepository {
     private var client: SupabaseClient {
         get throws {
@@ -94,6 +103,24 @@ final class FriendshipRepository {
             .or("a_id.eq.\(currentProfileId.uuidString),b_id.eq.\(currentProfileId.uuidString)")
             .execute()
         return jsonRows(from: response.data).compactMap { parseFriendshipRow($0) }
+    }
+
+    func friendshipPhase(currentProfileId: UUID, peerProfileId: UUID) async throws -> PeerFriendshipPhase {
+        if currentProfileId == peerProfileId { return .none }
+        let rows = try await fetchFriendshipRows(currentProfileId: currentProfileId)
+        for row in rows {
+            let peer = row.aId == currentProfileId ? row.bId : row.aId
+            guard peer == peerProfileId else { continue }
+            switch row.status {
+            case "accepted":
+                return .accepted
+            case "pending":
+                return row.requestedBy == currentProfileId ? .outgoingPending : .incomingPending
+            default:
+                break
+            }
+        }
+        return .none
     }
 
     /// Send a pending request to `peerId` (must not be self).

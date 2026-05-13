@@ -247,11 +247,15 @@ actor MetricSyncCoordinator {
         }
 
         do {
-            let stepsAverage = try? await HealthKitService.fetchSevenDayStepAverage()
+            let stepsAvg7 = try? await HealthKitService.fetchNDayStepAverage(days: 7)
+            let stepsAvg30 = try? await HealthKitService.fetchNDayStepAverage(days: 30)
+            let stepsAvg90 = try? await HealthKitService.fetchNDayStepAverage(days: 90)
             let caloriesAverage = try? await HealthKitService.fetchSevenDayActiveCaloriesAverage()
             try await snapshotRepository.upsertRollingBaselines(
                 userId: profile.id,
-                stepsAverage: stepsAverage,
+                stepsAverage7d: stepsAvg7,
+                stepsAverage30d: stepsAvg30,
+                stepsAverage90d: stepsAvg90,
                 caloriesAverage: caloriesAverage
             )
         } catch {

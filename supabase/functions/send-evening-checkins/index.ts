@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { battleScore } from "../_shared/battleScore.ts";
 import { corsHeaders, jsonResponse } from "../_shared/http.ts";
 import { invokeInternalFunction, supabaseAdmin } from "../_shared/supabase.ts";
 
@@ -53,6 +54,7 @@ serve(async (request) => {
           local_date: localDate,
           match_id: pick.matchId,
           metric_type: pick.metricType,
+          scoring_mode: pick.scoringMode || undefined,
           opponent_display_name: opponentName,
           day_number: pick.dayNumber,
           duration_days: pick.durationDays,
@@ -61,6 +63,7 @@ serve(async (request) => {
           their_score: pick.theirScore,
           my_day_total: pick.myDayTotal,
           their_day_total: pick.theirDayTotal,
+          checkin_gap: pick.checkinGap,
           deep_link_target: "match_details",
         },
       });
@@ -94,6 +97,7 @@ async function alreadySentThisLocalDate(userId: string, localDate: string) {
 type ClosestMatchPick = {
   matchId: string;
   metricType: string;
+  scoringMode: string;
   durationDays: number;
   seriesMargin: number;
   dayGap: number;
@@ -104,19 +108,22 @@ type ClosestMatchPick = {
   myDayTotal: number;
   theirDayTotal: number;
   standing: string;
+  checkinGap: number;
 };
 
 async function pickClosestActiveMatchForUser(userId: string): Promise<ClosestMatchPick | null> {
   const { data: rows, error } = await supabaseAdmin
     .from("match_participants")
-    .select("match_id, matches!inner(id, state, metric_type, duration_days)")
+    .select("match_id, matches!inner(id, state, metric_type, duration_days, scoring_mode)")
     .eq("user_id", userId);
   if (error) {
     throw error;
   }
   const active = (rows ?? []).filter(
-    (r: { match_id: string; matches: { state: string; metric_type: string; duration_days: number } }) =>
-      r.matches?.state === "active",
+    (r: {
+      match_id: string;
+      matches: { state: string; metric_type: string; duration_days: number; scoring_mode: string | null };
+    }) => r.matches?.state === "active",
   );
   if (active.length === 0) {
     return null;
@@ -126,9 +133,10 @@ async function pickClosestActiveMatchForUser(userId: string): Promise<ClosestMat
   for (const row of active) {
     const m = row.matches;
     const matchId = String(row.match_id);
+    const scoringMode = m.scoring_mode != null ? String(m.scoring_mode) : "";
     const { data: pRows, error: pErr } = await supabaseAdmin
       .from("match_participants")
-      .select("user_id")
+      .select("user_id, baseline_steps")
       .eq("match_id", matchId);
     if (pErr) {
       throw pErr;
@@ -141,6 +149,11 @@ async function pickClosestActiveMatchForUser(userId: string): Promise<ClosestMat
     if (!opponentId) {
       continue;
     }
+    const baselines = new Map<string, number | null>();
+    for (const pr of parts) {
+      const raw = pr.baseline_steps;
+      baselines.set(String(pr.user_id), raw == null ? null : toNumber(raw));
+    }
     const [seriesScores, totals, dayNumber, opponentName] = await Promise.all([
       loadSeriesScores(matchId),
       currentDayTotals(matchId),
@@ -149,14 +162,33 @@ async function pickClosestActiveMatchForUser(userId: string): Promise<ClosestMat
     ]);
     const myTotal = totals.get(selfId) ?? 0;
     const theirTotal = totals.get(opponentId) ?? 0;
-    const standing = myTotal == theirTotal ? "tied" : myTotal > theirTotal ? "ahead" : "behind";
+    const isBalancedSteps = scoringMode === "balanced" && String(m.metric_type) === "steps";
+
+    let standing: string;
+    let dayGap: number;
+    let checkinGap: number;
+
+    if (isBalancedSteps) {
+      const myB = baselines.get(selfId) ?? null;
+      const ob = baselines.get(opponentId) ?? null;
+      const myBS = battleScore(myTotal, myB, ob);
+      const theirBS = battleScore(theirTotal, ob, myB);
+      standing = myBS === theirBS ? "tied" : myBS > theirBS ? "ahead" : "behind";
+      dayGap = Math.abs(myBS - theirBS);
+      checkinGap = dayGap;
+    } else {
+      standing = myTotal == theirTotal ? "tied" : myTotal > theirTotal ? "ahead" : "behind";
+      dayGap = Math.abs(myTotal - theirTotal);
+      checkinGap = dayGap;
+    }
+
     const myScore = seriesScores.get(selfId) ?? 0;
     const theirScore = seriesScores.get(opponentId) ?? 0;
     const seriesMargin = Math.abs(myScore - theirScore);
-    const dayGap = Math.abs(myTotal - theirTotal);
     scored.push({
       matchId,
       metricType: String(m.metric_type),
+      scoringMode,
       durationDays: Number(m.duration_days) || 1,
       seriesMargin,
       dayGap,
@@ -167,6 +199,7 @@ async function pickClosestActiveMatchForUser(userId: string): Promise<ClosestMat
       myDayTotal: myTotal,
       theirDayTotal: theirTotal,
       standing,
+      checkinGap,
     });
   }
   if (scored.length === 0) {

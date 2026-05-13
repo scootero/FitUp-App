@@ -7,6 +7,51 @@
 
 import SwiftUI
 
+private enum MatchDetailsMessagingAlert: Identifiable, Equatable {
+    /// Chat is gated until friendship is accepted.
+    case blockedNotFriend
+    /// Messaging errors (thread creation failures, backend messages).
+    case generic(body: String)
+
+    var id: String {
+        switch self {
+        case .blockedNotFriend: return "blockedNotFriend"
+        case .generic(let body): return "generic|\(body)"
+        }
+    }
+}
+
+/// Actual-steps chip in the hero: strict lead (ties use neutral styling).
+private enum HeroTodayPillStyle {
+    case leading
+    case trailing
+    case tied
+
+    var foreground: Color {
+        switch self {
+        case .leading: FitUpColors.Neon.cyan
+        case .trailing: FitUpColors.Neon.red
+        case .tied: FitUpColors.Text.secondary
+        }
+    }
+
+    var fill: Color {
+        switch self {
+        case .leading: FitUpColors.Neon.cyan.opacity(0.1)
+        case .trailing: FitUpColors.Neon.red.opacity(0.1)
+        case .tied: Color.white.opacity(0.06)
+        }
+    }
+
+    var stroke: Color {
+        switch self {
+        case .leading: FitUpColors.Neon.cyan.opacity(0.2)
+        case .trailing: FitUpColors.Neon.red.opacity(0.2)
+        case .tied: Color.white.opacity(0.1)
+        }
+    }
+}
+
 struct MatchDetailsView: View {
     var onClose: () -> Void
     var onRematch: (ChallengeLaunchContext) -> Void
@@ -17,6 +62,14 @@ struct MatchDetailsView: View {
     @State private var tappedDayBreakdownDayNumber: Int?
     @State private var didTrackMatchViewed = false
     @State private var didTrackMatchCompleted = false
+    @State private var peerProfileSheet: PeerProfileSheetItem?
+    @State private var opponentFriendshipPhase: PeerFriendshipPhase = .unknown
+    /// Message-related alert (blocked chat vs backend error text).
+    @State private var messagingAlertKind: MatchDetailsMessagingAlert?
+    @State private var friendRequestBusy = false
+    @State private var showFriendRequestSentToast = false
+    @State private var friendRequestToastTask: Task<Void, Never>?
+    @State private var chatThreadPresentation: MatchChatPresentation?
     private let profile: Profile?
 
     private var activeBreakdownDayNumber: Int? {
@@ -85,7 +138,19 @@ struct MatchDetailsView: View {
             .refreshable {
                 await viewModel.refresh(showLoading: false)
             }
+
+            if showFriendRequestSentToast {
+                VStack {
+                    Spacer()
+                    FriendRequestSentMatchDetailsToast(onDismiss: { dismissFriendRequestSentToastImmediately() })
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 28)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .allowsHitTesting(true)
+            }
         }
+        .animation(.spring(response: 0.36, dampingFraction: 0.86), value: showFriendRequestSentToast)
         .task {
             viewModel.start()
         }
@@ -115,11 +180,65 @@ struct MatchDetailsView: View {
             }
         }
         .onDisappear {
+            friendRequestToastTask?.cancel()
+            friendRequestToastTask = nil
             viewModel.stop()
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
             Task { await viewModel.refresh(showLoading: false) }
+        }
+        .task(id: viewModel.snapshot?.opponent.id) {
+            await refreshOpponentFriendshipPhase()
+        }
+        .sheet(item: $peerProfileSheet) { item in
+            if let profile {
+                PeerProfileView(peerId: item.peerId, viewer: profile)
+            }
+        }
+        .onChange(of: peerProfileSheet) { _, new in
+            if new == nil {
+                Task { await refreshOpponentFriendshipPhase() }
+            }
+        }
+        .alert(
+            "Message",
+            isPresented: Binding(
+                get: { messagingAlertKind != nil },
+                set: { if !$0 { messagingAlertKind = nil } }
+            ),
+            presenting: messagingAlertKind,
+            actions: { kind in
+                switch kind {
+                case .blockedNotFriend:
+                    Button("Add Friend") {
+                        messagingAlertKind = nil
+                        Task { await sendFriendRequestToOpponent(showSuccessToast: true) }
+                    }
+                    Button("OK", role: .cancel) {
+                        messagingAlertKind = nil
+                    }
+                case .generic:
+                    Button("OK", role: .cancel) {
+                        messagingAlertKind = nil
+                    }
+                }
+            },
+            message: { kind in
+                switch kind {
+                case .blockedNotFriend:
+                    Text("Add this person as a friend to message them.")
+                case .generic(let body):
+                    Text(body)
+                }
+            }
+        )
+        .fullScreenCover(item: $chatThreadPresentation) { ctx in
+            if let profile {
+                NavigationStack {
+                    ChatThreadView(peerProfileId: ctx.peerId, viewer: profile)
+                }
+            }
         }
         .screenTransition()
     }
@@ -139,24 +258,192 @@ struct MatchDetailsView: View {
 
             Spacer()
 
+            if profile != nil, viewModel.snapshot != nil {
+                HStack(spacing: 8) {
+                    Button {
+                        messageCompetitorTapped()
+                    } label: {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .frame(width: 34, height: 34)
+                            .background(topBarChromeBackground)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Message competitor")
+
+                    Button {
+                        friendIconTapped()
+                    } label: {
+                        Image(systemName: friendTopBarSymbolName)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(friendIconForegroundStyle)
+                            .frame(width: 34, height: 34)
+                            .background(topBarChromeBackground)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(friendIconDisabled || friendRequestBusy)
+                    .opacity(friendIconDisabled && opponentFriendshipPhase != .incomingPending ? 0.55 : 1)
+                    .accessibilityLabel(friendIconAccessibilityLabel)
+
+                    Button {
+                        openOpponentPeerProfileFromTopBar()
+                    } label: {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .frame(width: 34, height: 34)
+                            .background(topBarChromeBackground)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("View competitor profile")
+                }
+            }
+
             if let shareURL = URL(string: "https://fitup.app/match/\(viewModel.matchId.uuidString)") {
                 ShareLink(item: shareURL) {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(FitUpColors.Text.secondary)
                         .frame(width: 34, height: 34)
-                        .background(
-                            RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
-                                .fill(Color.white.opacity(0.06))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
-                                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                                )
-                        )
+                        .background(topBarChromeBackground)
                 }
+                .padding(.leading, 6)
             }
         }
         .padding(.horizontal, 4)
+    }
+
+    /// Shared glass capsule background for trailing top-bar icons.
+    private var topBarChromeBackground: some View {
+        RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
+            .fill(Color.white.opacity(0.06))
+            .overlay(
+                RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            )
+    }
+
+    /// Friend icon disabled when nothing to send (`Friends` / `Request sent`).
+    private var friendIconDisabled: Bool {
+        opponentFriendshipPhase == .outgoingPending || opponentFriendshipPhase == .accepted
+    }
+
+    private var friendTopBarSymbolName: String {
+        switch opponentFriendshipPhase {
+        case .accepted:
+            return "person.2.fill"
+        case .outgoingPending:
+            return "paperplane.fill"
+        case .incomingPending:
+            return "person.crop.circle.badge.plus"
+        case .none, .unknown:
+            return "person.badge.plus"
+        }
+    }
+
+    private var friendIconForegroundStyle: Color {
+        switch opponentFriendshipPhase {
+        case .accepted:
+            return FitUpColors.Neon.green
+        case .outgoingPending:
+            return FitUpColors.Text.tertiary
+        default:
+            return FitUpColors.Text.secondary
+        }
+    }
+
+    private var friendIconAccessibilityLabel: String {
+        switch opponentFriendshipPhase {
+        case .accepted:
+            return "Friends with competitor"
+        case .outgoingPending:
+            return "Friend request sent"
+        case .incomingPending:
+            return "Open competitor profile to accept friend request"
+        case .none, .unknown:
+            return "Send friend request to competitor"
+        }
+    }
+
+    private func messageCompetitorTapped() {
+        guard let viewer = profile, let oid = viewModel.snapshot?.opponent.id else { return }
+        guard viewer.id != oid else { return }
+        if opponentFriendshipPhase == .accepted {
+            Task {
+                do {
+                    _ = try await MessageRepository().ensureThread(
+                        peerProfileId: oid,
+                        currentProfileId: viewer.id
+                    )
+                    chatThreadPresentation = MatchChatPresentation(peerId: oid)
+                } catch {
+                    let msg = (error as? LocalizedError)?.errorDescription ?? ""
+                    messagingAlertKind = .generic(body: msg.isEmpty
+                        ? "Messaging is not ready yet. Please try again later."
+                        : msg)
+                }
+            }
+            return
+        }
+        messagingAlertKind = .blockedNotFriend
+    }
+
+    private func friendIconTapped() {
+        switch opponentFriendshipPhase {
+        case .incomingPending:
+            openOpponentPeerProfileFromTopBar()
+        case .accepted, .outgoingPending:
+            return
+        case .none, .unknown:
+            Task { await sendFriendRequestToOpponent(showSuccessToast: true) }
+        }
+    }
+
+    private func openOpponentPeerProfileFromTopBar() {
+        guard profile != nil, let oid = viewModel.snapshot?.opponent.id else { return }
+        peerProfileSheet = PeerProfileSheetItem(peerId: oid)
+    }
+
+    @MainActor
+    private func sendFriendRequestToOpponent(showSuccessToast: Bool) async {
+        guard let viewer = profile, let oid = viewModel.snapshot?.opponent.id else { return }
+        guard viewer.id != oid else { return }
+        guard opponentFriendshipPhase != .accepted,
+              opponentFriendshipPhase != .outgoingPending
+        else { return }
+
+        friendRequestBusy = true
+        defer { friendRequestBusy = false }
+        do {
+            try await FriendshipRepository().sendFriendRequest(from: viewer.id, to: oid)
+            await refreshOpponentFriendshipPhase()
+            if showSuccessToast {
+                presentFriendRequestSentToast()
+            }
+        } catch {
+            messagingAlertKind = .generic(body: "Could not send friend request.")
+        }
+    }
+
+    private func dismissFriendRequestSentToastImmediately() {
+        friendRequestToastTask?.cancel()
+        friendRequestToastTask = nil
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
+            showFriendRequestSentToast = false
+        }
+    }
+
+    private func presentFriendRequestSentToast() {
+        friendRequestToastTask?.cancel()
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+            showFriendRequestSentToast = true
+        }
+        friendRequestToastTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            guard !Task.isCancelled else { return }
+            dismissFriendRequestSentToastImmediately()
+        }
     }
 
     // MARK: - Pending (legacy)
@@ -209,19 +496,26 @@ struct MatchDetailsView: View {
                             )
                     }
 
-                    VStack(spacing: 6) {
-                        AvatarView(
-                            initials: snapshot.opponent.initials,
-                            color: color(from: snapshot.opponent.colorHex),
-                            size: 52,
-                            glow: false
-                        )
-                        Text(snapshot.opponent.displayName)
-                            .font(FitUpFont.display(14, weight: .bold))
-                            .foregroundStyle(FitUpColors.Text.primary)
-                            .lineLimit(1)
+                    Button {
+                        guard profile != nil else { return }
+                        peerProfileSheet = PeerProfileSheetItem(peerId: snapshot.opponent.id)
+                    } label: {
+                        VStack(spacing: 6) {
+                            AvatarView(
+                                initials: snapshot.opponent.initials,
+                                color: color(from: snapshot.opponent.colorHex),
+                                size: 52,
+                                glow: false
+                            )
+                            Text(snapshot.opponent.displayName)
+                                .font(FitUpFont.display(14, weight: .bold))
+                                .foregroundStyle(FitUpColors.Text.primary)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("View \(snapshot.opponent.displayName) profile")
                 }
 
                 pendingActions(snapshot: snapshot)
@@ -304,6 +598,7 @@ struct MatchDetailsView: View {
     @ViewBuilder
     private func activeCompletedContent(dm: MatchDetailDisplayModel) -> some View {
         metaPillsRow(dm: dm)
+        battleModeExplainerBlock(dm: dm)
         heroCardV2(dm: dm)
         if dm.snapshot.state == .active {
             todayBattleRow(dm: dm)
@@ -353,6 +648,32 @@ struct MatchDetailsView: View {
                         .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
                 )
 
+            if let scoringPill = dm.snapshot.scoringModePillLabel {
+                Text(scoringPill)
+                    .font(FitUpFont.body(10, weight: .heavy))
+                    .foregroundStyle(FitUpColors.Neon.blue)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(FitUpColors.Neon.blue.opacity(0.08))
+                            .overlay(Capsule().strokeBorder(FitUpColors.Neon.blue.opacity(0.22), lineWidth: 1))
+                    )
+            }
+
+            if let diffPill = dm.snapshot.rawDifficultyPillLabel {
+                Text(diffPill)
+                    .font(FitUpFont.body(10, weight: .heavy))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.05))
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+                    )
+            }
+
             if dm.snapshot.state == .active {
                 HStack(spacing: 5) {
                     Circle()
@@ -370,6 +691,33 @@ struct MatchDetailsView: View {
                         .fill(FitUpColors.Neon.greenDim)
                         .overlay(Capsule().strokeBorder(FitUpColors.Neon.green.opacity(0.25), lineWidth: 1))
                 )
+            }
+        }
+    }
+
+    private func battleModeExplainerBlock(dm: MatchDetailDisplayModel) -> some View {
+        let expl = dm.snapshot.stepsBattleModeExplainer
+        let foot = dm.snapshot.matchmakingResolutionFootnote
+        let hasAny = !(expl?.isEmpty ?? true) || !(foot?.isEmpty ?? true)
+        return Group {
+            if hasAny {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let expl, !expl.isEmpty {
+                        Text(expl)
+                            .font(FitUpFont.body(12, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let foot, !foot.isEmpty {
+                        Text(foot)
+                            .font(FitUpFont.mono(10, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
             }
         }
     }
@@ -413,15 +761,32 @@ struct MatchDetailsView: View {
                 }
 
                 HStack(alignment: .top, spacing: 6) {
+                    let myBattle = dm.snapshot.isBalancedStepsBattle
+                        ? HomeActiveMatch.battleScore(
+                            actualSteps: dm.myTodayDisplay,
+                            myBaseline: dm.snapshot.myBaselineSteps,
+                            theirBaseline: dm.snapshot.theirBaselineSteps
+                        )
+                        : nil
+                    let theirBattle = dm.snapshot.isBalancedStepsBattle
+                        ? HomeActiveMatch.battleScore(
+                            actualSteps: dm.theirToday,
+                            myBaseline: dm.snapshot.theirBaselineSteps,
+                            theirBaseline: dm.snapshot.myBaselineSteps
+                        )
+                        : nil
+                    let myPill = heroTodayPillStyle(dm: dm, forOpponent: false, myBattle: myBattle, theirBattle: theirBattle)
+                    let theirPill = heroTodayPillStyle(dm: dm, forOpponent: true, myBattle: myBattle, theirBattle: theirBattle)
                     playerHeroColumn(
                         name: "You",
                         initials: dm.snapshot.me.initials,
                         border: FitUpColors.Neon.cyan,
-                        score: dm.snapshot.myScore,
-                        today: dm.myTodayDisplay,
-                        win: dm.myTodayDisplay >= dm.theirToday,
+                        seriesScore: dm.snapshot.myScore,
+                        todaySteps: dm.myTodayDisplay,
+                        todayPillStyle: myPill,
                         pulse: dm.snapshot.state == .active,
-                        staleHint: dm.healthKitStale ? "May be stale" : nil
+                        staleHint: dm.healthKitStale ? "May be stale" : nil,
+                        primaryBattleScore: myBattle
                     )
 
                     VStack(spacing: 4) {
@@ -440,11 +805,17 @@ struct MatchDetailsView: View {
                         name: dm.snapshot.opponent.displayName,
                         initials: dm.snapshot.opponent.initials,
                         border: color(from: dm.snapshot.opponent.colorHex),
-                        score: dm.snapshot.theirScore,
-                        today: dm.theirToday,
-                        win: dm.theirToday > dm.myTodayDisplay,
+                        seriesScore: dm.snapshot.theirScore,
+                        todaySteps: dm.theirToday,
+                        todayPillStyle: theirPill,
                         pulse: false,
-                        staleHint: nil
+                        staleHint: nil,
+                        primaryBattleScore: theirBattle,
+                        onTap: profile == nil
+                            ? nil
+                            : {
+                                peerProfileSheet = PeerProfileSheetItem(peerId: dm.snapshot.opponent.id)
+                            }
                     )
                 }
 
@@ -492,17 +863,50 @@ struct MatchDetailsView: View {
         .glassCard(variant)
     }
 
+    private func heroTodayPillStyle(dm: MatchDetailDisplayModel, forOpponent: Bool, myBattle: Int?, theirBattle: Int?) -> HeroTodayPillStyle {
+        switch dm.snapshot.state {
+        case .pending:
+            return forOpponent ? .trailing : .leading
+        case .completed:
+            if forOpponent {
+                return dm.snapshot.isWinning ? .trailing : .leading
+            }
+            return dm.snapshot.isWinning ? .leading : .trailing
+        case .active:
+            if dm.snapshot.isBalancedStepsBattle, let mb = myBattle, let tb = theirBattle {
+                if forOpponent {
+                    if tb > mb { return .leading }
+                    if mb > tb { return .trailing }
+                    return .tied
+                }
+                if mb > tb { return .leading }
+                if tb > mb { return .trailing }
+                return .tied
+            }
+            if forOpponent {
+                if dm.theirToday > dm.myTodayDisplay { return .leading }
+                if dm.myTodayDisplay > dm.theirToday { return .trailing }
+                return .tied
+            }
+            if dm.myTodayDisplay > dm.theirToday { return .leading }
+            if dm.theirToday > dm.myTodayDisplay { return .trailing }
+            return .tied
+        }
+    }
+
     private func playerHeroColumn(
         name: String,
         initials: String,
         border: Color,
-        score: Int,
-        today: Int,
-        win: Bool,
+        seriesScore: Int,
+        todaySteps: Int,
+        todayPillStyle: HeroTodayPillStyle,
         pulse: Bool,
-        staleHint: String?
+        staleHint: String?,
+        primaryBattleScore: Int? = nil,
+        onTap: (() -> Void)? = nil
     ) -> some View {
-        VStack(spacing: 6) {
+        let inner = VStack(spacing: 6) {
             ZStack {
                 if pulse {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -516,28 +920,62 @@ struct MatchDetailsView: View {
                 .foregroundStyle(FitUpColors.Text.primary)
                 .lineLimit(1)
 
-            Text("\(score)")
-                .font(FitUpFont.display(56, weight: .black))
-                .foregroundStyle(FitUpColors.Text.primary)
-                .minimumScaleFactor(0.5)
-                .lineLimit(1)
+            Text("Series wins \(seriesScore)")
+                .font(FitUpFont.mono(9, weight: .medium))
+                .foregroundStyle(FitUpColors.Text.tertiary)
 
-            Text("\(today)")
-                .font(FitUpFont.mono(11, weight: .bold))
-                .foregroundStyle(win ? FitUpColors.Neon.cyan : FitUpColors.Neon.red)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(win ? FitUpColors.Neon.cyan.opacity(0.1) : FitUpColors.Neon.red.opacity(0.1))
-                        .overlay(
+            if let battle = primaryBattleScore {
+                Text("\(battle)")
+                    .font(FitUpFont.display(56, weight: .black))
+                    .foregroundStyle(FitUpColors.Neon.cyan)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+
+                Text("Battle Score")
+                    .font(FitUpFont.mono(10, weight: .bold))
+                    .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.85))
+                    .padding(.top, -4)
+
+                VStack(spacing: 2) {
+                    Text("Actual Steps")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                    Text("\(todaySteps)")
+                        .font(FitUpFont.mono(11, weight: .bold))
+                        .foregroundStyle(todayPillStyle.foreground)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(
-                                    win ? FitUpColors.Neon.cyan.opacity(0.2) : FitUpColors.Neon.red.opacity(0.2),
-                                    lineWidth: 1
+                                .fill(todayPillStyle.fill)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .strokeBorder(todayPillStyle.stroke, lineWidth: 1)
                                 )
                         )
-                )
+                }
+                .padding(.top, 2)
+            } else {
+                Text("\(seriesScore)")
+                    .font(FitUpFont.display(56, weight: .black))
+                    .foregroundStyle(FitUpColors.Text.primary)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+
+                Text("\(todaySteps)")
+                    .font(FitUpFont.mono(11, weight: .bold))
+                    .foregroundStyle(todayPillStyle.foreground)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(todayPillStyle.fill)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(todayPillStyle.stroke, lineWidth: 1)
+                            )
+                    )
+            }
 
             if let staleHint {
                 Text(staleHint)
@@ -546,6 +984,18 @@ struct MatchDetailsView: View {
             }
         }
         .frame(maxWidth: .infinity)
+
+        return Group {
+            if let onTap {
+                Button(action: onTap) {
+                    inner
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("View \(name) profile")
+            } else {
+                inner
+            }
+        }
     }
 
     private func recordDotsRow(dm: MatchDetailDisplayModel) -> some View {
@@ -593,9 +1043,137 @@ struct MatchDetailsView: View {
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(bg))
     }
 
+    @ViewBuilder
     private func todayBattleRow(dm: MatchDetailDisplayModel) -> some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
+        if dm.snapshot.isBalancedStepsBattle {
+            balancedTodayBattleRow(dm: dm)
+        } else {
+            rawOrCalorieTodayBattleRow(dm: dm)
+        }
+    }
+
+    private func balancedTodayBattleRow(dm: MatchDetailDisplayModel) -> some View {
+        let myB = HomeActiveMatch.battleScore(
+            actualSteps: dm.myTodayDisplay,
+            myBaseline: dm.snapshot.myBaselineSteps,
+            theirBaseline: dm.snapshot.theirBaselineSteps
+        )
+        let theirB = HomeActiveMatch.battleScore(
+            actualSteps: dm.theirToday,
+            myBaseline: dm.snapshot.theirBaselineSteps,
+            theirBaseline: dm.snapshot.myBaselineSteps
+        )
+        let myBalance = String(
+            format: "%.1f×",
+            HomeActiveMatch.balanceMultiplier(
+                myEffective: HomeActiveMatch.effectiveBaselineSteps(baseline: dm.snapshot.myBaselineSteps),
+                theirEffective: HomeActiveMatch.effectiveBaselineSteps(baseline: dm.snapshot.theirBaselineSteps)
+            )
+        )
+        let theirBalance = String(
+            format: "%.1f×",
+            HomeActiveMatch.balanceMultiplier(
+                myEffective: HomeActiveMatch.effectiveBaselineSteps(baseline: dm.snapshot.theirBaselineSteps),
+                theirEffective: HomeActiveMatch.effectiveBaselineSteps(baseline: dm.snapshot.myBaselineSteps)
+            )
+        )
+        let deltaTint: Color = myB == theirB
+            ? FitUpColors.Text.secondary
+            : (dm.isAheadToday ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("You")
+                        .font(FitUpFont.body(11, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Neon.cyan)
+                    Text("Actual Steps")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                    Text("\(dm.myTodayDisplay)")
+                        .font(FitUpFont.display(18, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                    Text("Battle Score")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                    Text("\(myB)")
+                        .font(FitUpFont.display(28, weight: .black))
+                        .foregroundStyle(FitUpColors.Neon.cyan)
+                    Text("Daily Avg")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                    Text(formatBaselineSteps(dm.snapshot.myBaselineSteps))
+                        .font(FitUpFont.display(16, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                    Text("Balance")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                    Text(myBalance)
+                        .font(FitUpFont.display(16, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(FitUpColors.Neon.green)
+                            .frame(width: 7, height: 7)
+                        Text("LIVE")
+                            .font(FitUpFont.body(11, weight: .heavy))
+                            .foregroundStyle(FitUpColors.Neon.green)
+                    }
+                    Text(dm.snapshot.opponent.displayName)
+                        .font(FitUpFont.body(11, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .lineLimit(1)
+                    Text("Actual Steps")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                    Text("\(dm.theirToday)")
+                        .font(FitUpFont.display(18, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                    Text("Battle Score")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                    Text("\(theirB)")
+                        .font(FitUpFont.display(28, weight: .black))
+                        .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.92))
+                    Text("Daily Avg")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                    Text(formatBaselineSteps(dm.snapshot.theirBaselineSteps))
+                        .font(FitUpFont.display(16, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                    Text("Balance")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                    Text(theirBalance)
+                        .font(FitUpFont.display(16, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            Text(dm.todayDeltaLabel)
+                .font(FitUpFont.body(12, weight: .bold))
+                .foregroundStyle(deltaTint)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+    }
+
+    private func rawOrCalorieTodayBattleRow(dm: MatchDetailDisplayModel) -> some View {
+        let deltaTint = dm.todayDelta >= 0 ? FitUpColors.Neon.cyan : FitUpColors.Neon.red
+        let showRawStepsMeta = !dm.metricIsCalories && dm.snapshot.metricType == "steps" && dm.snapshot.scoringMode == "raw"
+        return HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(dm.metricIsCalories ? "ACTIVE CALORIES" : "STEPS TODAY")
                     .font(FitUpFont.body(10, weight: .heavy))
                     .tracking(1.5)
@@ -605,9 +1183,26 @@ struct MatchDetailsView: View {
                     .font(FitUpFont.display(26, weight: .heavy))
                     .foregroundStyle(dm.isAheadToday ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange)
 
+                if showRawStepsMeta {
+                    Text("Daily Avg")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                    Text(formatBaselineSteps(dm.snapshot.myBaselineSteps))
+                        .font(FitUpFont.display(16, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                    if let diff = dm.snapshot.rawDifficultyPillLabel {
+                        Text("Difficulty")
+                            .font(FitUpFont.mono(9, weight: .bold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                        Text(diff)
+                            .font(FitUpFont.display(16, weight: .heavy))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                    }
+                }
+
                 Text(dm.todayDeltaLabel)
                     .font(FitUpFont.body(12, weight: .bold))
-                    .foregroundStyle(dm.todayDelta >= 0 ? FitUpColors.Neon.cyan : FitUpColors.Neon.red)
+                    .foregroundStyle(deltaTint)
             }
 
             Spacer()
@@ -628,6 +1223,14 @@ struct MatchDetailsView: View {
                     .font(FitUpFont.body(11, weight: .semibold))
                     .foregroundStyle(FitUpColors.Text.secondary)
                     .lineLimit(1)
+                if showRawStepsMeta {
+                    Text("Daily Avg")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                    Text(formatBaselineSteps(dm.snapshot.theirBaselineSteps))
+                        .font(FitUpFont.display(16, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                }
             }
         }
         .padding(14)
@@ -882,11 +1485,28 @@ struct MatchDetailsView: View {
                 statHeaderPill(text: "\(dm.opponentFirstName)'s", tint: FitUpColors.Neon.orange)
             }
 
-            statStatRow(
-                title: "Daily Avg",
-                left: formatStatNumber(dm.dailyAverageMine, calories: dm.metricIsCalories),
-                right: formatStatNumber(dm.dailyAverageTheirs, calories: dm.metricIsCalories)
-            )
+            if dm.snapshot.isBalancedStepsBattle {
+                statStatRow(
+                    title: "Daily Avg",
+                    left: formatBaselineSteps(dm.snapshot.myBaselineSteps),
+                    right: formatBaselineSteps(dm.snapshot.theirBaselineSteps)
+                )
+                statStatRow(
+                    title: "Series daily avg",
+                    left: formatStatNumber(dm.dailyAverageMine, calories: false),
+                    right: formatStatNumber(dm.dailyAverageTheirs, calories: false)
+                )
+            } else {
+                statStatRow(
+                    title: "Daily Avg",
+                    left: formatStatNumber(dm.dailyAverageMine, calories: dm.metricIsCalories),
+                    right: formatStatNumber(dm.dailyAverageTheirs, calories: dm.metricIsCalories)
+                )
+                if dm.snapshot.metricType == "steps", let diff = dm.snapshot.rawDifficultyPillLabel {
+                    statStatRow(title: "Difficulty", left: diff, right: diff)
+                }
+            }
+
             statStatRow(
                 title: "Best Day",
                 left: "\(dm.bestDayMine)",
@@ -903,6 +1523,11 @@ struct MatchDetailsView: View {
                 right: "\(MatchDurationCopy.daysWonFraction(won: dm.snapshot.theirScore, totalDays: dm.snapshot.durationDays)) · \(Int(dm.winRateTheirsPercent.rounded()))%"
             )
         }
+    }
+
+    private func formatBaselineSteps(_ baseline: Double?) -> String {
+        guard let baseline, baseline > 0 else { return "—" }
+        return "\(Int(baseline.rounded()))"
     }
 
     private func statHeaderPill(text: String, tint: Color) -> some View {
@@ -1076,4 +1701,78 @@ struct MatchDetailsView: View {
         }
         return Color(rgb: value)
     }
+
+    private func refreshOpponentFriendshipPhase() async {
+        guard let viewer = profile, let oid = viewModel.snapshot?.opponent.id else {
+            opponentFriendshipPhase = .unknown
+            return
+        }
+        opponentFriendshipPhase =
+            (try? await FriendshipRepository().friendshipPhase(currentProfileId: viewer.id, peerProfileId: oid))
+            ?? .unknown
+    }
+}
+
+// MARK: - Friend request toast (match details)
+
+private struct FriendRequestSentMatchDetailsToast: View {
+    var onDismiss: () -> Void
+
+    @State private var appeared = false
+
+    var body: some View {
+        Button(action: onDismiss) {
+            VStack(spacing: 6) {
+                Text("FRIEND REQUEST SENT")
+                    .font(FitUpFont.mono(13, weight: .heavy))
+                    .foregroundStyle(FitUpColors.Neon.green)
+                    .shadow(color: FitUpColors.Neon.green.opacity(0.38), radius: 8)
+
+                Text("Tap to dismiss")
+                    .font(FitUpFont.mono(10, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                    .fill(Color(rgb: 0x0A1020).opacity(0.96))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        FitUpColors.Neon.green.opacity(0.82),
+                                        FitUpColors.Neon.cyan.opacity(0.42),
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                lineWidth: 1.4
+                            )
+                    )
+            )
+            .shadow(color: FitUpColors.Neon.green.opacity(0.16), radius: 16)
+            .scaleEffect(appeared ? 1 : 0.94)
+            .opacity(appeared ? 1 : 0)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Friend request sent")
+        .onAppear {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                appeared = true
+            }
+        }
+    }
+}
+
+private struct PeerProfileSheetItem: Identifiable, Equatable {
+    let peerId: UUID
+    var id: UUID { peerId }
+}
+
+private struct MatchChatPresentation: Identifiable, Equatable {
+    let peerId: UUID
+    var id: UUID { peerId }
 }

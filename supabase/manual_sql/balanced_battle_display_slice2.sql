@@ -1,0 +1,11 @@
+-- Balanced Battle — Slice 2 (display / in-app UI alignment)
+--
+-- No DDL or RPC changes are required for Slice 2. The iOS client derives Battle Score
+-- from existing `match_participants.baseline_steps` and live step totals, matching
+-- `finalize-match-day` effective-baseline rules (3000 floor).
+--
+-- Optional follow-up (not part of Slice 2 acceptance): push notification accuracy for
+-- `lead_changed` currently uses raw `metric_total` deltas and "steps" copy in
+-- `notify_lead_changed` / `dispatch-notification`. Fixing Balanced lead pushes would
+-- require a SQL update to pass scoring mode + battle-score delta and an Edge deploy
+-- for notification body copy when `scoring_mode === 'balanced'`.

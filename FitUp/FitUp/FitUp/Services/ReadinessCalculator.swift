@@ -33,6 +33,11 @@ struct ReadinessGoals: Equatable {
             restingHRTargetBpm: d.object(forKey: "readiness_resting_hr_target_bpm") as? Double ?? Self.default.restingHRTargetBpm
         )
     }
+
+    /// Persists the Stats / readiness daily steps target (`readiness_steps_goal`). No server upload.
+    static func saveStepsGoal(_ steps: Int) {
+        UserDefaults.standard.set(steps, forKey: "readiness_steps_goal")
+    }
 }
 
 #if DEBUG

@@ -54,7 +54,7 @@ final class MatchRepository {
         let rows = try await fetchProfileRows()
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let myBaselines = try await fetchMyBaselines(userId: currentUserId)
-        let myBaseline = metricType == .steps ? myBaselines.steps : myBaselines.calories
+        let myBaseline = metricType == .steps ? myBaselines.steps7 : myBaselines.calories7
 
         var candidates: [MatchRepositoryOpponentCandidate] = []
         for row in rows {
@@ -130,18 +130,38 @@ final class MatchRepository {
         creatorId: UUID,
         metricType: ChallengeMetricType,
         durationDays: Int,
-        startMode: ChallengeStartMode
+        startMode: ChallengeStartMode,
+        scoringMode: MatchScoringModePreference?,
+        difficulty: MatchDifficultyPreference?
     ) async throws -> UUID {
         try await cancelPriorSearchingRequests(creatorId: creatorId)
 
-        let creatorBaseline = try await fetchCreatorBaseline(userId: creatorId, metricType: metricType)
+        let baselines = try await fetchMyBaselines(userId: creatorId)
+        let creatorBaseline = metricType == .steps ? baselines.steps7 : baselines.calories7
+        let avg30 = metricType == .steps ? baselines.steps30 : nil
+
+        let scoringDb: String?
+        let difficultyDb: String?
+        switch metricType {
+        case .steps:
+            let mode = scoringMode ?? .balanced
+            scoringDb = mode.rawValue
+            difficultyDb = mode == .balanced ? nil : (difficulty ?? .fair).rawValue
+        case .activeCalories:
+            scoringDb = nil
+            difficultyDb = nil
+        }
+
         let payload = MatchSearchInsert(
             creatorId: creatorId,
             metricType: metricType.rawValue,
             durationDays: durationDays,
             startMode: startMode.rawValue,
             status: "searching",
-            creatorBaseline: creatorBaseline
+            creatorBaseline: creatorBaseline,
+            scoringMode: scoringDb,
+            difficulty: difficultyDb,
+            creatorAvg30dSteps: avg30
         )
 
         let response = try await client
@@ -161,7 +181,9 @@ final class MatchRepository {
         recipientId: UUID,
         metricType: ChallengeMetricType,
         durationDays: Int,
-        startMode: ChallengeStartMode
+        startMode: ChallengeStartMode,
+        scoringMode: MatchScoringModePreference?,
+        difficulty: MatchDifficultyPreference?
     ) async throws -> MatchRepositoryDirectChallengeResult {
         let client = try client
         let timezone = TimeZone.current.identifier
@@ -171,13 +193,27 @@ final class MatchRepository {
         // Challenger is derived from the JWT in Postgres only; `challengerId` is unused for writes.
         _ = challengerId
 
+        let scoringParam: String?
+        let difficultyParam: String?
+        switch metricType {
+        case .steps:
+            let mode = scoringMode ?? .balanced
+            scoringParam = mode.rawValue
+            difficultyParam = mode == .balanced ? nil : (difficulty ?? .fair).rawValue
+        case .activeCalories:
+            scoringParam = nil
+            difficultyParam = nil
+        }
+
         let params = CreateDirectChallengeRPCParams(
             p_recipient_id: recipientId,
             p_metric_type: metricType.rawValue,
             p_duration_days: durationDays,
             p_start_mode: startMode.rawValue,
             p_match_timezone: timezone,
-            p_starts_at: startsAt
+            p_starts_at: startsAt,
+            p_scoring_mode: scoringParam,
+            p_difficulty: difficultyParam
         )
 
         let response: PostgrestResponse<CreateDirectChallengeRPCResult> = try await client.rpc(
@@ -187,6 +223,53 @@ final class MatchRepository {
 
         let row = response.value
         return MatchRepositoryDirectChallengeResult(matchId: row.match_id, challengeId: row.challenge_id)
+    }
+
+    /// Fills `baseline_steps` via RPC when HealthKit aggregates were missing at activation (`balanced` steps matches only).
+    func syncBalancedBaselineFloorsIfNeeded(userId: UUID, floorSteps: Int) async {
+        guard let client = SupabaseProvider.client else { return }
+        let floor = max(3000, floorSteps)
+        do {
+            let partResp = try await client
+                .from("match_participants")
+                .select("match_id, baseline_steps")
+                .eq("user_id", value: userId.uuidString)
+                .execute()
+            let rows = jsonRows(from: partResp.data)
+            var candidateIds: [UUID] = []
+            for row in rows {
+                guard let mid = uuid(from: row["match_id"]) else { continue }
+                guard double(from: row["baseline_steps"]) == nil else { continue }
+                candidateIds.append(mid)
+            }
+            let uniqueIds = Array(Set(candidateIds))
+            guard !uniqueIds.isEmpty else { return }
+
+            let matchResp = try await client
+                .from("matches")
+                .select("id, state, scoring_mode, metric_type")
+                .in("id", values: uniqueIds)
+                .execute()
+            let matchRows = jsonRows(from: matchResp.data)
+            for mRow in matchRows {
+                guard
+                    let id = uuid(from: mRow["id"]),
+                    string(from: mRow["state"]) == "active",
+                    string(from: mRow["scoring_mode"]) == "balanced",
+                    string(from: mRow["metric_type"]) == "steps"
+                else { continue }
+                let params = SetBaselineRPCParams(p_match_id: id.uuidString, p_baseline_steps: floor)
+                try await client.rpc("set_my_match_participant_baseline", params: params).execute()
+            }
+        } catch {
+            AppLogger.log(
+                category: "matchmaking",
+                level: .warning,
+                message: "syncBalancedBaselineFloorsIfNeeded failed",
+                userId: userId,
+                metadata: ["error": error.localizedDescription]
+            )
+        }
     }
 
     // MARK: - Internal reads
@@ -229,7 +312,7 @@ final class MatchRepository {
     private func fetchProfileRows() async throws -> [[String: Any]] {
         let response = try await client
             .from("profiles")
-            .select("id, display_name, initials, created_at, user_health_baselines(rolling_avg_7d_steps, rolling_avg_7d_calories)")
+            .select("id, display_name, initials, created_at, user_health_baselines(rolling_avg_7d_steps, rolling_avg_7d_calories, rolling_avg_30d_steps)")
             .order("created_at", ascending: false)
             .limit(50)
             .execute()
@@ -262,23 +345,19 @@ final class MatchRepository {
         return int(from: row?["value"])
     }
 
-    private func fetchMyBaselines(userId: UUID) async throws -> (steps: Double?, calories: Double?) {
+    private func fetchMyBaselines(userId: UUID) async throws -> (steps7: Double?, calories7: Double?, steps30: Double?) {
         let response = try await client
             .from("user_health_baselines")
-            .select("rolling_avg_7d_steps, rolling_avg_7d_calories")
+            .select("rolling_avg_7d_steps, rolling_avg_7d_calories, rolling_avg_30d_steps")
             .eq("user_id", value: userId.uuidString)
             .limit(1)
             .execute()
         let row = jsonRows(from: response.data).first
         return (
             double(from: row?["rolling_avg_7d_steps"]),
-            double(from: row?["rolling_avg_7d_calories"])
+            double(from: row?["rolling_avg_7d_calories"]),
+            double(from: row?["rolling_avg_30d_steps"])
         )
-    }
-
-    private func fetchCreatorBaseline(userId: UUID, metricType: ChallengeMetricType) async throws -> Double? {
-        let baselines = try await fetchMyBaselines(userId: userId)
-        return metricType == .steps ? baselines.steps : baselines.calories
     }
 
     // MARK: - Mapping
@@ -411,6 +490,8 @@ private struct CreateDirectChallengeRPCParams: Sendable {
     let p_start_mode: String
     let p_match_timezone: String
     let p_starts_at: String
+    let p_scoring_mode: String?
+    let p_difficulty: String?
 }
 
 extension CreateDirectChallengeRPCParams: Encodable {
@@ -422,6 +503,8 @@ extension CreateDirectChallengeRPCParams: Encodable {
         try c.encode(p_start_mode, forKey: .p_start_mode)
         try c.encode(p_match_timezone, forKey: .p_match_timezone)
         try c.encode(p_starts_at, forKey: .p_starts_at)
+        try c.encodeIfPresent(p_scoring_mode, forKey: .p_scoring_mode)
+        try c.encodeIfPresent(p_difficulty, forKey: .p_difficulty)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -431,6 +514,8 @@ extension CreateDirectChallengeRPCParams: Encodable {
         case p_start_mode
         case p_match_timezone
         case p_starts_at
+        case p_scoring_mode
+        case p_difficulty
     }
 }
 
@@ -456,6 +541,22 @@ private struct RetryMatchmakingBody: Encodable {
     let match_search_request_id: String
 }
 
+private struct SetBaselineRPCParams: Encodable, Sendable {
+    let p_match_id: String
+    let p_baseline_steps: Int
+
+    enum CodingKeys: String, CodingKey {
+        case p_match_id
+        case p_baseline_steps
+    }
+
+    nonisolated func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(p_match_id, forKey: .p_match_id)
+        try c.encode(p_baseline_steps, forKey: .p_baseline_steps)
+    }
+}
+
 private struct MatchSearchInsert: Encodable {
     let creatorId: UUID
     let metricType: String
@@ -463,6 +564,9 @@ private struct MatchSearchInsert: Encodable {
     let startMode: String
     let status: String
     let creatorBaseline: Double?
+    let scoringMode: String?
+    let difficulty: String?
+    let creatorAvg30dSteps: Double?
 
     enum CodingKeys: String, CodingKey {
         case creatorId = "creator_id"
@@ -471,6 +575,9 @@ private struct MatchSearchInsert: Encodable {
         case startMode = "start_mode"
         case status
         case creatorBaseline = "creator_baseline"
+        case scoringMode = "scoring_mode"
+        case difficulty
+        case creatorAvg30dSteps = "creator_avg_30d_steps"
     }
 }
 

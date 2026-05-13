@@ -31,9 +31,14 @@ struct CachedHomeActiveMatch: Codable {
     let theirToday: Int
     let myScore: Int
     let theirScore: Int
+    let isWinning: Bool
     let opponent: CachedHomeOpponent
     let opponentTodayUpdatedAt: Date?
     let dayPips: [CachedHomeDayPip]
+    let scoringMode: String?
+    let difficulty: String?
+    let myBaselineSteps: Double?
+    let theirBaselineSteps: Double?
 }
 
 struct CachedHomeOpponent: Codable {
@@ -51,7 +56,7 @@ struct CachedHomeDayPip: Codable {
 final class HomeSnapshotCacheStore {
     private let defaults: UserDefaults
     private let keyPrefix = "home.hero.snapshot.v2"
-    private let schemaVersion = 2
+    private let schemaVersion = 4
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -169,6 +174,7 @@ private extension CachedHomeActiveMatch {
             theirToday: match.theirToday,
             myScore: match.myScore,
             theirScore: match.theirScore,
+            isWinning: match.isWinning,
             opponent: CachedHomeOpponent(
                 id: match.opponent.id,
                 displayName: match.opponent.displayName,
@@ -178,7 +184,11 @@ private extension CachedHomeActiveMatch {
             opponentTodayUpdatedAt: match.opponentTodayUpdatedAt,
             dayPips: match.dayPips.map {
                 CachedHomeDayPip(dayNumber: $0.dayNumber, state: CachedHomeDayPip.string(from: $0.state))
-            }
+            },
+            scoringMode: match.scoringMode,
+            difficulty: match.difficulty,
+            myBaselineSteps: match.myBaselineSteps,
+            theirBaselineSteps: match.theirBaselineSteps
         )
     }
 
@@ -196,7 +206,7 @@ private extension CachedHomeActiveMatch {
             theirToday: theirToday,
             myScore: myScore,
             theirScore: theirScore,
-            isWinning: myToday >= theirToday,
+            isWinning: isWinning,
             opponent: HomeOpponent(
                 id: opponent.id,
                 displayName: opponent.displayName,
@@ -206,7 +216,11 @@ private extension CachedHomeActiveMatch {
             opponentTodayUpdatedAt: opponentTodayUpdatedAt,
             dayPips: dayPips.map {
                 HomeDayPip(dayNumber: $0.dayNumber, state: CachedHomeDayPip.state(from: $0.state))
-            }
+            },
+            scoringMode: scoringMode,
+            difficulty: difficulty,
+            myBaselineSteps: myBaselineSteps,
+            theirBaselineSteps: theirBaselineSteps
         )
     }
 }

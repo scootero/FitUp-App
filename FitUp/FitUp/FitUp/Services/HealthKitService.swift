@@ -244,17 +244,27 @@ enum HealthKitService {
 
     /// Returns the average daily steps over the last 7 calendar days (including today).
     static func fetchSevenDayStepAverage() async throws -> Double {
-        try await fetchSevenDayAverage(
+        try await fetchNDayStepAverage(days: 7)
+    }
+
+    /// Average daily steps over the last `days` calendar days (including today). No samples uploaded — aggregate only.
+    static func fetchNDayStepAverage(days: Int) async throws -> Double {
+        guard days >= 1 else {
+            throw HealthKitError.invalidDateRange
+        }
+        return try await fetchNDayAverage(
             quantityIdentifier: .stepCount,
-            unit: .count()
+            unit: .count(),
+            days: days
         )
     }
 
     /// Returns the average daily active calories over the last 7 calendar days (including today).
     static func fetchSevenDayActiveCaloriesAverage() async throws -> Double {
-        try await fetchSevenDayAverage(
+        try await fetchNDayAverage(
             quantityIdentifier: .activeEnergyBurned,
-            unit: .kilocalorie()
+            unit: .kilocalorie(),
+            days: 7
         )
     }
 
@@ -1373,9 +1383,10 @@ enum HealthKitService {
         ]
     }
 
-    private static func fetchSevenDayAverage(
+    private static func fetchNDayAverage(
         quantityIdentifier: HKQuantityTypeIdentifier,
-        unit: HKUnit
+        unit: HKUnit,
+        days: Int
     ) async throws -> Double {
         guard isHealthDataAvailable else {
             throw HealthKitError.notAvailable
@@ -1387,7 +1398,7 @@ enum HealthKitService {
 
         let calendar = Calendar.current
         let endDate = Date()
-        guard let startDate = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: endDate)) else {
+        guard let startDate = calendar.date(byAdding: .day, value: -(days - 1), to: calendar.startOfDay(for: endDate)) else {
             throw HealthKitError.invalidDateRange
         }
         let anchorDate = calendar.startOfDay(for: endDate)
@@ -1405,7 +1416,7 @@ enum HealthKitService {
 
             query.initialResultsHandler = { _, collection, error in
                 if let error {
-                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchSevenDayAverage"))
+                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchNDayAverage"))
                     return
                 }
                 guard let collection else {

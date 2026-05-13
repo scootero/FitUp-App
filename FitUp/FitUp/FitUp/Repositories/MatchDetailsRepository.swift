@@ -86,6 +86,14 @@ struct MatchDetailsSnapshot: Equatable, Codable {
     let theirToday: Int
     let isWinning: Bool
     let dayRows: [MatchDetailsDayRow]
+    let scoringMode: String?
+    /// Raw Battle difficulty from `matches.difficulty` (`easy` | `fair` | `hard`); nil for Balanced or legacy rows.
+    let difficulty: String?
+    let myBaselineSteps: Double?
+    let theirBaselineSteps: Double?
+    /// `exact_preference` | `widened` | `fallback_fifo` from `matches.matchmaking_resolution` (public Raw matchmaking only).
+    let matchmakingResolution: String?
+    let matchmakingAttempt: Int?
 
     var sportLabel: String {
         metricType == "active_calories" ? "Calories" : "Steps"
@@ -97,6 +105,62 @@ struct MatchDetailsSnapshot: Equatable, Codable {
 
     var canRespondToPending: Bool {
         state == .pending && myAcceptedAt == nil
+    }
+
+    var isBalancedStepsBattle: Bool {
+        metricType == "steps" && scoringMode == "balanced"
+    }
+
+    func balancedPercent(forSteps steps: Int, baseline: Double?) -> Double {
+        HomeActiveMatch.balancePercentValue(steps: steps, baseline: baseline)
+    }
+
+    /// Steps-only pill label for scoring mode (`balanced` | `raw` | nil legacy treated as Raw).
+    var scoringModePillLabel: String? {
+        guard metricType == "steps" else { return nil }
+        if scoringMode == "balanced" { return "Balanced Battle" }
+        return "Raw Battle"
+    }
+
+    /// Raw Battle only: display label for difficulty pill (includes legacy nil scoring_mode when difficulty set).
+    var rawDifficultyPillLabel: String? {
+        guard metricType == "steps", scoringMode != "balanced",
+              let raw = difficulty?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        switch raw.lowercased() {
+        case "easy": return "Easy"
+        case "fair": return "Fair"
+        case "hard": return "Hard"
+        default: return raw.capitalized
+        }
+    }
+
+    /// Short footnote when Raw public matchmaking used widening / FIFO (Slice 3 metadata).
+    var matchmakingResolutionFootnote: String? {
+        guard let r = matchmakingResolution?.trimmingCharacters(in: .whitespacesAndNewlines), !r.isEmpty else {
+            return nil
+        }
+        switch r {
+        case "widened":
+            return "Search widened to find a match faster."
+        case "fallback_fifo":
+            return "Matched with the oldest compatible opponent."
+        default:
+            return nil
+        }
+    }
+
+    /// One-line explainer for steps battles (Balanced vs Raw).
+    var stepsBattleModeExplainer: String? {
+        guard metricType == "steps" else { return nil }
+        if isBalancedStepsBattle {
+            return "Battle Score compares each player against their normal pace."
+        }
+        if scoringMode == "raw" || scoringMode == nil {
+            return "Highest actual step count wins."
+        }
+        return nil
     }
 }
 
@@ -168,6 +232,36 @@ final class MatchDetailsRepository {
         let todayTotals = deriveTodayTotals(from: rowsForScoring)
         let opponentTodayLastSyncedAt = rowsForScoring.first(where: { $0.isToday })?.opponentLastUpdatedAt
 
+        let scoringMode = string(from: matchRow["scoring_mode"])
+        let difficulty = string(from: matchRow["difficulty"])
+        let matchmakingResolution = string(from: matchRow["matchmaking_resolution"])
+        let matchmakingAttempt = int(from: matchRow["matchmaking_attempt"])
+        let myBaselineSteps = participantRows
+            .first(where: { uuid(from: $0["user_id"]) == currentUser.id })
+            .flatMap { double(from: $0["baseline_steps"]) }
+        let theirBaselineSteps = participantRows
+            .first(where: { uuid(from: $0["user_id"]) == resolvedOpponentId })
+            .flatMap { double(from: $0["baseline_steps"]) }
+
+        let winning: Bool
+        if state == .completed {
+            winning = scoreTuple.myScore >= scoreTuple.theirScore
+        } else if scoringMode == "balanced" && metricType == "steps" {
+            let myBS = HomeActiveMatch.battleScore(
+                actualSteps: todayTotals.myToday,
+                myBaseline: myBaselineSteps,
+                theirBaseline: theirBaselineSteps
+            )
+            let theirBS = HomeActiveMatch.battleScore(
+                actualSteps: todayTotals.theirToday,
+                myBaseline: theirBaselineSteps,
+                theirBaseline: myBaselineSteps
+            )
+            winning = myBS >= theirBS
+        } else {
+            winning = todayTotals.myToday >= todayTotals.theirToday
+        }
+
         let snapshot = MatchDetailsSnapshot(
             matchId: matchId,
             state: state,
@@ -182,8 +276,14 @@ final class MatchDetailsRepository {
             theirScore: scoreTuple.theirScore,
             myToday: todayTotals.myToday,
             theirToday: todayTotals.theirToday,
-            isWinning: state == .completed ? scoreTuple.myScore >= scoreTuple.theirScore : todayTotals.myToday >= todayTotals.theirToday,
-            dayRows: rowsForScoring
+            isWinning: winning,
+            dayRows: rowsForScoring,
+            scoringMode: scoringMode,
+            difficulty: difficulty,
+            myBaselineSteps: myBaselineSteps,
+            theirBaselineSteps: theirBaselineSteps,
+            matchmakingResolution: matchmakingResolution,
+            matchmakingAttempt: matchmakingAttempt
         )
 
         return MatchDetailBundle(
@@ -198,7 +298,7 @@ final class MatchDetailsRepository {
     private func fetchMatchRow(matchId: UUID) async throws -> [String: Any]? {
         let response = try await client
             .from("matches")
-            .select("id, state, metric_type, duration_days, starts_at, ends_at, match_timezone")
+            .select("id, state, metric_type, duration_days, starts_at, ends_at, match_timezone, scoring_mode, difficulty, matchmaking_resolution, matchmaking_attempt")
             .eq("id", value: matchId.uuidString)
             .limit(1)
             .execute()
@@ -208,7 +308,7 @@ final class MatchDetailsRepository {
     private func fetchParticipantRows(matchId: UUID) async throws -> [[String: Any]] {
         let response = try await client
             .from("match_participants")
-            .select("user_id, accepted_at")
+            .select("user_id, accepted_at, baseline_steps")
             .eq("match_id", value: matchId.uuidString)
             .execute()
         return jsonRows(from: response.data)
@@ -409,6 +509,13 @@ final class MatchDetailsRepository {
         if let stringValue = value as? String, let doubleValue = Double(stringValue) {
             return Int(doubleValue.rounded())
         }
+        return nil
+    }
+
+    private func double(from value: Any?) -> Double? {
+        if let doubleValue = value as? Double { return doubleValue }
+        if let intValue = value as? Int { return Double(intValue) }
+        if let stringValue = value as? String { return Double(stringValue) }
         return nil
     }
 

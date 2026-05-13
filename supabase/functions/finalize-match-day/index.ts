@@ -43,6 +43,21 @@ import { invokeInternalFunction, supabaseAdmin } from "../_shared/supabase.ts";
         match_day_id: matchDayId
       });
     }
+    const { data: matchRow, error: matchFetchError } = await supabaseAdmin.from("matches").select("metric_type, duration_days, scoring_mode").eq("id", dayRow.match_id).limit(1).maybeSingle();
+    if (matchFetchError) {
+      throw matchFetchError;
+    }
+    const metricType = matchRow?.metric_type ?? "steps";
+    const scoringMode = matchRow?.scoring_mode ?? null;
+    const useBalancedWinner = scoringMode === "balanced" && metricType === "steps";
+    const { data: baselineRows, error: baselineError } = await supabaseAdmin.from("match_participants").select("user_id, baseline_steps").eq("match_id", dayRow.match_id);
+    if (baselineError) {
+      throw baselineError;
+    }
+    const baselineByUser = new Map();
+    for (const row of baselineRows ?? []){
+      baselineByUser.set(String(row.user_id), row.baseline_steps);
+    }
     const { data: participantRows, error: participantError } = await supabaseAdmin.from("match_day_participants").select("id, user_id, metric_total, finalized_value").eq("match_day_id", matchDayId);
     if (participantError) {
       throw participantError;
@@ -53,26 +68,64 @@ import { invokeInternalFunction, supabaseAdmin } from "../_shared/supabase.ts";
         error: "No match_day_participants found."
       });
     }
+    const ratiosByUser = [];
     for (const participant of participants){
       const finalizedValue = toNumber(participant.metric_total);
-      const { error: updateError } = await supabaseAdmin.from("match_day_participants").update({
+      const uid = String(participant.user_id);
+      let patch = {
         finalized_value: finalizedValue
-      }).eq("id", participant.id);
+      };
+      if (useBalancedWinner) {
+        const rawBaseline = baselineByUser.get(uid);
+        const baselineNum = rawBaseline === null || rawBaseline === undefined ? 0 : toNumber(rawBaseline);
+        const effectiveBaseline = baselineNum > 0 ? Math.max(3000, baselineNum) : 3000;
+        const steps = finalizedValue;
+        const ratio = effectiveBaseline > 0 ? steps / effectiveBaseline : 0;
+        const percent = ratio * 100;
+        patch = {
+          finalized_value: finalizedValue,
+          balanced_ratio: ratio,
+          balanced_percent: percent
+        };
+        ratiosByUser.push({
+          userId: uid,
+          ratio
+        });
+      }
+      const { error: updateError } = await supabaseAdmin.from("match_day_participants").update(patch).eq("id", participant.id);
       if (updateError) {
         throw updateError;
       }
     }
-    const valuesByUser = participants.map((row)=>({
-        userId: row.user_id,
-        value: toNumber(row.metric_total)
-      }));
-    const values = valuesByUser.map((row)=>row.value);
-    const maxValue = Math.max(...values);
-    const minValue = Math.min(...values);
-    const isVoid = maxValue === minValue;
+    let valuesByUser;
+    let maxValue;
+    let minValue;
+    let isVoid;
     let winnerUserId = null;
-    if (!isVoid) {
-      winnerUserId = valuesByUser.reduce((best, current)=>current.value > best.value ? current : best).userId;
+    if (useBalancedWinner) {
+      valuesByUser = ratiosByUser.map((row)=>({
+          userId: row.userId,
+          value: row.ratio
+        }));
+      const ratios = valuesByUser.map((row)=>row.value);
+      maxValue = Math.max(...ratios);
+      minValue = Math.min(...ratios);
+      isVoid = maxValue === minValue;
+      if (!isVoid) {
+        winnerUserId = valuesByUser.reduce((best, current)=>current.value > best.value ? current : best).userId;
+      }
+    } else {
+      valuesByUser = participants.map((row)=>({
+          userId: row.user_id,
+          value: toNumber(row.metric_total)
+        }));
+      const values = valuesByUser.map((row)=>row.value);
+      maxValue = Math.max(...values);
+      minValue = Math.min(...values);
+      isVoid = maxValue === minValue;
+      if (!isVoid) {
+        winnerUserId = valuesByUser.reduce((best, current)=>current.value > best.value ? current : best).userId;
+      }
     }
     const nowIso = new Date().toISOString();
     const { error: finalizeError } = await supabaseAdmin.from("match_days").update({
@@ -96,10 +149,6 @@ import { invokeInternalFunction, supabaseAdmin } from "../_shared/supabase.ts";
     }
     const matchParticipantRows = matchParticipants ?? [];
     const participantUserIds = Array.from(new Set(matchParticipantRows.map((row)=>String(row.user_id))));
-    const { data: matchRow, error: matchError } = await supabaseAdmin.from("matches").select("metric_type, duration_days").eq("id", dayRow.match_id).limit(1).maybeSingle();
-    if (matchError) {
-      throw matchError;
-    }
     const participantNames = await loadParticipantNames(participantUserIds);
     const seriesScores = await computeSeriesScores(dayRow.match_id, participantUserIds);
     for (const userId of participantUserIds){
@@ -115,6 +164,7 @@ import { invokeInternalFunction, supabaseAdmin } from "../_shared/supabase.ts";
           match_id: dayRow.match_id,
           match_day_id: matchDayId,
           metric_type: matchRow?.metric_type ?? "steps",
+          scoring_mode: scoringMode ?? undefined,
           day_number: Number(dayRow.day_number ?? 1),
           duration_days: Number(matchRow?.duration_days ?? 1),
           opponent_display_name: opponentDisplayName,

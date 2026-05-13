@@ -111,14 +111,16 @@ struct OnboardingHowItWorksView: View {
 struct OnboardingPermissionsView: View {
     var isRequestingHealth: Bool
     var isRequestingNotifications: Bool
+    var isLoadingStepAverages: Bool
     var onContinue: () -> Void
 
     private var isBusy: Bool {
-        isRequestingHealth || isRequestingNotifications
+        isRequestingHealth || isRequestingNotifications || isLoadingStepAverages
     }
 
     private var buttonTitle: String {
         if isRequestingHealth { return "Opening Health…" }
+        if isLoadingStepAverages { return "Loading averages…" }
         if isRequestingNotifications { return "Opening Notifications…" }
         return "Continue"
     }
@@ -160,6 +162,18 @@ struct OnboardingPermissionsView: View {
             .frame(maxWidth: .infinity)
             .disabled(isBusy)
             .opacity(isBusy ? 0.65 : 1)
+
+            if isLoadingStepAverages {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .tint(FitUpColors.Neon.cyan)
+                    Text("Loading your recent step averages…")
+                        .font(FitUpFont.body(12, weight: .medium))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(20)
         .glassCard(.base)
@@ -188,6 +202,7 @@ struct OnboardingPermissionsView: View {
         OnboardingPermissionsView(
             isRequestingHealth: false,
             isRequestingNotifications: false,
+            isLoadingStepAverages: false,
             onContinue: {}
         )
         .padding(.horizontal, 16)

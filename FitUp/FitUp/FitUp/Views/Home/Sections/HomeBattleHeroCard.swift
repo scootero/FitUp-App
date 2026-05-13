@@ -14,7 +14,9 @@ struct HomeBattleHeroCard: View {
         let initials: String
         let avatarColor: Color
         let margin: Int
-        let totalSteps: Int
+        let rivalScoreHeadline: Int
+        let rivalActualSteps: Int
+        let marginIsBattleScore: Bool
         let marginColor: Color
         let isUrgent: Bool
         let opponentUpdatedAt: Date?
@@ -61,20 +63,30 @@ struct HomeBattleHeroCard: View {
         matches.filter { normalizedMetric(for: $0.metricType) == selectedMetric }
     }
 
+    private func comparableMyScore(_ match: HomeActiveMatch) -> Int {
+        match.isBalancedStepsBattle ? match.myBattleScore : match.myToday
+    }
+
+    private func comparableTheirScore(_ match: HomeActiveMatch) -> Int {
+        match.isBalancedStepsBattle ? match.theirBattleScore : match.theirToday
+    }
+
     private var topOpponentMatch: HomeActiveMatch? {
-        matchesForSelectedMetric.max(by: { $0.theirToday < $1.theirToday })
+        matchesForSelectedMetric.max(by: { comparableTheirScore($0) < comparableTheirScore($1) })
     }
 
     private var closestAheadMatch: HomeActiveMatch? {
         matchesForSelectedMetric
-            .filter { $0.theirToday > myScoreForRivalList }
-            .min(by: { ($0.theirToday - myScoreForRivalList) < ($1.theirToday - myScoreForRivalList) })
+            .filter { comparableTheirScore($0) > comparableMyScore($0) }
+            .min(by: {
+                (comparableTheirScore($0) - comparableMyScore($0)) < (comparableTheirScore($1) - comparableMyScore($1))
+            })
     }
 
     private var closestBehindMatch: HomeActiveMatch? {
         matchesForSelectedMetric
-            .filter { $0.theirToday <= myScoreForRivalList }
-            .max(by: { $0.theirToday < $1.theirToday })
+            .filter { comparableTheirScore($0) <= comparableMyScore($0) }
+            .max(by: { comparableTheirScore($0) < comparableTheirScore($1) })
     }
 
     private var focusOpponentMatch: HomeActiveMatch? {
@@ -91,7 +103,8 @@ struct HomeBattleHeroCard: View {
 
     /// Pace target for the ring: closest opponent ahead, else closest behind, else highest opponent total.
     private var focusOpponentToday: Int {
-        focusOpponentMatch?.theirToday ?? 0
+        guard let m = focusOpponentMatch else { return 0 }
+        return comparableTheirScore(m)
     }
 
     private var targetOpponentName: String {
@@ -106,7 +119,7 @@ struct HomeBattleHeroCard: View {
               let focus = focusOpponentMatch,
               top.opponent.id != focus.opponent.id
         else { return nil }
-        let topMargin = myToday - top.theirToday
+        let topMargin = comparableMyScore(top) - comparableTheirScore(top)
         let status = topMargin == 0 ? "TIED" : (topMargin > 0 ? "AHEAD" : "BEHIND")
         return "Top: \(top.opponent.displayName) · \(status) \(formattedDelta(topMargin))"
     }
@@ -135,15 +148,20 @@ struct HomeBattleHeroCard: View {
     }
 
     private var opponentComparableRingProgress: Double {
-        guard hasAnyActiveMatch else { return 0 }
-        let scale = max(1, myToday, focusOpponentToday)
-        return min(max(Double(focusOpponentToday) / Double(scale), 0), 1)
+        guard hasAnyActiveMatch, let focus = focusOpponentMatch else { return 0 }
+        let mine = comparableMyScore(focus)
+        let theirs = comparableTheirScore(focus)
+        let scale = max(1, mine, theirs)
+        return min(max(Double(theirs) / Double(scale), 0), 1)
     }
 
     /// Relative pace proxy until 7-day baselines are threaded into HomeActiveMatch.
     /// Uses today's observed pace from both users so lead/deficit feels proportional.
     private var relativeDailyBaseline: Int {
-        let nonZeroTotals = [myToday, focusOpponentToday].filter { $0 > 0 }
+        guard let focus = focusOpponentMatch else { return 3_000 }
+        let mine = comparableMyScore(focus)
+        let theirs = comparableTheirScore(focus)
+        let nonZeroTotals = [mine, theirs].filter { $0 > 0 }
         guard !nonZeroTotals.isEmpty else { return 3_000 }
         let mean = Double(nonZeroTotals.reduce(0, +)) / Double(nonZeroTotals.count)
         return max(1_500, Int(mean.rounded()))
@@ -192,6 +210,17 @@ struct HomeBattleHeroCard: View {
 
     private var heroCtaLine: String {
         guard hasAnyActiveMatch else { return "Start a match to compete today" }
+        if let m = focusOpponentMatch, m.isBalancedStepsBattle {
+            let myBS = m.myBattleScore
+            let theirBS = m.theirBattleScore
+            if myBS == theirBS {
+                return "Balanced Battle · Even Battle Score vs your rival"
+            }
+            if myBS > theirBS {
+                return "Balanced Battle · +\(myBS - theirBS) Battle Score ahead"
+            }
+            return "Balanced Battle · \(theirBS - myBS) Battle Score behind"
+        }
         if isBehindState { return "Walk \(neededToPass.formatted()) steps to take the lead" }
         if isWinningState { return "Keep your lead" }
         return "Take the lead today"
@@ -205,7 +234,8 @@ struct HomeBattleHeroCard: View {
     }
 
     private var marginVsTopOpponent: Int {
-        myToday - focusOpponentToday
+        guard let focus = focusOpponentMatch else { return 0 }
+        return comparableMyScore(focus) - comparableTheirScore(focus)
     }
 
     private var isBehindState: Bool {
@@ -217,7 +247,8 @@ struct HomeBattleHeroCard: View {
     }
 
     private var ringCenterUnitText: String {
-        "STEPS"
+        if let m = focusOpponentMatch, m.isBalancedStepsBattle { return "BATTLE SCORE" }
+        return "STEPS"
     }
 
     private var ringCenterContextText: String {
@@ -226,6 +257,9 @@ struct HomeBattleHeroCard: View {
 
     private var ringOpponentTotalText: String? {
         guard hasAnyActiveMatch, let focusOpponentMatch else { return nil }
+        if focusOpponentMatch.isBalancedStepsBattle {
+            return "Rival \(focusOpponentMatch.theirBattleScore.formatted()) Battle Score · You \(focusOpponentMatch.myBattleScore.formatted()) · Actual: You \(focusOpponentMatch.myToday.formatted()) · Them \(focusOpponentMatch.theirToday.formatted())"
+        }
         return "\(focusOpponentMatch.theirToday.formatted()) total"
     }
 
@@ -234,6 +268,11 @@ struct HomeBattleHeroCard: View {
     }
 
     private var ringCenterAccessibilityLabel: String {
+        if hasAnyActiveMatch, let m = focusOpponentMatch, m.isBalancedStepsBattle {
+            let direction = displayedCenterTarget >= 0 ? "Plus" : "Minus"
+            let state = isWinningState ? "winning today" : (isBehindState ? "losing today" : "tied today")
+            return "\(direction) \(abs(displayedCenterTarget).formatted()) battle score, \(state), versus \(targetOpponentName)"
+        }
         if hasAnyActiveMatch {
             let direction = displayedCenterTarget >= 0 ? "Plus" : "Minus"
             let state = isWinningState ? "winning today" : (isBehindState ? "losing today" : "tied today")
@@ -253,12 +292,16 @@ struct HomeBattleHeroCard: View {
     }
 
     private var myScoreForRivalList: Int {
-        matchesForSelectedMetric.map(\.myToday).max() ?? 0
+        guard !matchesForSelectedMetric.isEmpty else { return 0 }
+        if matchesForSelectedMetric.contains(where: \.isBalancedStepsBattle) {
+            return matchesForSelectedMetric.map(comparableMyScore).max() ?? 0
+        }
+        return myToday
     }
 
     private var displayedOpponentOrbs: [OpponentOrb] {
         Array(matchesForSelectedMetric.prefix(4).enumerated()).map { index, match in
-            let margin = match.myToday - match.theirToday
+            let margin = comparableMyScore(match) - comparableTheirScore(match)
             let rawInitials = match.opponent.initials.trimmingCharacters(in: .whitespacesAndNewlines)
             let fallback = String(match.opponent.displayName.prefix(2)).uppercased()
             return OpponentOrb(
@@ -267,7 +310,9 @@ struct HomeBattleHeroCard: View {
                 initials: rawInitials.isEmpty ? fallback : rawInitials,
                 avatarColor: ProfileAccentColor.swiftUIColor(hex: match.opponent.colorHex),
                 margin: margin,
-                totalSteps: match.theirToday,
+                rivalScoreHeadline: match.isBalancedStepsBattle ? match.theirBattleScore : match.theirToday,
+                rivalActualSteps: match.theirToday,
+                marginIsBattleScore: match.isBalancedStepsBattle,
                 marginColor: marginColor(for: margin),
                 isUrgent: index == 0,
                 opponentUpdatedAt: match.opponentTodayUpdatedAt
@@ -280,11 +325,12 @@ struct HomeBattleHeroCard: View {
         for match in matchesForSelectedMetric {
             let key = match.opponent.id.uuidString
             let existing = byOpponent[key]
-            if existing == nil || match.theirToday > (existing?.score ?? 0) {
+            let score = comparableTheirScore(match)
+            if existing == nil || score > (existing?.score ?? 0) {
                 byOpponent[key] = RankedCompetitor(
                     id: key,
                     name: match.opponent.displayName,
-                    score: match.theirToday,
+                    score: score,
                     isMe: false
                 )
             }
@@ -411,6 +457,9 @@ struct HomeBattleHeroCard: View {
             startUrgentOrbPulse()
         }
         .onChange(of: myToday) { _, _ in
+            animateHeroRing()
+        }
+        .onChange(of: marginVsTopOpponent) { _, _ in
             animateHeroRing()
         }
         .onChange(of: focusOpponentToday) { _, _ in
@@ -615,7 +664,7 @@ struct HomeBattleHeroCard: View {
                         .font(FitUpFont.body(11, weight: .bold))
                         .foregroundStyle(FitUpColors.Text.primary)
                         .lineLimit(1)
-                    Text("\(formattedDelta(orb.margin)) steps")
+                    Text("\(formattedDelta(orb.margin)) \(orb.marginIsBattleScore ? "Battle Score" : "steps")")
                         .font(FitUpFont.mono(13, weight: .bold))
                         .foregroundStyle(chipColor)
                         .lineLimit(1)
@@ -636,10 +685,16 @@ struct HomeBattleHeroCard: View {
             .scaleEffect(orb.isUrgent && urgentOrbPulse ? 1.03 : 1)
             .opacity(orb.isUrgent && urgentOrbPulse ? 1 : 0.95)
 
-            Text("\(orb.totalSteps.formatted()) total")
-                .font(FitUpFont.mono(10, weight: .semibold))
-                .foregroundStyle(FitUpColors.Text.secondary)
-                .lineLimit(1)
+            Group {
+                if orb.marginIsBattleScore {
+                    Text("\(orb.rivalActualSteps.formatted()) actual steps")
+                } else {
+                    Text("\(orb.rivalScoreHeadline.formatted()) total")
+                }
+            }
+            .font(FitUpFont.mono(10, weight: .semibold))
+            .foregroundStyle(FitUpColors.Text.secondary)
+            .lineLimit(1)
 
             if let freshnessShort = opponentFreshnessShortLine(opponentUpdatedAt: orb.opponentUpdatedAt, now: now) {
                 let pillTextColor = freshnessColor(opponentUpdatedAt: orb.opponentUpdatedAt, now: now)
@@ -660,7 +715,7 @@ struct HomeBattleHeroCard: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(orb.initials), \(formattedDelta(orb.margin)) steps")
+        .accessibilityLabel("\(orb.initials), \(formattedDelta(orb.margin)) \(orb.marginIsBattleScore ? "battle score" : "steps")")
     }
 
     private var nearbyOpponentsCard: some View {
@@ -922,7 +977,11 @@ struct HomeBattleHeroCard: View {
                     isWinning: true,
                     opponent: HomeOpponent(id: UUID(), displayName: "Chris", initials: "CH", colorHex: "#00AAFF"),
                     opponentTodayUpdatedAt: nil,
-                    dayPips: []
+                    dayPips: [],
+                    scoringMode: nil,
+                    difficulty: nil,
+                    myBaselineSteps: nil,
+                    theirBaselineSteps: nil
                 ),
                 HomeActiveMatch(
                     id: UUID(),
@@ -940,7 +999,11 @@ struct HomeBattleHeroCard: View {
                     isWinning: true,
                     opponent: HomeOpponent(id: UUID(), displayName: "Taylor", initials: "TA", colorHex: "#FF6200"),
                     opponentTodayUpdatedAt: nil,
-                    dayPips: []
+                    dayPips: [],
+                    scoringMode: nil,
+                    difficulty: nil,
+                    myBaselineSteps: nil,
+                    theirBaselineSteps: nil
                 ),
                 HomeActiveMatch(
                     id: UUID(),
@@ -958,7 +1021,11 @@ struct HomeBattleHeroCard: View {
                     isWinning: true,
                     opponent: HomeOpponent(id: UUID(), displayName: "Jordan", initials: "JO", colorHex: "#BF5FFF"),
                     opponentTodayUpdatedAt: nil,
-                    dayPips: []
+                    dayPips: [],
+                    scoringMode: nil,
+                    difficulty: nil,
+                    myBaselineSteps: nil,
+                    theirBaselineSteps: nil
                 ),
                 HomeActiveMatch(
                     id: UUID(),
@@ -976,7 +1043,11 @@ struct HomeBattleHeroCard: View {
                     isWinning: true,
                     opponent: HomeOpponent(id: UUID(), displayName: "Morgan", initials: "MO", colorHex: "#39FF14"),
                     opponentTodayUpdatedAt: nil,
-                    dayPips: []
+                    dayPips: [],
+                    scoringMode: nil,
+                    difficulty: nil,
+                    myBaselineSteps: nil,
+                    theirBaselineSteps: nil
                 )
             ]
         )
@@ -999,7 +1070,11 @@ struct HomeBattleHeroCard: View {
                     isWinning: false,
                     opponent: HomeOpponent(id: UUID(), displayName: "Leader", initials: "LE", colorHex: "#00AAFF"),
                     opponentTodayUpdatedAt: nil,
-                    dayPips: []
+                    dayPips: [],
+                    scoringMode: nil,
+                    difficulty: nil,
+                    myBaselineSteps: nil,
+                    theirBaselineSteps: nil
                 ),
                 HomeActiveMatch(
                     id: UUID(),
@@ -1017,7 +1092,11 @@ struct HomeBattleHeroCard: View {
                     isWinning: false,
                     opponent: HomeOpponent(id: UUID(), displayName: "Close1", initials: "C1", colorHex: "#FF6200"),
                     opponentTodayUpdatedAt: nil,
-                    dayPips: []
+                    dayPips: [],
+                    scoringMode: nil,
+                    difficulty: nil,
+                    myBaselineSteps: nil,
+                    theirBaselineSteps: nil
                 ),
                 HomeActiveMatch(
                     id: UUID(),
@@ -1035,7 +1114,11 @@ struct HomeBattleHeroCard: View {
                     isWinning: false,
                     opponent: HomeOpponent(id: UUID(), displayName: "Close2", initials: "C2", colorHex: "#BF5FFF"),
                     opponentTodayUpdatedAt: nil,
-                    dayPips: []
+                    dayPips: [],
+                    scoringMode: nil,
+                    difficulty: nil,
+                    myBaselineSteps: nil,
+                    theirBaselineSteps: nil
                 ),
                 HomeActiveMatch(
                     id: UUID(),
@@ -1053,7 +1136,11 @@ struct HomeBattleHeroCard: View {
                     isWinning: false,
                     opponent: HomeOpponent(id: UUID(), displayName: "Farther", initials: "FA", colorHex: "#39FF14"),
                     opponentTodayUpdatedAt: nil,
-                    dayPips: []
+                    dayPips: [],
+                    scoringMode: nil,
+                    difficulty: nil,
+                    myBaselineSteps: nil,
+                    theirBaselineSteps: nil
                 )
             ]
         )

@@ -50,6 +50,13 @@ struct CompetitionEdgeTodaySection: View {
         }
     }
 
+    private var sectionSubtitle: String {
+        if matches.contains(where: { $0.isBalancedStepsBattle }) {
+            return "Step battles compare raw steps. Balanced battles use Battle Score (see each match)."
+        }
+        return "Per opponent, see who is ahead right now."
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("COMPETITION EDGE TODAY")
@@ -57,7 +64,7 @@ struct CompetitionEdgeTodaySection: View {
                 .fitUpGlobalTitleStyle(weight: .heavy, tracking: 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("Per opponent, see who is ahead right now.")
+            Text(sectionSubtitle)
                 .font(FitUpFont.body(12, weight: .medium))
                 .foregroundStyle(
                     LinearGradient(
@@ -291,7 +298,11 @@ private struct CompetitionEdgeTodayRow: View {
                 isWinning: true,
                 opponent: alexOpponent,
                 opponentTodayUpdatedAt: nil,
-                dayPips: []
+                dayPips: [],
+                scoringMode: nil,
+                difficulty: nil,
+                myBaselineSteps: nil,
+                theirBaselineSteps: nil
             ),
             HomeActiveMatch(
                 id: UUID(),
@@ -309,7 +320,11 @@ private struct CompetitionEdgeTodayRow: View {
                 isWinning: false,
                 opponent: alexOpponent,
                 opponentTodayUpdatedAt: nil,
-                dayPips: []
+                dayPips: [],
+                scoringMode: nil,
+                difficulty: nil,
+                myBaselineSteps: nil,
+                theirBaselineSteps: nil
             ),
             HomeActiveMatch(
                 id: UUID(),
@@ -327,7 +342,11 @@ private struct CompetitionEdgeTodayRow: View {
                 isWinning: true,
                 opponent: HomeOpponent(id: UUID(), displayName: "Jordan", initials: "J", colorHex: "FF6200"),
                 opponentTodayUpdatedAt: nil,
-                dayPips: []
+                dayPips: [],
+                scoringMode: nil,
+                difficulty: nil,
+                myBaselineSteps: nil,
+                theirBaselineSteps: nil
             ),
             HomeActiveMatch(
                 id: UUID(),
@@ -345,7 +364,11 @@ private struct CompetitionEdgeTodayRow: View {
                 isWinning: false,
                 opponent: HomeOpponent(id: UUID(), displayName: "Taylor", initials: "T", colorHex: "39FF14"),
                 opponentTodayUpdatedAt: nil,
-                dayPips: []
+                dayPips: [],
+                scoringMode: nil,
+                difficulty: nil,
+                myBaselineSteps: nil,
+                theirBaselineSteps: nil
             ),
         ]
     )

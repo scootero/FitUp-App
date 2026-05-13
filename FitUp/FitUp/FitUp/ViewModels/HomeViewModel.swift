@@ -413,6 +413,8 @@ final class HomeViewModel: ObservableObject {
             await runMetricSyncIfEligible()
         }
 
+        let baselineFloor = max(3000, ReadinessGoals.loadFromUserDefaults().stepsGoal)
+
         let oldPendingIds = Set(pendingMatches.map(\.id))
         let oldActiveIds = Set(activeMatches.map(\.id))
 
@@ -446,6 +448,7 @@ final class HomeViewModel: ObservableObject {
         syncHeroMetricWithActiveMatches()
         if isHeroLoading { isHeroLoading = false }
         persistFreshHeroSnapshot(profileId: userId)
+        await MatchRepository().syncBalancedBaselineFloorsIfNeeded(userId: userId, floorSteps: baselineFloor)
 
         var celebration: HomePendingMatch?
         if !newPendingMatchIds.isEmpty,
@@ -870,6 +873,17 @@ final class HomeViewModel: ObservableObject {
             guard let hkValue = heroHealthKitValueByMetric[metricType] else {
                 return match
             }
+            let winning: Bool
+            if match.isBalancedStepsBattle {
+                let myBS = HomeActiveMatch.battleScore(
+                    actualSteps: hkValue,
+                    myBaseline: match.myBaselineSteps,
+                    theirBaseline: match.theirBaselineSteps
+                )
+                winning = myBS >= match.theirBattleScore
+            } else {
+                winning = hkValue >= match.theirToday
+            }
             return HomeActiveMatch(
                 id: match.id,
                 metricType: match.metricType,
@@ -883,10 +897,14 @@ final class HomeViewModel: ObservableObject {
                 theirToday: match.theirToday,
                 myScore: match.myScore,
                 theirScore: match.theirScore,
-                isWinning: hkValue >= match.theirToday,
+                isWinning: winning,
                 opponent: match.opponent,
                 opponentTodayUpdatedAt: match.opponentTodayUpdatedAt,
-                dayPips: match.dayPips
+                dayPips: match.dayPips,
+                scoringMode: match.scoringMode,
+                difficulty: match.difficulty,
+                myBaselineSteps: match.myBaselineSteps,
+                theirBaselineSteps: match.theirBaselineSteps
             )
         }
     }
@@ -924,7 +942,11 @@ final class HomeViewModel: ObservableObject {
                 isWinning: true,
                 opponent: match.opponent,
                 opponentTodayUpdatedAt: nil,
-                dayPips: match.dayPips
+                dayPips: match.dayPips,
+                scoringMode: match.scoringMode,
+                difficulty: match.difficulty,
+                myBaselineSteps: match.myBaselineSteps,
+                theirBaselineSteps: match.theirBaselineSteps
             )
         }
         syncLiveActivity()

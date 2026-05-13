@@ -87,6 +87,9 @@ struct ChallengeFlowView: View {
     @State private var myPublicCalories: Int?
     @State private var isLoadingRivalStrip = false
 
+    @State private var scoringModePreference: MatchScoringModePreference = .balanced
+    @State private var difficultyPreference: MatchDifficultyPreference = .fair
+
     private let publicDailyActivityRepository = PublicDailyActivityRepository()
 
     init(
@@ -259,7 +262,9 @@ struct ChallengeFlowView: View {
                         selectedFormat: format,
                         selectedOpponent: selectedOpponent,
                         isQuickMatch: isQuickMatch,
-                        isSending: isSending
+                        isSending: isSending,
+                        scoringMode: $scoringModePreference,
+                        difficulty: $difficultyPreference
                     ) {
                         Task { await submitChallenge() }
                     }
@@ -408,11 +413,18 @@ struct ChallengeFlowView: View {
 
         do {
             if isQuickMatch {
+                let scoring = selectedMetric == .steps ? scoringModePreference : nil
+                let difficulty: MatchDifficultyPreference? = {
+                    guard selectedMetric == .steps, scoringModePreference == .raw else { return nil }
+                    return difficultyPreference
+                }()
                 _ = try await matchmakingService.submitQuickMatch(
                     currentUserId: profileId,
                     metricType: selectedMetric,
                     format: selectedFormat,
-                    startMode: .today
+                    startMode: .today,
+                    scoringMode: scoring,
+                    difficulty: difficulty
                 )
                 sentOpponentName = "a matched opponent"
             } else {
@@ -420,12 +432,19 @@ struct ChallengeFlowView: View {
                     errorMessage = "Choose an opponent or Quick Match."
                     return
                 }
+                let scoring = selectedMetric == .steps ? scoringModePreference : nil
+                let difficulty: MatchDifficultyPreference? = {
+                    guard selectedMetric == .steps, scoringModePreference == .raw else { return nil }
+                    return difficultyPreference
+                }()
                 _ = try await directChallengeService.submitDirectChallenge(
                     challengerId: profileId,
                     opponentId: selectedOpponent.id,
                     metricType: selectedMetric,
                     format: selectedFormat,
-                    startMode: .today
+                    startMode: .today,
+                    scoringMode: scoring,
+                    difficulty: difficulty
                 )
                 sentOpponentName = selectedOpponent.displayName
             }

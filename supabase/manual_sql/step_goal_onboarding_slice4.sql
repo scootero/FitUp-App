@@ -1,0 +1,17 @@
+-- ============================================================================
+-- Slice 4 — Onboarding step goal suggestions + profile goal editing (FitUp)
+-- ============================================================================
+--
+-- NO DATABASE CHANGES REQUIRED for this slice.
+--
+-- Daily step goal is stored on-device only:
+--   UserDefaults key: readiness_steps_goal
+--   Loaded/saved via ReadinessGoals in the iOS app (ReadinessCalculator.swift).
+--
+-- Stats / Health UI reads the same goal through ReadinessGoals.loadFromUserDefaults().
+-- No Supabase column, RPC, or RLS updates are needed; do not add a second
+-- conflicting `daily_step_goal` (or similar) on `profiles` unless you later
+-- intentionally sync goals across devices.
+--
+-- Safe to run this file as-is in the SQL Editor (comments only; no statements).
+-- ============================================================================

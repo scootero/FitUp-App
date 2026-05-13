@@ -60,6 +60,7 @@ struct OnboardingView: View {
             OnboardingPermissionsView(
                 isRequestingHealth: viewModel.isAuthorizingHealth,
                 isRequestingNotifications: viewModel.isAuthorizingNotifications,
+                isLoadingStepAverages: viewModel.isLoadingAverage,
                 onContinue: {
                     Task {
                         await viewModel.runOnboardingPermissionsFlow {
@@ -71,12 +72,17 @@ struct OnboardingView: View {
         case .findFirstMatch:
             FindFirstMatchView(
                 sevenDayAverageSteps: viewModel.sevenDayStepAverage,
+                thirtyDayAverageSteps: viewModel.thirtyDayStepAverage,
+                ninetyDayAverageSteps: viewModel.ninetyDayStepAverage,
                 isLoadingAverage: viewModel.isLoadingAverage,
                 isSubmitting: viewModel.isSubmittingSearch,
                 statusMessage: viewModel.statusMessage,
                 errorMessage: viewModel.errorMessage,
+                stepGoalTier: $viewModel.stepGoalTier,
+                dailyStepGoalText: $viewModel.dailyStepGoalText,
+                onSelectTier: { viewModel.selectStepGoalTier($0) },
                 onRetryAverage: {
-                    Task { await viewModel.refreshSevenDayStepAverage() }
+                    Task { await viewModel.refreshAllStepAverages() }
                 },
                 onFindOpponent: {
                     Task {

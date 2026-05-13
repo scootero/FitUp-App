@@ -57,6 +57,54 @@ enum ChallengeStartMode: String {
     case tomorrow
 }
 
+enum MatchScoringModePreference: String, CaseIterable {
+    case balanced
+    case raw
+
+    var title: String {
+        switch self {
+        case .balanced: return "Balanced Battle"
+        case .raw: return "Raw Battle"
+        }
+    }
+
+    /// Shown on the Challenge review step under the scoring picker (Slice 5).
+    var subtitle: String {
+        switch self {
+        case .balanced:
+            return "Balanced Battle uses Battle Score to compare each player against their normal daily pace. Great for fair matches between different step levels."
+        case .raw:
+            return "Raw Battle uses actual steps. Whoever gets more steps wins."
+        }
+    }
+}
+
+enum MatchDifficultyPreference: String, CaseIterable {
+    case easy
+    case fair
+    case hard
+
+    var title: String {
+        switch self {
+        case .easy: return "Easy"
+        case .fair: return "Fair"
+        case .hard: return "Hard"
+        }
+    }
+
+    /// Raw Battle matchmaking intent (Slice 5); shown on Challenge review when Raw is selected.
+    var subtitle: String {
+        switch self {
+        case .easy:
+            return "We first look for an opponent with a lower or similar daily average."
+        case .fair:
+            return "We first look for an opponent close to your daily average."
+        case .hard:
+            return "We first look for an opponent with a higher daily average."
+        }
+    }
+}
+
 struct ChallengeOpponent: Identifiable, Equatable {
     let id: UUID
     let displayName: String
@@ -162,13 +210,17 @@ final class MatchmakingService {
         currentUserId: UUID,
         metricType: ChallengeMetricType,
         format: ChallengeFormatType,
-        startMode: ChallengeStartMode = .today
+        startMode: ChallengeStartMode = .today,
+        scoringMode: MatchScoringModePreference?,
+        difficulty: MatchDifficultyPreference?
     ) async throws -> UUID {
         let requestId = try await repository.createQuickMatchSearch(
             creatorId: currentUserId,
             metricType: metricType,
             durationDays: format.durationDays,
-            startMode: startMode
+            startMode: startMode,
+            scoringMode: scoringMode,
+            difficulty: difficulty
         )
 
         AppLogger.log(
@@ -181,6 +233,8 @@ final class MatchmakingService {
                 "metric_type": metricType.rawValue,
                 "duration_days": String(format.durationDays),
                 "start_mode": startMode.rawValue,
+                "scoring_mode": scoringMode?.rawValue ?? "nil",
+                "difficulty": difficulty?.rawValue ?? "nil",
             ]
         )
 
@@ -192,6 +246,8 @@ final class MatchmakingService {
                 "metric_type": metricType.rawValue,
                 "duration_days": String(format.durationDays),
                 "start_mode": startMode.rawValue,
+                "scoring_mode": scoringMode?.rawValue ?? "",
+                "difficulty": difficulty?.rawValue ?? "",
             ]
         )
 

@@ -1,0 +1,25 @@
+-- ============================================================================
+-- Slice 6 — Notification copy alignment (Balanced vs Raw) — FitUp
+-- ============================================================================
+--
+-- This slice is implemented primarily in Supabase Edge Functions (repo paths):
+--   supabase/functions/_shared/battleScore.ts          — Battle Score helper (check-in copy only)
+--   supabase/functions/dispatch-notification/index.ts — scoring_mode-aware message bodies
+--   supabase/functions/send-morning-checkins/index.ts
+--   supabase/functions/send-evening-checkins/index.ts
+--   supabase/functions/finalize-match-day/index.ts    — payload includes scoring_mode
+--   supabase/functions/complete-match/index.ts        — payload includes scoring_mode
+--
+-- NO DATABASE DDL IS REQUIRED for Slice 6 as shipped in this repo.
+-- `notify_lead_changed` already passes `scoring_mode` in the payload; the dispatcher
+-- uses generic Battle Score copy for Balanced steps (no raw step delta in the push body).
+-- Lead-flip detection still compares raw `metric_total` in the DB trigger; changing that
+-- would be a separate product/eng decision (out of Slice 6 scope).
+--
+-- What you must do after pulling this repo:
+-- 1. Redeploy the Edge functions listed above to your Supabase project
+--    (e.g. `supabase functions deploy ...` from your machine — do not rely on this file).
+-- 2. You do NOT need to run this file in the SQL Editor for Slice 6 behavior.
+--
+-- Safe to paste/run: comments only (no executable statements).
+-- ============================================================================
