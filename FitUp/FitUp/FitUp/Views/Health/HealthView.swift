@@ -82,7 +82,6 @@ struct HealthView: View {
                     score: viewModel.battleReadinessScore,
                     title: viewModel.battleReadinessLabel,
                     subtitle: viewModel.battleReadinessSubtitle,
-                    sleepText: viewModel.sleepHoursDisplay,
                     hrText: viewModel.restingHRDisplay,
                     stepsText: viewModel.stepsTodayDisplay,
                     calsText: viewModel.caloriesTodayDisplay
@@ -91,7 +90,6 @@ struct HealthView: View {
 
                 ComponentBreakdownCard(
                     goals: viewModel.goals,
-                    sleepHours: viewModel.sleepLastNightHours,
                     restingHR: viewModel.restingHRValue,
                     stepsToday: viewModel.stepsTodayValue,
                     calsToday: viewModel.caloriesTodayValue
@@ -116,15 +114,6 @@ struct HealthView: View {
                     }
                 )
                 .padding(.bottom, 14)
-
-                healthSectionLabel("Sleep Quality")
-                HStack(alignment: .top, spacing: 10) {
-                    LastNightSleepCard(summary: viewModel.sleepSummary)
-                    SleepRatioCard(summary: viewModel.sleepSummary)
-                }
-                .padding(.bottom, 10)
-                SevenNightSleepAverageCard(summary: viewModel.sleepSummary)
-                    .padding(.bottom, 14)
 
                 if let err = viewModel.errorMessage {
                     Text(err)

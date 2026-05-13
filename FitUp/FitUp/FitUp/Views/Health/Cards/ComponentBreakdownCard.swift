@@ -9,7 +9,6 @@ import SwiftUI
 
 struct ComponentBreakdownCard: View {
     let goals: ReadinessGoals
-    let sleepHours: Double?
     let restingHR: Double?
     let stepsToday: Int
     let calsToday: Int
@@ -28,12 +27,6 @@ struct ComponentBreakdownCard: View {
                 .padding(.bottom, 16)
 
             VStack(spacing: 14) {
-                breakdownRow(
-                    label: "Sleep",
-                    metricText: sleepMetricText,
-                    percent: pctSleep,
-                    color: FitUpColors.Neon.blue
-                )
                 breakdownRow(
                     label: "Resting HR",
                     metricText: hrMetricText,
@@ -58,11 +51,6 @@ struct ComponentBreakdownCard: View {
         .glassCard(.base)
     }
 
-    private var sleepMetricText: String {
-        let h = sleepHours ?? 0
-        return String(format: "%.1f / %.1f hrs", h, goals.sleepGoalHours)
-    }
-
     private var hrMetricText: String {
         guard let hr = restingHR else { return "— / \(Int(goals.restingHRTargetBpm)) bpm" }
         return "\(Int(hr.rounded())) / \(Int(goals.restingHRTargetBpm)) bpm"
@@ -74,12 +62,6 @@ struct ComponentBreakdownCard: View {
 
     private var calsMetricText: String {
         "\(calsToday) / \(goals.calsGoal) kcal"
-    }
-
-    private var pctSleep: Double {
-        guard goals.sleepGoalHours > 0 else { return 0 }
-        let h = sleepHours ?? 0
-        return min((h / goals.sleepGoalHours) * 100, 100)
     }
 
     private var pctHR: Double {
@@ -142,7 +124,6 @@ struct ComponentBreakdownCard: View {
 #Preview {
     ComponentBreakdownCard(
         goals: .default,
-        sleepHours: 7.8,
         restingHR: 58,
         stepsToday: 5000,
         calsToday: 320

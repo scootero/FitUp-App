@@ -4,31 +4,79 @@
 //
 //  Dev-only hero mock — energy beam, glass card, preview controls. Not wired into Home or production data.
 //
-
+//  -------------------------------------------------------------------------------------------------
+//  FILE MAP (read this first)
+//  -------------------------------------------------------------------------------------------------
+//  • `EnergyBeamHeroMock` / `EnergyBeamPreviewTiming` — tweak numbers at the top; see comments there.
+//  • `EnergyBeamHeroPrototypeView` — full-screen DEBUG scroll: hero card + preview controls.
+//      - `@State margin` is the single source of truth for battle position on the beam and derived scores.
+//      - Preview UI: slider + snap buttons + “Simulate Health Update” only change mock data here.
+//  • `normalizedBeamOffset` — math that turns `margin` into horizontal beam collision offset.
+//  • `FitUpMiniLogoPreview`, `PlayerColumnPreview`, … — small static preview subviews.
+//  • `ProceduralEnergyBeamView` — `GeometryReader` + `TimelineView` + `Canvas`; collision X follows `marginPrecise`.
+//  • `ProceduralBeamRenderer` — static drawing helpers for the procedural beam (lanes, sparks, collision).
+//  • `MomentumState` / `MomentumChipView` — label under the hero from integer margin bucket.
+//  • `DayBattleSparklinePreview` / `DayElapsedProgressPreview` — decorative charts (not real HealthKit).
+//  • `EnergyBeamNumberFormatting` — number formatting for displayed integers.
+//
+//  ANIMATION NOTE (beam vs plasma)
+//  -------------------------------------------------------------------------------------------------
+//  The beam’s *collision position* animates with SwiftUI when `margin` changes. The swirling plasma
+//  redraws on `TimelineView` ticks — that motion is intentionally fast; only edit `margin` / timing
+//  constants if you want the collision *slide* slower. `Task { }` around `withAnimation` can drop the
+//  animation transaction; this file uses direct `withAnimation` for snap/simulate.
+//
 #if DEBUG
 
 import SwiftUI
 
+// MARK: - Mock constants & preview timing
+
+/// Frozen reference numbers for the DEBUG hero so “default margin” lines up with fake battle scores.
+/// Change these if you want different starting scores or beam sensitivity to `margin`.
 private enum EnergyBeamHeroMock {
     /// `(8_450 + 6_019) / 2` truncated — keeps default margin `2_431` landing on the reference scores.
     static let midpointBattleScore = 7_234
+    /// Starting battle margin when the preview opens (drives slider default).
     static let baselineMargin = 2_431
+    /// Passed into `normalizedBeamOffset`; larger ⇒ same `margin` moves the beam less (more “compressed” mapping).
     static let beamReferenceValue = 8_431
 }
 
-// MARK: - Root
+/// Single place to tune how long preview-driven transitions take (seconds).
+/// Used by: hero card `margin` animation, beam view, main result block, slider binding, snap/simulate actions.
+/// Raise to ~10–30 for very slow demos; lower to ~2–4 for snappy previews.
+private enum EnergyBeamPreviewTiming {
+    /// Seconds for `margin` (and anything derived from it, including beam collision X) to ease to the new value.
+    static let marginDrivenAnimationSeconds: Double = 6.0
+}
 
+// MARK: - Root (DEBUG hero + preview controls)
+
+/// Scrollable DEBUG-only screen: glass “Today’s Battle” card and a preview control panel underneath.
+/// Nothing here is wired to production Home, HealthKit, or Supabase.
 struct EnergyBeamHeroPrototypeView: View {
+    /// Continuous battle margin; drives beam collision X via `normalizedBeamOffset` and all derived scores.
+    /// Slider is bound here; snap buttons and simulate bump write here with animation.
     @State private var margin: Double = Double(EnergyBeamHeroMock.baselineMargin)
+    /// Mock step count shown under “YOU” (only `simulateHealthBump()` changes it in this file).
     @State private var userSteps = 9_125
+    /// Mock step count shown under “OPPONENT” (only `simulateHealthBump()` changes it).
     @State private var opponentSteps = 6_530
-    /// Small chart boost so “Simulate Health Update” visibly tweaks endpoints.
+    /// Vertical nudge applied to the fake cumulative sparkline for the user (`DayBattleSparklinePreview`).
+    /// Only `simulateHealthBump()` adjusts; larger range ⇒ more visible chart twitch.
     @State private var chartWiggleUser: CGFloat = 0
+    /// Same as `chartWiggleUser` but for the opponent sparkline.
     @State private var chartWiggleOpp: CGFloat = 0
+
+    /// Integer margin used for labels, `onChange` on the beam, and score formatting (ties to `margin`).
     private var battleMarginInt: Int { Int(margin.rounded(.towardZero)) }
+    /// Opponent battle score derived from midpoint and margin (purely mock math).
     private var opponentBattleScore: Int { EnergyBeamHeroMock.midpointBattleScore - battleMarginInt / 2 }
+    /// User battle score = opponent score + margin (mock).
     private var userBattleScore: Int { opponentBattleScore + battleMarginInt }
 
+    /// Chip state under the hero (grows/shrinks/close/etc.) from `battleMarginInt` buckets.
     private var momentum: MomentumState { MomentumState.inferred(fromMargin: battleMarginInt) }
 
     var body: some View {
@@ -48,6 +96,8 @@ struct EnergyBeamHeroPrototypeView: View {
         .background(FitUpColors.Bg.base.ignoresSafeArea())
     }
 
+    /// Main glass card: header, players, procedural beam, headline numbers, momentum chip, sparkline, day bar.
+    /// `.animation(..., value: margin)` animates everything that depends on `margin` in one transaction (scores + beam).
     private var heroCard: some View {
         VStack(spacing: 0) {
             headerBlock
@@ -123,12 +173,11 @@ struct EnergyBeamHeroPrototypeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: FitUpColors.Neon.cyan.opacity(0.12), radius: 28, y: 10)
         .shadow(color: .black.opacity(0.65), radius: 18, y: 10)
-        .animation(.spring(response: 0.55, dampingFraction: 0.82), value: margin)
-        .animation(.spring(response: 0.55, dampingFraction: 0.82), value: battleMarginInt)
-        .animation(.spring(response: 0.52, dampingFraction: 0.82), value: userBattleScore)
-        .animation(.spring(response: 0.52, dampingFraction: 0.82), value: opponentBattleScore)
+        // One animation keyed to `margin` eases beam collision, both battle scores, and column numbers together.
+        .animation(.easeInOut(duration: EnergyBeamPreviewTiming.marginDrivenAnimationSeconds), value: margin)
     }
 
+    /// Logo + “TODAY'S BATTLE” title row.
     private var headerBlock: some View {
         VStack(spacing: 5) {
             FitUpMiniLogoPreview()
@@ -141,6 +190,7 @@ struct EnergyBeamHeroPrototypeView: View {
         }
     }
 
+    /// Two columns: mock names, steps, battle scores (scores follow `margin`).
     private var playersRow: some View {
         HStack(alignment: .top, spacing: 14) {
             PlayerColumnPreview(
@@ -163,6 +213,8 @@ struct EnergyBeamHeroPrototypeView: View {
         }
     }
 
+    /// Center stack: “TIED / AHEAD BY / BEHIND BY”, big margin number, “BATTLE SCORE” label.
+    /// Inherits animation from `heroCard` (same `margin`); no separate `.animation` here to avoid fighting the parent.
     private var mainResultSection: some View {
         VStack(spacing: 8) {
             Text(resultEyebrow)
@@ -183,21 +235,23 @@ struct EnergyBeamHeroPrototypeView: View {
         .minimumScaleFactor(0.82)
         .allowsTightening(true)
         .transition(.opacity.combined(with: .scale(scale: 0.98)))
-        .animation(.easeInOut(duration: 0.22), value: battleMarginInt)
     }
 
+    /// Eyebrow string above the hero number (depends on `battleMarginInt` sign).
     private var resultEyebrow: String {
         if battleMarginInt == 0 { return "TIED" }
         if battleMarginInt > 0 { return "AHEAD BY" }
         return "BEHIND BY"
     }
 
+    /// Eyebrow color (cyan ahead, orange behind, neutral tie).
     private var resultEyebrowColor: Color {
         if battleMarginInt == 0 { return FitUpColors.Text.secondary }
         if battleMarginInt > 0 { return FitUpColors.Neon.cyan }
         return FitUpColors.Neon.orange.opacity(0.95)
     }
 
+    /// Formatted hero digits (+/- margin with thousands separators).
     private var resultHeroNumberText: String {
         if battleMarginInt == 0 {
             return "0"
@@ -210,12 +264,14 @@ struct EnergyBeamHeroPrototypeView: View {
         return n
     }
 
+    /// Small momentum capsule; **not** tied to `EnergyBeamPreviewTiming` (short 0.25s chip animation only).
     private var momentumChip: some View {
         MomentumChipView(state: momentum)
             .transition(.opacity.combined(with: .scale(scale: 0.94)))
             .animation(.easeInOut(duration: 0.25), value: momentum)
     }
 
+    /// DEBUG panel: margin slider, snap presets, simulate bump. All edits here are mock-only.
     private var previewControlsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("PREVIEW CONTROLS (DEBUG)")
@@ -231,7 +287,12 @@ struct EnergyBeamHeroPrototypeView: View {
                     Spacer()
                 }
 
-                Slider(value: $margin, in: -10_000 ... 10_000, step: 1)
+                // Binding `.animation` ensures slider drags animate at `marginDrivenAnimationSeconds` per change.
+                Slider(
+                    value: $margin.animation(.easeInOut(duration: EnergyBeamPreviewTiming.marginDrivenAnimationSeconds)),
+                    in: -10_000 ... 10_000,
+                    step: 1
+                )
                     .tint(FitUpColors.Neon.cyan)
                     .foregroundStyle(Color.white)
 
@@ -279,25 +340,27 @@ struct EnergyBeamHeroPrototypeView: View {
         .foregroundStyle(Color.white)
     }
 
+    /// Snap `margin` to a preset integer with the same easing as the slider (no `Task` — preserves animation transaction).
     private func snapMargin(_ m: Int) {
-        Task { @MainActor in
+        withAnimation(.easeInOut(duration: EnergyBeamPreviewTiming.marginDrivenAnimationSeconds)) {
             margin = Double(m)
         }
     }
 
+    /// Randomly bumps mock steps, sparkline wiggles, and `margin` inside one animated transaction.
+    /// Tweak the `Int.random` / `Double.random` ranges to make the demo more or less violent.
     private func simulateHealthBump() {
-        Task { @MainActor in
-            withAnimation(.spring(response: 0.52, dampingFraction: 0.78)) {
-                userSteps += Int.random(in: 150 ... 780)
-                opponentSteps += Int.random(in: 40 ... 420)
-                chartWiggleUser += CGFloat(Double.random(in: 0.04 ... 0.11))
-                chartWiggleOpp += CGFloat(Double.random(in: -0.09 ... 0.07))
-                margin += Double.random(in: -180 ... 220)
-                margin = min(max(margin, -10_000), 10_000)
-            }
+        withAnimation(.easeInOut(duration: EnergyBeamPreviewTiming.marginDrivenAnimationSeconds)) {
+            userSteps += Int.random(in: 150 ... 780)
+            opponentSteps += Int.random(in: 40 ... 420)
+            chartWiggleUser += CGFloat(Double.random(in: 0.04 ... 0.11))
+            chartWiggleOpp += CGFloat(Double.random(in: -0.09 ... 0.07))
+            margin += Double.random(in: -180 ... 220)
+            margin = min(max(margin, -10_000), 10_000)
         }
     }
 
+    /// Fake cumulative curve for the user sparkline; `wiggle` shifts every Y value slightly (clamped 0…1).
     private func cumulativeUserSeries(wiggle: CGFloat) -> [CGFloat] {
         let baseU: [CGFloat] = [
             0.02, 0.08, 0.11, 0.15, 0.19, 0.26, 0.33, 0.37, 0.42,
@@ -306,6 +369,7 @@ struct EnergyBeamHeroPrototypeView: View {
         return baseU.map { min(1, max(0, $0 + wiggle)) }
     }
 
+    /// Fake cumulative curve for the opponent sparkline (same idea as `cumulativeUserSeries`).
     private func cumulativeOpponentSeries(wiggle: CGFloat) -> [CGFloat] {
         let baseO: [CGFloat] = [
             0.015, 0.06, 0.085, 0.11, 0.155, 0.19, 0.235, 0.29, 0.335,
@@ -314,9 +378,10 @@ struct EnergyBeamHeroPrototypeView: View {
         return baseO.map { min(1, max(0, $0 + wiggle)) }
     }
 
-    /// Mock % of weekday elapsed anchored to “62% at 15:00” for realism in preview.
+    /// Fixed mock “% of day” for the progress bar preview (change constant to try other fractions).
     private var dayElapsedFraction: CGFloat { 0.62 }
 
+    /// Capsule buttons used by the preview row (Tie / User Ahead / Opponent Ahead).
     private func controlButton(title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -339,6 +404,10 @@ struct EnergyBeamHeroPrototypeView: View {
 
 // MARK: - Beam offset formula
 
+/// Maps raw `margin` into a horizontal offset factor in ~[-0.36, 0.36] used by the beam’s collision X.
+/// - `referenceValue`: larger ⇒ same `margin` produces smaller offset (beam moves less); tied to `beamReferenceValue`.
+/// - `scale`: clamps how fast `tanh` saturates; affects how “touchy” the slider feels near extremes.
+/// - Final `* 0.36`: max fraction of card width the collision can shift from center; raise for wider sweep.
 private func normalizedBeamOffset(margin: Double, referenceValue: Int) -> CGFloat {
     let reference = max(Double(referenceValue), 6000)
     let scale = max(reference * 0.28, 1800)
@@ -347,12 +416,14 @@ private func normalizedBeamOffset(margin: Double, referenceValue: Int) -> CGFloa
     return CGFloat(eased) * 0.36
 }
 
+/// `Int` overload; forwards to the `Double` version (same behavior).
 private func normalizedBeamOffset(margin: Int, referenceValue: Int) -> CGFloat {
     normalizedBeamOffset(margin: Double(margin), referenceValue: referenceValue)
 }
 
 // MARK: - Mini logo
 
+/// Tiny FitUp wordmark row for the hero header (purely decorative).
 private struct FitUpMiniLogoPreview: View {
     var body: some View {
         HStack(spacing: 8) {
@@ -377,6 +448,7 @@ private struct FitUpMiniLogoPreview: View {
 
 // MARK: - Player column
 
+/// Which side of the mock battle a column represents (labels only).
 private enum BattlePlayerRolePreview {
     case user
     case opponent
@@ -389,6 +461,7 @@ private enum BattlePlayerRolePreview {
     }
 }
 
+/// One player column: glyph, name, steps, divider, battle score text.
 private struct PlayerColumnPreview: View {
     let role: BattlePlayerRolePreview
     let accent: Color
@@ -440,12 +513,14 @@ private struct PlayerColumnPreview: View {
         .frame(maxWidth: .infinity, alignment: role == .user ? .leading : .trailing)
     }
 
+    /// “12,345 steps” string from `stepCount` using `EnergyBeamNumberFormatting.steps`.
     private var stepCountLabel: String {
         let n = EnergyBeamNumberFormatting.steps.string(from: NSNumber(value: stepCount)) ?? "\(stepCount)"
         return "\(n) steps"
     }
 }
 
+/// Circular avatar placeholder with accent ring (mock).
 private struct ProfileGlyphPreview: View {
     let accent: Color
 
@@ -472,17 +547,29 @@ private struct ProfileGlyphPreview: View {
 
 // MARK: - Procedural energy beam (Canvas + TimelineView)
 
+/// Tunables for Canvas cost vs richness. Raising counts costs more GPU each frame.
 private enum ProceduralEnergyBeamConfig {
-    static let timelineInterval: TimeInterval = 1.0 / 16.0
-    static let lanesPerSide = 8
-    static let sparkCount = 14
-    static let tendrilSegmentMax = 19
-    static let tendrilSegmentMin = 13
-    /// Short fork arcs (not every lane); keeps total path count low.
-    static let forkProbabilityThreshold: CGFloat = 0.68
+    /// `TimelineView` minimum interval (seconds). **Smaller** ⇒ more redraws (smoother plasma, more CPU). `2.0/16` ≈ 8 Hz vs `1.0/16` ≈ 16 Hz.
+    static let timelineInterval: TimeInterval = 2.0 / 16.0
+    /// Main lightning lanes drawn per side (cyan / orange); more ⇒ denser beam.
+    static let lanesPerSide = 6
+    /// Collision sparkle strokes; more ⇒ busier impact.
+    static let sparkCount = 12
+    /// Upper bound on tendril polyline segments (per lane); higher ⇒ smoother curves, costlier. Must be ≥ `tendrilSegmentMin`.
+    static let tendrilSegmentMax = 1
+    /// Lower bound on tendril segments (randomized per lane between min…max).
+    static let tendrilSegmentMin = 1
+    /// If deterministic lane random exceeds this, a short fork branch is drawn (0…1).
+    static let forkProbabilityThreshold: CGFloat = 0.72
+    /// Count of fast “flow streak” segments per side toward collision.
+    static let flowStreakCount = 5
+    /// Count of traveling packets / fireball sprites per side.
+    static let flowPacketCount = 5
+    /// Base count of reflected fragment polylines per side (scaled up with impact in renderer).
+    static let reflectFragmentCount = 1
 }
 
-/// Electric-plasma palette (saturated, game-UI).
+/// Electric-plasma palette for Canvas strokes/fills (RGB constants); tweak for different hue reads.
 private enum BeamTeamColors {
     static let userBloom = Color(red: 0.12, green: 0.98, blue: 0.95)
     static let userCore = Color(red: 0.78, green: 1, blue: 1)
@@ -495,12 +582,18 @@ private enum BeamTeamColors {
     static let oppEmber = Color(red: 1, green: 0.22, blue: 0.05)
 }
 
-/// `#if DEBUG` prototype-only electric battle beam. Designed so the drawing closure can later be swapped for a Metal-backed layer without changing callers.
+/// DEBUG-only beam: `GeometryReader` supplies width; `collisionX` follows `marginPrecise` (animated by parent `heroCard`).
+/// `TimelineView` supplies `wall` time for procedural motion; **that** motion stays fast—only `margin` changes slide the impact slowly.
+/// `marginRounded` reseeds deterministic noise and triggers `impactBoost` flashes via `onChange`.
 private struct ProceduralEnergyBeamView: View {
+    /// Same as parent `margin`; collision X interpolates when this animates (parent `.animation(..., value: margin)`).
     let marginPrecise: Double
+    /// Same as `EnergyBeamHeroMock.beamReferenceValue`; passed into `normalizedBeamOffset`.
     let referenceBattleValue: Int
+    /// Same as parent `battleMarginInt`; changes discretely during a fractional margin animation.
     let marginRounded: Int
 
+    /// Wall-clock time of last integer margin change; drives short `impact` pulse in `drawBeam`.
     @State private var lastImpactAtWall: TimeInterval = -1000
 
     var body: some View {
@@ -508,6 +601,7 @@ private struct ProceduralEnergyBeamView: View {
             let w = geo.size.width
             let h = geo.size.height
             let midY = h * 0.5
+            // Computed outside TimelineView so layout can follow animated `marginPrecise` every frame.
             let collisionX = computeCollisionX(width: w)
 
             ZStack {
@@ -521,27 +615,29 @@ private struct ProceduralEnergyBeamView: View {
                             collisionX: collisionX,
                             midY: midY,
                             wall: wall,
+                            // Idle transport intentionally slower; update burst ramps motion and chaos.
+                            wDraw: wall * (0.24 + Double(impact) * 0.24),
                             impact: impact,
                             seed: marginRounded
                         )
                     }
                 }
-
-                ProceduralBeamMarkerOverlay(centerX: collisionX, beamHeight: h)
             }
         }
         .frame(height: ProceduralBeamRenderer.beamOuterHeight)
-        .animation(.spring(response: 0.48, dampingFraction: 0.78), value: marginPrecise)
+        // Collision slide is animated by ancestor `heroCard` (do not add a second conflicting `.animation` here).
         .onChange(of: marginRounded) { _, _ in
             lastImpactAtWall = Date().timeIntervalSinceReferenceDate
         }
     }
 
+    /// Converts current `marginPrecise` + width into collision center X (clamped to card edges).
     private func computeCollisionX(width w: CGFloat) -> CGFloat {
         let cx = w * 0.5 + normalizedBeamOffset(margin: marginPrecise, referenceValue: referenceBattleValue) * w
         return clampBeam(cx, min: w * 0.11, max: w * 0.89)
     }
 
+    /// Short intensity pulse after `marginRounded` flips; scales chaos in `drawBeam` (0…~1).
     private func impactBoost(atWallTime wall: TimeInterval) -> CGFloat {
         let elapsed = CGFloat(wall - lastImpactAtWall)
         guard elapsed >= 0, elapsed < 0.5 else { return 0 }
@@ -552,65 +648,22 @@ private struct ProceduralEnergyBeamView: View {
         return CGFloat(peak * shimmer)
     }
 
+    /// Keeps collision X inside horizontal padding so the beam never clips the card edge.
     private func clampBeam(_ v: CGFloat, min lo: CGFloat, max hi: CGFloat) -> CGFloat {
         Swift.min(Swift.max(v, lo), hi)
     }
 }
 
-// MARK: - Beam marker overlay (outside Canvas — crisp dashed line / chevron)
-
-private struct ProceduralBeamMarkerOverlay: View {
-    let centerX: CGFloat
-    let beamHeight: CGFloat
-
-    var body: some View {
-        ZStack {
-            Path { p in
-                p.move(to: CGPoint(x: centerX, y: beamHeight * 0.06))
-                p.addLine(to: CGPoint(x: centerX, y: beamHeight * 0.92))
-            }
-            .stroke(
-                Color.white.opacity(0.32),
-                style: StrokeStyle(lineWidth: 1, dash: [4, 4])
-            )
-
-            CollisionChevron(centerX: centerX, beamBottomY: beamHeight * 0.62)
-        }
-        .allowsHitTesting(false)
-        .blendMode(.plusLighter)
-    }
-}
-
-private struct CollisionChevron: View {
-    let centerX: CGFloat
-    let beamBottomY: CGFloat
-
-    var body: some View {
-        Path { path in
-            let y = beamBottomY + 4
-            let wtip: CGFloat = 9
-            let hh: CGFloat = 6
-            path.move(to: CGPoint(x: centerX - wtip, y: y))
-            path.addLine(to: CGPoint(x: centerX + wtip, y: y))
-            path.addLine(to: CGPoint(x: centerX, y: y + hh))
-            path.closeSubpath()
-        }
-        .fill(Color.white.opacity(0.92))
-        .shadow(color: .white.opacity(0.22), radius: 6)
-    }
-}
-
 // MARK: - Deterministic jitter + Canvas renderer
 
+/// All procedural beam **drawing** lives here: deterministic noise, geometry, and `GraphicsContext` strokes.
+/// Call flow: `ProceduralEnergyBeamView` → `drawBeam` → helpers (`organicTendrilPoints`, collision draws, etc.).
+/// Tuning: most “look” knobs are literals inside helpers; cost knobs are mostly `ProceduralEnergyBeamConfig`.
 private enum ProceduralBeamRenderer {
-    static let beamOuterHeight: CGFloat = 58
+    /// Fixed height of the beam strip in the hero card (layout + hit testing).
+    static let beamOuterHeight: CGFloat = 78
 
-    private static func ellipsePath(_ rect: CGRect) -> Path {
-        var p = Path()
-        p.addEllipse(in: rect)
-        return p
-    }
-
+    /// Stable pseudorandom in [0,1) from lane/step/salt (replaces `random()` for reproducible Canvas).
     private static func deterministic01(lane: Int, step: Int, salt: Int) -> CGFloat {
         let hi = UInt32(bitPattern: Int32(truncatingIfNeeded: lane &* 12_959 + step &* 28_957 + salt &* 48_049))
         let lo = hi &* 2_743_873 &+ UInt32(truncatingIfNeeded: lane ^ step ^ salt)
@@ -619,7 +672,7 @@ private enum ProceduralBeamRenderer {
         return CGFloat(Double(s % 982_447) / 982_446)
     }
 
-    /// Desynced idle: breathing + stepped flicker (not one global sine).
+    /// Per-frame brightness multiplier for idle shimmer (uses `wall` clock + `seed`).
     private static func idleGlowFactor(wall: TimeInterval, seed: Int) -> CGFloat {
         let s = Double(seed % 13) * 0.17
         let a = sin(wall * 3.1 + s) * 0.055
@@ -629,12 +682,14 @@ private enum ProceduralBeamRenderer {
         return CGFloat(0.78 + a + b + c + stepped)
     }
 
+    /// Phase driver for fork wiggle; higher `wall` speeds spin along auxiliary paths.
     private static func lanePhase(lane: Int, wall: TimeInterval, seed: Int) -> Double {
         let speed = 0.48 + Double(deterministic01(lane: lane, step: 0, salt: seed)) * 0.95
         let offset = Double(lane) * 1.83 + Double(seed & 0xff) * 0.01
         return wall * .pi * 2 * speed + offset
     }
 
+    /// Shapes per-lane vertical “breathing” along the beam; tweak multipliers for calmer vs wild tendrils.
     private static func amplitudeEnvelope(t: CGFloat, lane: Int, salt: Int, phase: Double) -> CGFloat {
         let calm = 0.35 + 0.65 * pow(sin(Double(t) * .pi), 2)
         let burst = 0.65 + 0.35 * abs(sin(phase * 0.35 + Double(t) * 7.1))
@@ -643,14 +698,17 @@ private enum ProceduralBeamRenderer {
         return calm * CGFloat(burst) * chaosW
     }
 
+    /// Builds one polyline of “electric tendril” points from `startX`…`endX`; `wDraw` scrolls texture toward collision.
     private static func organicTendrilPoints(
         startX: CGFloat,
         endX: CGFloat,
         midY: CGFloat,
         lane: Int,
         salt: Int,
-        wall: TimeInterval,
-        baseSpread: CGFloat
+        wDraw: TimeInterval,
+        baseSpread: CGFloat,
+        isUserSide: Bool,
+        impact: CGFloat
     ) -> [CGPoint] {
         guard endX > startX + 2 else { return [] }
         let segMin = ProceduralEnergyBeamConfig.tendrilSegmentMin
@@ -659,34 +717,40 @@ private enum ProceduralBeamRenderer {
         let span = endX - startX
 
         let early = deterministic01(lane: lane, step: 88, salt: salt)
-        let spanScale: CGFloat = early < 0.26 ? (0.42 + early * 1.15) : (0.88 + early * 0.12)
+        let spanScale: CGFloat = early < 0.18 ? (0.35 + early * 1.1) : (0.92 + early * 0.08)
         let effectiveEnd = startX + span * min(1, spanScale)
 
-        let phase = lanePhase(lane: lane, wall: wall, seed: salt)
-        let turb = wall * 1.9 + Double(lane) * 0.31
+        let advect = wDraw * (7.2 + Double(impact) * 12.8)
+        let laneJ = Double(lane) * 0.73 + Double(salt & 31) * 0.04
 
         var pts: [CGPoint] = []
         for i in 0 ... segN {
             let t = CGFloat(i) / CGFloat(segN)
-            let u = Double(t)
-            let env = amplitudeEnvelope(t: t, lane: lane, salt: salt, phase: phase)
-            let spread = baseSpread * env
+            let xi = Double(t)
+            let waveCoord = isUserSide ? xi : (1 - xi)
+            // Spatial phase travels toward collision as `wDraw` increases (positive x advection on user side).
+            let spatial = waveCoord * 26 * Double.pi - advect + laneJ
+            let compress = pow(isUserSide ? xi : (1 - xi), 1.35)
+            let bunch = 0.5 + 0.5 * (1 - compress)
+            let r = deterministic01(lane: lane, step: i, salt: salt)
+            let env = (0.36 + 0.48 * pow(sin(xi * .pi), 1.25)) * (0.62 + CGFloat(r) * 0.34) * CGFloat(bunch)
+            let spread = baseSpread * env * (0.82 + CGFloat(impact) * 0.16 * CGFloat(1 - compress))
 
             let xLinear = startX + (effectiveEnd - startX) * t
-            let driftX = CGFloat(sin(phase * 1.05 + u * 5.2 + turb)) * 3.2 * t * (1 - t) * 10
-            let x = xLinear + driftX
+            let xRipple = CGFloat(sin(spatial * 0.38 + Double(i) * 0.17)) * 0.55 * CGFloat(1 - compress)
+            let x = xLinear + xRipple
 
-            let h = deterministic01(lane: lane, step: i, salt: salt)
-            let jolt = (h - 0.48) * 2 * spread
-            let w1 = sin(phase * 0.92 + u * 8.4 + Double(lane))
-            let w2 = cos(phase * 0.61 + u * 11.2)
-            let y = midY + CGFloat(jolt) + CGFloat(w1 * 0.52 + w2 * 0.31) * spread
+            let jolt = (r - 0.5) * 1.15 * spread
+            let y1 = sin(spatial * 0.9) + 0.35 * sin(spatial * 1.45 + 1.1)
+            let y2 = cos(spatial * 0.66 + Double(lane))
+            let y = midY + CGFloat(jolt) + CGFloat(y1 * 0.42 + y2 * 0.2) * spread
 
             pts.append(CGPoint(x: x, y: y))
         }
         return pts
     }
 
+    /// Converts point array to a `Path` mixing straight segments and gentle quad curves (randomized per segment).
     private static func pathFromPointsMixedCurve(_ pts: [CGPoint], lane: Int, salt: Int) -> Path {
         guard pts.count >= 2 else { return Path() }
         var path = Path()
@@ -708,14 +772,15 @@ private enum ProceduralBeamRenderer {
         return path
     }
 
+    /// Short branching polyline from a tendril anchor toward the collision edge (optional per lane).
     private static func forkPath(
         from anchor: CGPoint,
         endClampX: CGFloat,
         lane: Int,
         salt: Int,
-        wall: TimeInterval
+        wDraw: TimeInterval
     ) -> Path {
-        let phase = lanePhase(lane: lane | 0x50, wall: wall, seed: salt)
+        let phase = lanePhase(lane: lane | 0x50, wall: wDraw, seed: salt)
         var p = Path()
         p.move(to: anchor)
         var x = anchor.x
@@ -730,12 +795,14 @@ private enum ProceduralBeamRenderer {
         return p
     }
 
+    /// Master Canvas pass: lanes, cores, helix runners, flow streaks, packets, collision strokes, reflections.
     fileprivate static func drawBeam(
         context: inout GraphicsContext,
         size: CGSize,
         collisionX: CGFloat,
         midY: CGFloat,
         wall: TimeInterval,
+        wDraw: TimeInterval,
         impact: CGFloat,
         seed: Int
     ) {
@@ -743,34 +810,33 @@ private enum ProceduralBeamRenderer {
         let globalBright = 1 + impact * 0.62
         let flicker = idleGlowFactor(wall: wall, seed: seed) * CGFloat(globalBright)
         let flareMul = CGFloat(1 + impact * 2.25)
-
-        var trackPath = Path()
-        trackPath.move(to: CGPoint(x: 10, y: midY))
-        trackPath.addLine(to: CGPoint(x: w - 10, y: midY))
-        context.blendMode = .normal
-        context.stroke(trackPath, with: .color(Color.white.opacity(Double(0.038 * flicker))), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        let burstScale: CGFloat = 1 + impact * 1.1
 
         let leftPad: CGFloat = 8
         let rightPad: CGFloat = w - 8
-        let gap: CGFloat = 5
+        let gap: CGFloat = 4
+
+        let flowMul = 1 + CGFloat(impact) * 1.05
 
         // User side (cyan / electric teal)
         for lane in 0 ..< ProceduralEnergyBeamConfig.lanesPerSide {
-            let spread: CGFloat = 5.5 + CGFloat(lane % 5) * 3.2
+            let spread: CGFloat = 5.1 + CGFloat(lane % 5) * 2.25
             let pts = organicTendrilPoints(
                 startX: leftPad,
                 endX: collisionX - gap,
                 midY: midY,
                 lane: lane,
                 salt: seed,
-                wall: wall,
-                baseSpread: spread
+                wDraw: wDraw,
+                baseSpread: spread,
+                isUserSide: true,
+                impact: impact
             )
-            let earlyFade = deterministic01(lane: lane, step: 88, salt: seed) < 0.26
+            let earlyFade = deterministic01(lane: lane, step: 88, salt: seed) < 0.22
             let opacityScale: CGFloat = earlyFade
-                ? 0.45 + deterministic01(lane: lane, step: 89, salt: seed) * 0.35
+                ? 0.42 + deterministic01(lane: lane, step: 89, salt: seed) * 0.32
                 : 1
-            let widthJitter = 0.88 + deterministic01(lane: lane, step: 90, salt: seed) * 0.28
+            let widthJitter = 0.88 + deterministic01(lane: lane, step: 90, salt: seed) * 0.32
             let mainPath = pathFromPointsMixedCurve(pts, lane: lane, salt: seed)
             layeredTendrilStrokes(
                 context: &context,
@@ -783,12 +849,12 @@ private enum ProceduralBeamRenderer {
                 impact: impact,
                 plusMode: false,
                 opacityScale: opacityScale * CGFloat(globalBright),
-                widthScale: widthJitter
+                widthScale: widthJitter * burstScale
             )
 
             if deterministic01(lane: lane, step: 77, salt: seed) > ProceduralEnergyBeamConfig.forkProbabilityThreshold,
                let anchor = pts.dropLast(Swift.max(0, pts.count / 3)).last {
-                let fk = forkPath(from: anchor, endClampX: collisionX - 1.5, lane: lane, salt: seed, wall: wall)
+                let fk = forkPath(from: anchor, endClampX: collisionX - 1.5, lane: lane, salt: seed, wDraw: wDraw)
                 layeredTendrilStrokes(
                     context: &context,
                     path: fk,
@@ -800,7 +866,7 @@ private enum ProceduralBeamRenderer {
                     impact: impact * 0.85,
                     plusMode: false,
                     opacityScale: opacityScale * 0.42 * CGFloat(globalBright),
-                    widthScale: widthJitter * 0.72
+                    widthScale: widthJitter * 0.72 * burstScale
                 )
             }
         }
@@ -808,21 +874,23 @@ private enum ProceduralBeamRenderer {
         // Opponent side (orange / ember)
         for lane in 0 ..< ProceduralEnergyBeamConfig.lanesPerSide {
             let laneSalt = lane | 0x2000
-            let spread: CGFloat = 5.5 + CGFloat(lane % 5) * 3.4
+            let spread: CGFloat = 5.2 + CGFloat(lane % 5) * 2.35
             let pts = organicTendrilPoints(
                 startX: collisionX + gap,
                 endX: rightPad,
                 midY: midY,
                 lane: laneSalt,
                 salt: seed,
-                wall: wall,
-                baseSpread: spread
+                wDraw: wDraw,
+                baseSpread: spread,
+                isUserSide: false,
+                impact: impact
             )
-            let earlyFade = deterministic01(lane: laneSalt, step: 88, salt: seed) < 0.24
+            let earlyFade = deterministic01(lane: laneSalt, step: 88, salt: seed) < 0.2
             let opacityScale: CGFloat = earlyFade
-                ? 0.48 + deterministic01(lane: laneSalt, step: 89, salt: seed) * 0.3
+                ? 0.45 + deterministic01(lane: laneSalt, step: 89, salt: seed) * 0.28
                 : 1
-            let widthJitter = 0.9 + deterministic01(lane: laneSalt, step: 90, salt: seed) * 0.26
+            let widthJitter = 0.9 + deterministic01(lane: laneSalt, step: 90, salt: seed) * 0.28
             let mainPath = pathFromPointsMixedCurve(pts, lane: laneSalt, salt: seed)
             layeredTendrilStrokes(
                 context: &context,
@@ -835,12 +903,12 @@ private enum ProceduralBeamRenderer {
                 impact: impact,
                 plusMode: true,
                 opacityScale: opacityScale * CGFloat(globalBright),
-                widthScale: widthJitter
+                widthScale: widthJitter * burstScale
             )
 
             if deterministic01(lane: laneSalt, step: 77, salt: seed) > ProceduralEnergyBeamConfig.forkProbabilityThreshold,
                let anchor = pts.dropLast(Swift.max(0, pts.count / 3)).last {
-                let fk = forkPath(from: anchor, endClampX: rightPad, lane: laneSalt, salt: seed, wall: wall)
+                let fk = forkPath(from: anchor, endClampX: rightPad, lane: laneSalt, salt: seed, wDraw: wDraw)
                 layeredTendrilStrokes(
                     context: &context,
                     path: fk,
@@ -852,27 +920,576 @@ private enum ProceduralBeamRenderer {
                     impact: impact * 0.82,
                     plusMode: true,
                     opacityScale: opacityScale * 0.4 * CGFloat(globalBright),
-                    widthScale: widthJitter * 0.7
+                    widthScale: widthJitter * 0.7 * burstScale
                 )
             }
         }
 
-        coreSpine(context: &context, from: leftPad, to: collisionX - 2.5, midY: midY, wall: wall, seed: seed, flicker: flicker, impact: impact, tint: BeamTeamColors.userBloom, isUser: true)
-        coreSpine(context: &context, from: collisionX + 2.5, to: rightPad, midY: midY, wall: wall, seed: seed, flicker: flicker, impact: impact, tint: BeamTeamColors.oppBloom, isUser: false)
+        drawBeamHelixAdvection(
+            context: &context,
+            from: leftPad,
+            to: collisionX - 2,
+            midY: midY,
+            wDraw: wDraw,
+            impact: impact,
+            tintA: BeamTeamColors.userCore,
+            tintB: BeamTeamColors.userBloom,
+            isUser: true,
+            seed: seed
+        )
+        drawBeamHelixAdvection(
+            context: &context,
+            from: collisionX + 2,
+            to: rightPad,
+            midY: midY,
+            wDraw: wDraw,
+            impact: impact,
+            tintA: BeamTeamColors.oppCore,
+            tintB: BeamTeamColors.oppEmber,
+            isUser: false,
+            seed: seed ^ 0x2f1
+        )
+        drawOffAxisRunners(
+            context: &context,
+            from: leftPad,
+            to: collisionX - 2,
+            midY: midY,
+            wDraw: wDraw,
+            impact: impact,
+            tint: BeamTeamColors.userBloom,
+            isUser: true,
+            seed: seed
+        )
+        drawOffAxisRunners(
+            context: &context,
+            from: collisionX + 2,
+            to: rightPad,
+            midY: midY,
+            wDraw: wDraw,
+            impact: impact,
+            tint: BeamTeamColors.oppEmber,
+            isUser: false,
+            seed: seed ^ 0x591
+        )
 
-        drawCollisionBurst(
+        coreSpineAdvected(
+            context: &context,
+            from: leftPad,
+            to: collisionX - 2,
+            midY: midY,
+            wDraw: wDraw,
+            seed: seed,
+            flicker: flicker,
+            impact: impact,
+            tint: BeamTeamColors.userBloom,
+            isUser: true
+        )
+        coreSpineAdvected(
+            context: &context,
+            from: collisionX + 2,
+            to: rightPad,
+            midY: midY,
+            wDraw: wDraw,
+            seed: seed,
+            flicker: flicker,
+            impact: impact,
+            tint: BeamTeamColors.oppBloom,
+            isUser: false
+        )
+
+        drawDirectionalFlowStreaks(
+            context: &context,
+            midY: midY,
+            beamH: size.height,
+            leftPad: leftPad,
+            rightPad: rightPad,
+            collisionX: collisionX,
+            wDraw: wDraw,
+            impact: impact,
+            flowMul: flowMul,
+            seed: seed
+        )
+        drawTravelingPackets(
+            context: &context,
+            midY: midY,
+            leftPad: leftPad,
+            rightPad: rightPad,
+            collisionX: collisionX,
+            wDraw: wDraw,
+            impact: impact,
+            flowMul: flowMul,
+            seed: seed
+        )
+
+        drawCollisionEnergy(
             context: &context,
             collisionX: collisionX,
             midY: midY,
+            beamH: size.height,
             flicker: flicker,
             impact: impact,
             flareMul: flareMul,
+            wDraw: wDraw,
             wall: wall,
-            sparkBoost: CGFloat(impact * 28 + 10),
+            sparkBoost: CGFloat(impact * 36 + 14),
+            seed: seed
+        )
+        drawReflectedFragments(
+            context: &context,
+            collisionX: collisionX,
+            midY: midY,
+            leftPad: leftPad,
+            rightPad: rightPad,
+            wDraw: wDraw,
+            impact: impact,
             seed: seed
         )
     }
 
+    /// Spiral / fireball-like strokes riding beside the beam core, advecting toward impact (`wDraw`-driven).
+    private static func drawBeamHelixAdvection(
+        context: inout GraphicsContext,
+        from x0: CGFloat,
+        to x1: CGFloat,
+        midY: CGFloat,
+        wDraw: TimeInterval,
+        impact: CGFloat,
+        tintA: Color,
+        tintB: Color,
+        isUser: Bool,
+        seed: Int
+    ) {
+        guard x1 > x0 + 8 else { return }
+        let n = 6
+        let span = x1 - x0
+        let advect = wDraw * (0.56 + Double(impact) * 0.26)
+        let radiusBase: CGFloat = 3.2 + impact * 9.2
+        for i in 0 ..< n {
+            let frac = (advect + Double(i) * 0.17).truncatingRemainder(dividingBy: 1)
+            let t = isUser ? frac : (1 - frac)
+            let x = x0 + CGFloat(t) * span
+            let helix = sin((Double(t) * 17.5 - wDraw * 9.1) + Double(i) * 1.3)
+            let y = midY + CGFloat(helix) * (radiusBase * (0.75 + CGFloat(i % 3) * 0.18))
+
+            var tail = Path()
+            let back = isUser ? -1 : 1
+            tail.move(to: CGPoint(x: x + CGFloat(back) * 14, y: y))
+            tail.addQuadCurve(
+                to: CGPoint(x: x, y: y),
+                control: CGPoint(x: x + CGFloat(back) * 7, y: y + CGFloat(cos(Double(i) + wDraw * 4.3)) * 3.2)
+            )
+            context.blendMode = .plusLighter
+            context.stroke(tail, with: .color(tintB.opacity(0.26 + Double(impact) * 0.46)), style: StrokeStyle(lineWidth: 2.1 + impact * 2.6, lineCap: .round, lineJoin: .round))
+            context.stroke(tail, with: .color(tintA.opacity(0.2 + Double(impact) * 0.34)), style: StrokeStyle(lineWidth: 1.0 + impact * 1.25, lineCap: .round, lineJoin: .round))
+
+            let r: CGFloat = 1.3 + impact * 2.1
+            let orb = Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
+            context.fill(orb, with: .color(Color.white.opacity(0.62 + Double(impact) * 0.25)))
+            context.fill(orb, with: .color(tintA.opacity(0.54)))
+
+            if deterministic01(lane: 7600 + i, step: seed & 0xff, salt: seed) > 0.66 {
+                var spark = Path()
+                spark.move(to: CGPoint(x: x, y: y))
+                spark.addLine(to: CGPoint(x: x + CGFloat(back) * (4 + impact * 10), y: y + CGFloat(sin(wDraw * 15 + Double(i))) * (2 + impact * 4)))
+                context.stroke(spark, with: .color(Color.white.opacity(0.35 + Double(impact) * 0.4)), style: StrokeStyle(lineWidth: 0.9 + impact * 1.1, lineCap: .round))
+            }
+        }
+    }
+
+    /// Off-axis lightning arcs that peel away then curl back toward the beam center before impact.
+    private static func drawOffAxisRunners(
+        context: inout GraphicsContext,
+        from x0: CGFloat,
+        to x1: CGFloat,
+        midY: CGFloat,
+        wDraw: TimeInterval,
+        impact: CGFloat,
+        tint: Color,
+        isUser: Bool,
+        seed: Int
+    ) {
+        guard x1 > x0 + 20 else { return }
+        let span = x1 - x0
+        let n = 6
+        for i in 0 ..< n {
+            let frac = (wDraw * (0.38 + Double(impact) * 0.18) + Double(i) * 0.19).truncatingRemainder(dividingBy: 1)
+            let t = isUser ? frac : (1 - frac)
+            let x = x0 + CGFloat(t) * span
+            let side = deterministic01(lane: 7900 + i, step: seed & 0xff, salt: seed) > 0.5 ? 1 : -1
+            let off = (6 + impact * 16) * CGFloat(side)
+            let y = midY + off + CGFloat(sin(wDraw * 9.2 + Double(i) * 1.37)) * (3 + impact * 5)
+
+            var p = Path()
+            p.move(to: CGPoint(x: x, y: y))
+            let dx = isUser ? 18 : -18
+            let pullInY = midY + CGFloat(sin(wDraw * 6.1 + Double(i))) * 2.6
+            p.addQuadCurve(
+                to: CGPoint(x: x + CGFloat(dx), y: pullInY),
+                control: CGPoint(x: x + CGFloat(dx) * 0.5, y: y + CGFloat(side) * (4 + impact * 6))
+            )
+            context.blendMode = .plusLighter
+            context.stroke(p, with: .color(tint.opacity(0.24 + Double(impact) * 0.4)), style: StrokeStyle(lineWidth: 1.6 + impact * 2.0, lineCap: .round, lineJoin: .round))
+            context.stroke(p, with: .color(Color.white.opacity(0.22 + Double(impact) * 0.25)), style: StrokeStyle(lineWidth: 0.8 + impact, lineCap: .round, lineJoin: .round))
+
+            if deterministic01(lane: 7950 + i, step: seed, salt: seed) > 0.38 {
+                var s = Path()
+                s.move(to: CGPoint(x: x + CGFloat(dx) * 0.7, y: pullInY))
+                s.addLine(to: CGPoint(
+                    x: x + CGFloat(dx) * 0.7 + CGFloat(isUser ? -1 : 1) * (7 + impact * 14),
+                    y: pullInY + CGFloat(side) * (2 + impact * 8)
+                ))
+                context.stroke(s, with: .color(Color.white.opacity(0.24 + Double(impact) * 0.4)), style: StrokeStyle(lineWidth: 0.9 + impact * 1.25, lineCap: .round))
+            }
+        }
+    }
+
+    /// Short bright streak segments sliding horizontally toward the collision on each side.
+    private static func drawDirectionalFlowStreaks(
+        context: inout GraphicsContext,
+        midY: CGFloat,
+        beamH: CGFloat,
+        leftPad: CGFloat,
+        rightPad: CGFloat,
+        collisionX: CGFloat,
+        wDraw: TimeInterval,
+        impact: CGFloat,
+        flowMul: CGFloat,
+        seed: Int
+    ) {
+        let speed = (28 + Double(impact) * 42) * Double(flowMul)
+        let n = ProceduralEnergyBeamConfig.flowStreakCount
+        for i in 0 ..< n {
+            let yJ = (deterministic01(lane: 400 + i, step: 0, salt: seed) - 0.5) * beamH * 0.2
+            let span = max(12, collisionX - leftPad - 10)
+            let frac = (wDraw * speed * 0.085 + Double(i) * 0.17).truncatingRemainder(dividingBy: 1)
+            let head = leftPad + CGFloat(frac) * span
+            let segLen: CGFloat = 14 + CGFloat(impact) * 18
+            let tail = max(leftPad + 2, head - segLen)
+            let clipHead = min(head, collisionX - 2)
+            guard clipHead > tail + 3 else { continue }
+            var lp = Path()
+            lp.move(to: CGPoint(x: tail, y: midY + yJ))
+            lp.addLine(to: CGPoint(x: clipHead, y: midY + yJ))
+            let near = 1 - Double((collisionX - clipHead) / max(40, span))
+            let alpha = 0.18 + near * 0.42 + Double(impact) * 0.28
+            context.blendMode = .plusLighter
+            context.stroke(
+                lp,
+                with: .color(BeamTeamColors.userCore.opacity(alpha)),
+                style: StrokeStyle(lineWidth: 1.8 + CGFloat(impact) * 2.2, lineCap: .round)
+            )
+        }
+
+        for i in 0 ..< n {
+            let yJ = (deterministic01(lane: 500 + i, step: 0, salt: seed) - 0.5) * beamH * 0.2
+            let span = max(12, rightPad - collisionX - 10)
+            let frac = (wDraw * speed * 0.085 + Double(i + 19) * 0.19).truncatingRemainder(dividingBy: 1)
+            let head = rightPad - CGFloat(frac) * span
+            let segLen: CGFloat = 14 + CGFloat(impact) * 18
+            let tail = min(rightPad - 2, head + segLen)
+            let clipHead = max(head, collisionX + 2)
+            guard tail > clipHead + 3 else { continue }
+            var rp = Path()
+            rp.move(to: CGPoint(x: tail, y: midY + yJ))
+            rp.addLine(to: CGPoint(x: clipHead, y: midY + yJ))
+            let near = 1 - Double((clipHead - collisionX) / max(40, span))
+            let alpha = 0.2 + near * 0.45 + Double(impact) * 0.28
+            context.blendMode = .plusLighter
+            context.stroke(
+                rp,
+                with: .color(BeamTeamColors.oppCore.opacity(alpha)),
+                style: StrokeStyle(lineWidth: 1.8 + CGFloat(impact) * 2.2, lineCap: .round)
+            )
+        }
+    }
+
+    /// “Packets” (lines + small orbs + tails) moving inward; near collision they burst into fragment strokes.
+    private static func drawTravelingPackets(
+        context: inout GraphicsContext,
+        midY: CGFloat,
+        leftPad: CGFloat,
+        rightPad: CGFloat,
+        collisionX: CGFloat,
+        wDraw: TimeInterval,
+        impact: CGFloat,
+        flowMul: CGFloat,
+        seed: Int
+    ) {
+        let n = ProceduralEnergyBeamConfig.flowPacketCount
+        let speedL = (0.34 + Double(impact) * 0.28) * Double(flowMul)
+        for i in 0 ..< n {
+            let span = max(14, collisionX - leftPad - 12)
+            let frac = (wDraw * speedL + Double(i) * 0.31).truncatingRemainder(dividingBy: 1)
+            let cx = leftPad + CGFloat(frac) * span
+            let helical = sin(wDraw * 8.4 + Double(i) * 1.3 + Double(cx - leftPad) * 0.035)
+            let yOff = (deterministic01(lane: 800 + i, step: 1, salt: seed) - 0.5) * 8 + CGFloat(helical) * (2.8 + impact * 2.2)
+            let hitZone = collisionX - cx
+            if hitZone < 14 {
+                let burst = Int(2 + (seed + i) % 3)
+                for b in 0 ..< burst {
+                    let ang = -.pi * 0.35 + CGFloat(deterministic01(lane: 850 + b, step: i, salt: seed)) * 0.55
+                    let L: CGFloat = 5 + CGFloat(impact) * 12
+                    var s = Path()
+                    s.move(to: CGPoint(x: collisionX - 2, y: midY + yOff))
+                    s.addLine(to: CGPoint(x: collisionX - 2 + cos(Double(ang)) * Double(L), y: midY + yOff + sin(Double(ang)) * Double(L)))
+                    context.blendMode = .plusLighter
+                    context.stroke(s, with: .color(BeamTeamColors.userBloom.opacity(0.35 + Double(impact) * 0.4)), style: StrokeStyle(lineWidth: 1.4 + CGFloat(impact), lineCap: .round))
+                }
+                continue
+            }
+            var tail = Path()
+            tail.move(to: CGPoint(x: cx - 13, y: midY + yOff))
+            tail.addLine(to: CGPoint(x: cx - 2, y: midY + yOff))
+            context.blendMode = .plusLighter
+            context.stroke(tail, with: .color(BeamTeamColors.userBloom.opacity(0.22 + Double(impact) * 0.24)), style: StrokeStyle(lineWidth: 2.6 + CGFloat(impact) * 1.4, lineCap: .round))
+
+            var ln = Path()
+            ln.move(to: CGPoint(x: cx - 5, y: midY + yOff))
+            ln.addLine(to: CGPoint(x: cx, y: midY + yOff))
+            context.stroke(ln, with: .color(Color.white.opacity(0.45 + Double(impact) * 0.35)), style: StrokeStyle(lineWidth: 2 + CGFloat(impact) * 1.6, lineCap: .round))
+            context.stroke(ln, with: .color(BeamTeamColors.userBloom.opacity(0.55)), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+            let orbR: CGFloat = 1.55 + impact * 1.9
+            let orb = Path(ellipseIn: CGRect(x: cx - orbR, y: midY + yOff - orbR, width: orbR * 2, height: orbR * 2))
+            context.fill(orb, with: .color(Color.white.opacity(0.78 + Double(impact) * 0.14)))
+            context.fill(orb, with: .color(BeamTeamColors.userCore.opacity(0.52)))
+        }
+
+        let speedR = (0.35 + Double(impact) * 0.28) * Double(flowMul)
+        for i in 0 ..< n {
+            let span = max(14, rightPad - collisionX - 12)
+            let frac = (wDraw * speedR + Double(i + 5) * 0.33).truncatingRemainder(dividingBy: 1)
+            let cx = rightPad - CGFloat(frac) * span
+            let helical = sin(wDraw * 8.1 + Double(i + 9) * 1.25 + Double(rightPad - cx) * 0.035)
+            let yOff = (deterministic01(lane: 900 + i, step: 1, salt: seed) - 0.5) * 8 + CGFloat(helical) * (2.8 + impact * 2.2)
+            let hitZone = cx - collisionX
+            if hitZone < 14 {
+                let burst = Int(2 + (seed + i * 2) % 3)
+                for b in 0 ..< burst {
+                    let ang = .pi * 0.35 + CGFloat(deterministic01(lane: 950 + b, step: i, salt: seed)) * 0.55
+                    let L: CGFloat = 5 + CGFloat(impact) * 12
+                    var s = Path()
+                    s.move(to: CGPoint(x: collisionX + 2, y: midY + yOff))
+                    s.addLine(to: CGPoint(x: collisionX + 2 + cos(Double(ang)) * Double(L), y: midY + yOff + sin(Double(ang)) * Double(L)))
+                    context.blendMode = .plusLighter
+                    context.stroke(s, with: .color(BeamTeamColors.oppEmber.opacity(0.38 + Double(impact) * 0.42)), style: StrokeStyle(lineWidth: 1.4 + CGFloat(impact), lineCap: .round))
+                }
+                continue
+            }
+            var tail = Path()
+            tail.move(to: CGPoint(x: cx + 13, y: midY + yOff))
+            tail.addLine(to: CGPoint(x: cx + 2, y: midY + yOff))
+            context.blendMode = .plusLighter
+            context.stroke(tail, with: .color(BeamTeamColors.oppEmber.opacity(0.24 + Double(impact) * 0.26)), style: StrokeStyle(lineWidth: 2.6 + CGFloat(impact) * 1.4, lineCap: .round))
+
+            var ln = Path()
+            ln.move(to: CGPoint(x: cx + 5, y: midY + yOff))
+            ln.addLine(to: CGPoint(x: cx, y: midY + yOff))
+            context.stroke(ln, with: .color(Color.white.opacity(0.42 + Double(impact) * 0.32)), style: StrokeStyle(lineWidth: 2 + CGFloat(impact) * 1.6, lineCap: .round))
+            context.stroke(ln, with: .color(BeamTeamColors.oppCore.opacity(0.52)), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+            let orbR: CGFloat = 1.55 + impact * 1.9
+            let orb = Path(ellipseIn: CGRect(x: cx - orbR, y: midY + yOff - orbR, width: orbR * 2, height: orbR * 2))
+            context.fill(orb, with: .color(Color.white.opacity(0.76 + Double(impact) * 0.14)))
+            context.fill(orb, with: .color(BeamTeamColors.oppCore.opacity(0.55)))
+        }
+    }
+
+    /// Stroke-only collision: white-hot threads, cyan back-scatter, orange wisps, diagonal sparks.
+    /// No filled plume/seam/rects — impact reads from light only. Scale literals here for “bigger wall.”
+    private static func drawCollisionEnergy(
+        context: inout GraphicsContext,
+        collisionX: CGFloat,
+        midY: CGFloat,
+        beamH: CGFloat,
+        flicker: CGFloat,
+        impact: CGFloat,
+        flareMul: CGFloat,
+        wDraw: TimeInterval,
+        wall: TimeInterval,
+        sparkBoost: CGFloat,
+        seed: Int
+    ) {
+        let idlePhase = wDraw * .pi * 2.6 + wall * .pi * 0.28
+        let flashPulse = sin(wall * 24 + Double(seed & 63)) > 0.94 ? 1.28 : 1.0
+        context.blendMode = .plusLighter
+
+        let wallHalfH = beamH * (0.26 + impact * 0.17)
+        for side in 0 ... 1 {
+            let isUser = side == 0
+            let sign: CGFloat = isUser ? -1 : 1
+            let tintA = isUser ? BeamTeamColors.userBloom : BeamTeamColors.oppEmber
+            let tintB = isUser ? BeamTeamColors.userCore : BeamTeamColors.oppCore
+            for i in 0 ..< 10 {
+                let u = CGFloat(deterministic01(lane: 4700 + side * 20 + i, step: seed, salt: seed))
+                let reach: CGFloat = 16 + CGFloat(i) * 7 + impact * 34
+                let ySpan = wallHalfH * (0.25 + u * 0.65)
+                var shell = Path()
+                shell.move(to: CGPoint(x: collisionX + sign * 0.5, y: midY - ySpan))
+                shell.addQuadCurve(
+                    to: CGPoint(x: collisionX + sign * (reach + 2), y: midY),
+                    control: CGPoint(x: collisionX + sign * (reach * 0.48), y: midY - ySpan * 1.05)
+                )
+                shell.addQuadCurve(
+                    to: CGPoint(x: collisionX + sign * 0.5, y: midY + ySpan),
+                    control: CGPoint(x: collisionX + sign * (reach * 0.52), y: midY + ySpan * 1.05)
+                )
+                context.stroke(shell, with: .color(tintA.opacity(0.3 + Double(impact) * 0.44)), style: StrokeStyle(lineWidth: 1.8 + impact * 2.4, lineCap: .round, lineJoin: .round))
+                context.stroke(shell, with: .color(tintB.opacity(0.2 + Double(impact) * 0.28)), style: StrokeStyle(lineWidth: 0.9 + impact * 0.8, lineCap: .round, lineJoin: .round))
+            }
+        }
+
+        let threadN = 20 + Int(impact * 20)
+        for ti in 0 ..< threadN {
+            let u = deterministic01(lane: 4100 + ti, step: seed, salt: seed)
+            let v = deterministic01(lane: 4200 + ti, step: seed, salt: seed)
+            let ang = -.pi * 0.94 + CGFloat(u) * CGFloat.pi * 0.94 + CGFloat(sin(idlePhase + Double(ti) * 0.37)) * 0.2
+            let r0: CGFloat = 8 + CGFloat(impact) * 16 + CGFloat(v) * (30 + CGFloat(impact) * 32) * CGFloat(flashPulse)
+            var p = Path()
+            p.move(to: CGPoint(x: collisionX, y: midY))
+            let x1 = collisionX + CGFloat(cos(Double(ang))) * r0
+            let y1 = midY + CGFloat(sin(Double(ang))) * r0
+            p.addLine(to: CGPoint(x: x1, y: y1))
+            let hot = (0.32 + Double(impact) * 0.52 + Double(flareMul) * 0.08) * Double(flicker) * flashPulse
+            context.stroke(p, with: .color(Color.white.opacity(min(1, hot))), style: StrokeStyle(lineWidth: 1.6 + CGFloat(impact) * 3.8, lineCap: .round))
+        }
+
+        // Intentionally no explicit center seam line; collision reads from surrounding plasma/sparks only.
+
+        let cyanN = 16 + Int(impact * 16)
+        for ci in 0 ..< cyanN {
+            let yOff = (deterministic01(lane: 4300 + ci, step: seed, salt: seed) - 0.5) * beamH * 0.34
+            let len: CGFloat = 16 + CGFloat(impact) * 36 + CGFloat(flareMul) * 8
+            let skew = (deterministic01(lane: 4350 + ci, step: seed, salt: seed) - 0.5) * 0.62
+            var p = Path()
+            let sx = collisionX - 1.5
+            p.move(to: CGPoint(x: sx, y: midY + yOff))
+            let ex = sx - len * CGFloat(cos(0.12 + skew))
+            let ey = midY + yOff - len * CGFloat(sin(0.45 + abs(skew)))
+            p.addLine(to: CGPoint(x: ex, y: ey))
+            context.stroke(p, with: .color(BeamTeamColors.userBloom.opacity(0.34 + Double(impact) * 0.5)), style: StrokeStyle(lineWidth: 1.8 + CGFloat(impact) * 2.1, lineCap: .round))
+            context.stroke(p, with: .color(BeamTeamColors.userCore.opacity(0.24 + Double(impact) * 0.38)), style: StrokeStyle(lineWidth: 0.9, lineCap: .round))
+        }
+
+        let emberN = 16 + Int(impact * 16)
+        for oi in 0 ..< emberN {
+            let yOff = (deterministic01(lane: 4500 + oi, step: seed, salt: seed) - 0.5) * beamH * 0.34
+            var wp = Path()
+            let ax = collisionX + 2
+            wp.move(to: CGPoint(x: ax, y: midY + yOff))
+            let curl = CGFloat(sin(wDraw * 4.1 + Double(oi))) * (8 + impact * 8)
+            let reach: CGFloat = 16 + CGFloat(impact) * 34 + CGFloat(flareMul) * 8
+            let ex = ax + reach
+            let ey = midY + yOff + curl + CGFloat(impact) * 4 * (deterministic01(lane: 4550 + oi, step: seed, salt: seed) - 0.5)
+            let cx = ax + reach * 0.45 + CGFloat(sin(idlePhase + Double(oi))) * 3
+            let cy = midY + yOff + curl * 0.5
+            wp.addQuadCurve(to: CGPoint(x: ex, y: ey), control: CGPoint(x: cx, y: cy))
+            context.stroke(wp, with: .color(BeamTeamColors.oppEmber.opacity(0.35 + Double(impact) * 0.52)), style: StrokeStyle(lineWidth: 1.9 + CGFloat(impact) * 2.2, lineCap: .round))
+            context.stroke(wp, with: .color(BeamTeamColors.oppBloom.opacity(0.28 + Double(impact) * 0.34)), style: StrokeStyle(lineWidth: 0.95, lineCap: .round))
+        }
+
+        let count = ProceduralEnergyBeamConfig.sparkCount
+        let sparkIdleBoost = sin(wall * 16.2 + Double(seed & 31)) > 0.88 ? 1.22 : 1.0
+        for si in 0 ..< count {
+            let fu = deterministic01(lane: 6000 + si, step: seed & 0xffff, salt: seed)
+            let fv = deterministic01(lane: 7000 + si, step: seed & 0xffff, salt: seed ^ (seed &* 50_069) ^ (si &* 9_743))
+            let slot = (fu + fv) * 0.5
+            let angBase: CGFloat
+            if slot < 0.25 {
+                angBase = -.pi * 0.82 + fu * 0.35
+            } else if slot < 0.5 {
+                angBase = -.pi * 0.38 + fv * 0.28
+            } else if slot < 0.75 {
+                angBase = .pi * 0.38 + fu * 0.28
+            } else {
+                angBase = .pi * 0.82 - fv * 0.35
+            }
+            var ang = angBase + CGFloat(sin(idlePhase + Double(si) * 0.31)) * 0.12
+            ang += CGFloat(impact * 0.35 * sin(Double(si) * 1.7))
+
+            let baseLen: CGFloat = 5 + fv * CGFloat(16 + sparkBoost + impact * 36) * CGFloat(sparkIdleBoost)
+            let len = baseLen + CGFloat(Double(impact) * 34)
+            let sx = collisionX + CGFloat(sin(idlePhase * 0.8 + Double(si))) * (0.8 + CGFloat(impact) * 0.9)
+            let sy = midY + (fv - 0.5) * 10 + CGFloat(sin(wall * 9 + Double(si))) * 2.8
+
+            var sp = Path()
+            sp.move(to: CGPoint(x: sx, y: sy))
+            let x1 = sx + CGFloat(cos(Double(ang))) * len
+            let y1 = sy + CGFloat(sin(Double(ang))) * len
+            let midx = sx + CGFloat(cos(Double(ang + 0.08))) * len * 0.52 + CGFloat(sin(idlePhase * 2.1 + Double(si))) * 2.2
+            let midy = sy + CGFloat(sin(Double(ang + 0.08))) * len * 0.52
+            sp.addQuadCurve(to: CGPoint(x: x1, y: y1), control: CGPoint(x: midx, y: midy))
+
+            let hotLine = CGFloat(0.75 + fu * CGFloat(impact) * 3.6)
+            let alpha = min(0.98, max(0.1, 0.18 + Double(fv) * Double(impact) * 0.95 + Double(flicker) * Double(impact) * 0.35 + Double(impact) * 0.4))
+            context.stroke(
+                sp,
+                with: .color(Color.white.opacity(alpha)),
+                style: StrokeStyle(lineWidth: hotLine + CGFloat(impact) * 3.2, lineCap: .round)
+            )
+            let tintSpark = slot < 0.5 ? BeamTeamColors.userCore : BeamTeamColors.oppCore
+            context.stroke(sp, with: .color(tintSpark.opacity(0.32 + Double(impact) * 0.28)), style: StrokeStyle(lineWidth: 0.55, lineCap: .round))
+        }
+
+        context.blendMode = .normal
+    }
+
+    /// Jagged polylines ejected away from the impact on each side (bounce-off read).
+    private static func drawReflectedFragments(
+        context: inout GraphicsContext,
+        collisionX: CGFloat,
+        midY: CGFloat,
+        leftPad: CGFloat,
+        rightPad: CGFloat,
+        wDraw: TimeInterval,
+        impact: CGFloat,
+        seed: Int
+    ) {
+        let n = ProceduralEnergyBeamConfig.reflectFragmentCount + Int(impact * 8)
+        context.blendMode = .plusLighter
+        for r in 0 ..< n {
+            let y0 = (deterministic01(lane: 2100 + r, step: seed, salt: seed) - 0.5) * (18 + impact * 32)
+            var p = Path()
+            p.move(to: CGPoint(x: collisionX - 3, y: midY + y0))
+            var x = collisionX - 3
+            for k in 1 ... 4 {
+                x = max(leftPad + 4, x - CGFloat(12 + k * 3 + r))
+                let y = midY + y0 + CGFloat(sin(wDraw * 6.2 + Double(k + r * 3))) * (4 + impact * 7)
+                p.addLine(to: CGPoint(x: x, y: y))
+            }
+            context.stroke(
+                p,
+                with: .color(BeamTeamColors.userBloom.opacity(0.22 + Double(impact) * 0.36)),
+                style: StrokeStyle(lineWidth: 1.6 + CGFloat(impact) * 1.9, lineCap: .round)
+            )
+            context.stroke(
+                p,
+                with: .color(Color.white.opacity(0.16 + Double(impact) * 0.24)),
+                style: StrokeStyle(lineWidth: 0.8 + CGFloat(impact) * 1.0, lineCap: .round)
+            )
+        }
+        for r in 0 ..< n {
+            let y0 = (deterministic01(lane: 2200 + r, step: seed, salt: seed) - 0.5) * (18 + impact * 32)
+            var p = Path()
+            p.move(to: CGPoint(x: collisionX + 3, y: midY + y0))
+            var x = collisionX + 3
+            for k in 1 ... 4 {
+                x = min(rightPad - 4, x + CGFloat(12 + k * 3 + r))
+                let y = midY + y0 + CGFloat(cos(wDraw * 6.5 + Double(k + r * 2))) * (4 + impact * 7)
+                p.addLine(to: CGPoint(x: x, y: y))
+            }
+            context.stroke(
+                p,
+                with: .color(BeamTeamColors.oppEmber.opacity(0.24 + Double(impact) * 0.38)),
+                style: StrokeStyle(lineWidth: 1.6 + CGFloat(impact) * 1.9, lineCap: .round)
+            )
+            context.stroke(
+                p,
+                with: .color(Color.white.opacity(0.16 + Double(impact) * 0.24)),
+                style: StrokeStyle(lineWidth: 0.8 + CGFloat(impact) * 1.0, lineCap: .round)
+            )
+        }
+    }
+
+    /// Five nested strokes for one tendril path (wide bloom → hot core → white hairline).
     private static func layeredTendrilStrokes(
         context: inout GraphicsContext,
         path: Path,
@@ -892,38 +1509,39 @@ private enum ProceduralBeamRenderer {
         context.blendMode = plusMode ? .plusLighter : .screen
         context.stroke(
             path,
-            with: .color(wideColor.opacity((0.14 + Double(widen) * 0.014) * fk * op)),
-            style: StrokeStyle(lineWidth: (12 + widen * 0.4) * widthScale, lineCap: .round, lineJoin: .round)
+            with: .color(wideColor.opacity((0.16 + Double(widen) * 0.018) * fk * op)),
+            style: StrokeStyle(lineWidth: (15.5 + widen * 0.48) * widthScale, lineCap: .round, lineJoin: .round)
         )
         context.stroke(
             path,
-            with: .color(midTint.opacity((0.22 + Double(widen) * 0.022) * fk * op)),
-            style: StrokeStyle(lineWidth: (5.5 + widen * 0.22) * widthScale, lineCap: .round, lineJoin: .round)
+            with: .color(midTint.opacity((0.26 + Double(widen) * 0.026) * fk * op)),
+            style: StrokeStyle(lineWidth: (7.2 + widen * 0.28) * widthScale, lineCap: .round, lineJoin: .round)
         )
         context.stroke(
             path,
-            with: .color(deepTint.opacity((0.16 + Double(widen) * 0.018) * fk * op)),
-            style: StrokeStyle(lineWidth: (3.2 + widen * 0.12) * widthScale, lineCap: .round, lineJoin: .round)
+            with: .color(deepTint.opacity((0.2 + Double(widen) * 0.022) * fk * op)),
+            style: StrokeStyle(lineWidth: (4.2 + widen * 0.16) * widthScale, lineCap: .round, lineJoin: .round)
         )
         context.stroke(
             path,
-            with: .color(coreHot.opacity((0.62 + Double(widen) * 0.055) * fk * op)),
-            style: StrokeStyle(lineWidth: (2 + widen * 0.12) * widthScale, lineCap: .round, lineJoin: .round)
+            with: .color(coreHot.opacity((0.68 + Double(widen) * 0.062) * fk * op)),
+            style: StrokeStyle(lineWidth: (2.85 + widen * 0.14) * widthScale, lineCap: .round, lineJoin: .round)
         )
         context.blendMode = .plusLighter
         context.stroke(
             path,
-            with: .color(Color.white.opacity((0.82 + Double(widen) * 0.14) * fk * op)),
-            style: StrokeStyle(lineWidth: (0.9 + widen * 0.06) * widthScale, lineCap: .round, lineJoin: .round)
+            with: .color(Color.white.opacity((0.88 + Double(widen) * 0.16) * fk * op)),
+            style: StrokeStyle(lineWidth: (1.05 + widen * 0.07) * widthScale, lineCap: .round, lineJoin: .round)
         )
     }
 
-    private static func coreSpine(
+    /// Center spine polyline with advecting phase + glowing knots traveling toward collision.
+    private static func coreSpineAdvected(
         context: inout GraphicsContext,
         from x0: CGFloat,
         to x1: CGFloat,
         midY: CGFloat,
-        wall: TimeInterval,
+        wDraw: TimeInterval,
         seed: Int,
         flicker: CGFloat,
         impact: CGFloat,
@@ -931,158 +1549,69 @@ private enum ProceduralBeamRenderer {
         isUser: Bool
     ) {
         guard x1 > x0 + 2 else { return }
-        let ph = wall * .pi * 2 * (isUser ? 0.62 : 0.71) + Double(seed & 31) * 0.05
-        let wobbleA = CGFloat(sin(ph * 1.9)) * 1.25
-        let wobbleB = CGFloat(cos(ph * 3.1 + 0.7)) * 0.55
+        let steps = 32
+        let advect = wDraw * (6.8 + Double(impact) * 10.3)
         var p = Path()
-        p.move(to: CGPoint(x: x0, y: midY + wobbleA))
-        p.addQuadCurve(
-            to: CGPoint(x: x1, y: midY - wobbleB * 0.45),
-            control: CGPoint(x: (x0 + x1) * 0.5, y: midY + wobbleB * 1.1)
-        )
-        let iw = CGFloat(1.05 + impact * 2.15) * CGFloat(0.95 + deterministic01(lane: isUser ? 31 : 32, step: 0, salt: seed) * 0.22)
-        context.blendMode = .normal
-        context.stroke(p, with: .color(Color.white.opacity(Double(0.1 * flicker))), style: StrokeStyle(lineWidth: iw + 3.4, lineCap: .round))
-        context.blendMode = .plusLighter
-        context.stroke(p, with: .color(Color.white.opacity(Double((0.55 + Double(impact) * 0.5) * Double(flicker)))), style: StrokeStyle(lineWidth: iw + 1.3, lineCap: .round))
-        context.stroke(p, with: .color(tint.opacity(Double((0.38 + Double(impact) * 0.42) * Double(flicker)))), style: StrokeStyle(lineWidth: iw + 0.75, lineCap: .round))
-        context.stroke(p, with: .color(Color.white.opacity(Double((0.92 + Double(impact) * 0.55) * Double(flicker)))), style: StrokeStyle(lineWidth: iw * 0.55, lineCap: .round))
-    }
-
-    private static func drawCollisionBurst(
-        context: inout GraphicsContext,
-        collisionX: CGFloat,
-        midY: CGFloat,
-        flicker: CGFloat,
-        impact: CGFloat,
-        flareMul: CGFloat,
-        wall: TimeInterval,
-        sparkBoost: CGFloat,
-        seed: Int
-    ) {
-        let idlePhase = wall * .pi * 2.1
-
-        context.blendMode = .normal
-        let baseR: CGFloat = 8 + flareMul * 7
-        let outer = CGRect(x: collisionX - baseR - 16, y: midY - baseR - 16, width: (baseR + 16) * 2, height: (baseR + 16) * 2)
-        context.fill(
-            ellipsePath(outer),
-            with: .radialGradient(
-                Gradient(colors: [Color.white.opacity(Double(0.18 + Double(flicker) * 0.12 + Double(impact) * 0.55)), Color.clear]),
-                center: CGPoint(x: collisionX, y: midY),
-                startRadius: 0,
-                endRadius: baseR + 20 + flareMul * 11
-            )
-        )
-
-        let heatCenter = CGPoint(x: collisionX + 4 + CGFloat(impact) * 3, y: midY + CGFloat(sin(idlePhase * 1.2)) * 1.5)
-        let heatR = CGRect(x: heatCenter.x - 18, y: heatCenter.y - 12, width: 36, height: 24)
-        context.fill(
-            ellipsePath(heatR),
-            with: .radialGradient(
-                Gradient(colors: [BeamTeamColors.oppEmber.opacity(0.45 + Double(impact) * 0.25), BeamTeamColors.oppBloom.opacity(0.12), Color.clear]),
-                center: heatCenter,
-                startRadius: 0,
-                endRadius: 16 + CGFloat(impact) * 12
-            )
-        )
-
-        context.blendMode = .plusLighter
-        let hot = CGRect(x: collisionX - 6 - flareMul * 2, y: midY - 6 - flareMul * 2, width: 12 + flareMul * 4, height: 12 + flareMul * 4)
-        context.fill(
-            ellipsePath(hot),
-            with: .radialGradient(
-                Gradient(colors: [
-                    Color.white.opacity(Double(0.98 + Double(impact) * 0.04)),
-                    BeamTeamColors.userMid.opacity(0.35),
-                    BeamTeamColors.oppMid.opacity(0.28),
-                    Color.clear,
-                ]),
-                center: CGPoint(x: collisionX, y: midY),
-                startRadius: 0,
-                endRadius: 5 + flareMul * 5
-            )
-        )
-
-        let ringPulse = 0.55 + 0.45 * sin(wall * 6.2 + Double(seed & 7))
-        for ri in 0 ..< 2 {
-            let rr: CGFloat = 10 + CGFloat(ri) * 9 + CGFloat(impact) * 14 + CGFloat(ringPulse) * 2.5
-            let rect = CGRect(x: collisionX - rr, y: midY - rr * 0.72, width: rr * 2, height: rr * 1.44)
-            let ring = ellipsePath(rect)
-            context.stroke(
-                ring,
-                with: .color(Color.white.opacity(Double(0.08 + Double(impact) * 0.22 + Double(flicker) * 0.06 - Double(ri) * 0.025))),
-                style: StrokeStyle(lineWidth: 1.1 + CGFloat(impact) * 1.2, lineCap: .round)
-            )
+        for i in 0 ... steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let x = x0 + (x1 - x0) * t
+            let xi = Double(t)
+            let waveCoord = isUser ? xi : (1 - xi)
+            let spatial = waveCoord * 18 * Double.pi - advect + Double(seed & 15) * 0.03
+            let compress = pow(isUser ? xi : (1 - xi), 1.22)
+            let pinch: CGFloat = 0.38 + 0.62 * CGFloat(1 - compress)
+            let yOff = sin(spatial * 0.9) * 0.42 + sin(spatial * 1.48 + 0.7) * 0.24 + cos(spatial * 0.64) * 0.16
+            let y = midY + CGFloat(yOff) * (2.2 + CGFloat(impact) * 2.1) * pinch
+            if i == 0 {
+                p.move(to: CGPoint(x: x, y: y))
+            } else {
+                p.addLine(to: CGPoint(x: x, y: y))
+            }
         }
-
-        context.blendMode = .plusLighter
-        let count = ProceduralEnergyBeamConfig.sparkCount
-        let sparkIdlePop = sin(wall * 13.7 + Double(seed)) > 0.92 ? 1.15 : 1.0
-        for si in 0 ..< count {
-            let fu = deterministic01(lane: 6000 + si, step: seed & 0xffff, salt: seed)
-            let fv = deterministic01(lane: 7000 + si, step: seed & 0xffff, salt: seed ^ (seed &* 50_069) ^ (si &* 9_743))
-            var ang = fu * CGFloat.pi * 2 + CGFloat(idlePhase * 0.38 * (fv > 0.5 ? 1 : -1))
-            ang += CGFloat(impact * 2.45 * sin(Double(si) + Double(impact) * Double.pi))
-            let drift = CGFloat(sin(wall * 8.1 + Double(si) * 1.7)) * 2.2
-
-            let baseLen: CGFloat = 4 + fv * CGFloat(14 + sparkBoost + impact * 34) * CGFloat(sparkIdlePop)
-            let len = baseLen + CGFloat(Double(impact) * 32)
-            let cx = collisionX + CGFloat(cos(Double(ang))) * (2 + CGFloat(fu * 12 * impact)) + drift * 0.4
-            let cy = midY + CGFloat(sin(Double(ang))) * (2 + CGFloat(fv * 9 * impact))
-
-            var sp = Path()
-            let x1 = cx + CGFloat(cos(Double(ang))) * len * 1.1
-            let y1 = cy + CGFloat(sin(Double(ang))) * len * 1.1
-            sp.move(to: CGPoint(x: cx, y: cy))
-            let kink = CGFloat(sin(idlePhase * 3.4 + Double(si))) * 3.4
-            let angD = Double(ang)
-            sp.addQuadCurve(
-                to: CGPoint(x: x1 + kink * 0.35, y: y1),
-                control: CGPoint(x: cx + CGFloat(cos(angD + 0.6)) * len * 0.45 + kink, y: cy + CGFloat(sin(angD + 0.55)) * len * 0.45)
-            )
-
-            let hotLine = CGFloat(0.85 + fu * CGFloat(impact) * 3.45)
-            let alpha = 0.22 + Double(fv) * Double(impact) * 0.95 + Double(flicker) * Double(impact) * 0.48 + sin(wall * 15 + Double(si)) * 0.06
-            let aClamped = min(0.98, max(0.12, alpha + Double(impact) * 0.42))
-            context.stroke(
-                sp,
-                with: .color(Color.white.opacity(aClamped)),
-                style: StrokeStyle(lineWidth: hotLine + CGFloat(impact) * 3.5, lineCap: .round)
-            )
-            context.stroke(sp, with: .color(Color.white.opacity(0.92)), style: StrokeStyle(lineWidth: 0.55 + CGFloat(impact) * 1.05, lineCap: .round))
-        }
-
+        let iw = CGFloat(2.2 + impact * 3.85) * CGFloat(0.95 + deterministic01(lane: isUser ? 31 : 32, step: 0, salt: seed) * 0.22)
         context.blendMode = .normal
-        let microCount = Swift.min(Int(6 + CGFloat(impact * 24)), 8)
-        for mi in 0 ..< microCount {
-            let u = deterministic01(lane: mi, step: seed, salt: seed ^ mi)
-            let dx = CGFloat(cos(u * CGFloat.pi * 2 + CGFloat(idlePhase + wall * 0.7)))
-            let dy = CGFloat(sin(u * CGFloat.pi * 2 + CGFloat(idlePhase * 0.85)))
-            let rr: CGFloat = 0.9 + CGFloat(impact) * 3.1
-            let flick = sin(wall * 19 + Double(mi)) > 0.85 ? CGFloat(1.4) : 1
-            let spot = CGRect(
-                x: collisionX + dx * CGFloat(3 + CGFloat(impact) * 26) + CGFloat(sin(Double(mi) + idlePhase)),
-                y: midY + dy * CGFloat(2 + CGFloat(impact) * 20),
-                width: rr * flick,
-                height: rr * flick
-            )
-            context.fill(
-                ellipsePath(spot),
-                with: .color(Color.white.opacity(Double(min(1, 0.1 + Double(impact) * 0.95 + Double(flicker) * 0.03))))
-            )
+        context.stroke(p, with: .color(Color.white.opacity(Double(0.12 * flicker))), style: StrokeStyle(lineWidth: iw + 5.2, lineCap: .round, lineJoin: .round))
+        context.blendMode = .plusLighter
+        context.stroke(p, with: .color(Color.white.opacity(Double((0.62 + Double(impact) * 0.58) * Double(flicker)))), style: StrokeStyle(lineWidth: iw + 2.05, lineCap: .round, lineJoin: .round))
+        context.stroke(p, with: .color(tint.opacity(Double((0.46 + Double(impact) * 0.52) * Double(flicker)))), style: StrokeStyle(lineWidth: iw + 1.15, lineCap: .round, lineJoin: .round))
+        context.stroke(p, with: .color(Color.white.opacity(Double((0.96 + Double(impact) * 0.62) * Double(flicker)))), style: StrokeStyle(lineWidth: iw * 0.78, lineCap: .round, lineJoin: .round))
+
+        let dashPhase = CGFloat(wDraw * (isUser ? 118 : -118) * (1 + Double(impact) * 0.52))
+        context.blendMode = .plusLighter
+        context.stroke(
+            p,
+            with: .color(Color.white.opacity(Double(0.38 + Double(impact) * 0.48))),
+            style: StrokeStyle(lineWidth: max(1, iw * 0.46), lineCap: .round, lineJoin: .round, dash: [3, 8, 2, 6], dashPhase: dashPhase)
+        )
+
+        // Glowing knots advect along beam center to read as moving plasma mass.
+        let knotN = 4
+        for k in 0 ..< knotN {
+            let frac = (wDraw * (0.72 + Double(impact) * 0.32) + Double(k) * 0.24).truncatingRemainder(dividingBy: 1)
+            let t = isUser ? frac : (1 - frac)
+            let x = x0 + CGFloat(t) * (x1 - x0)
+            let localSpatial = (isUser ? t : (1 - t)) * 18 * Double.pi - advect
+            let y = midY + CGFloat(sin(localSpatial * 0.84) * 0.9)
+            let r = CGFloat(1.25 + impact * 1.7)
+            let knot = Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
+            context.blendMode = .plusLighter
+            context.fill(knot, with: .color(Color.white.opacity(0.62 + Double(impact) * 0.22)))
+            context.fill(knot, with: .color(tint.opacity(0.48)))
         }
     }
+
 }
 
 // MARK: - Momentum chip
 
+/// Buckets the integer margin into a coarse UX label (thresholds: 420 and 1500).
 private enum MomentumState: Equatable {
     case leadGrowing
     case leadShrinking
     case closeBattle
     case needsPush
 
+    /// Maps integer margin to chip enum; change `420` / `1500` thresholds to alter when labels flip.
     static func inferred(fromMargin margin: Int) -> MomentumState {
         let mag = abs(margin)
         if mag <= 420 { return .closeBattle }
@@ -1122,6 +1651,7 @@ private enum MomentumState: Equatable {
     }
 }
 
+/// Capsule UI for `MomentumState` (symbol + label + accent stroke).
 private struct MomentumChipView: View {
     let state: MomentumState
 
@@ -1159,6 +1689,7 @@ private struct MomentumChipView: View {
 
 // MARK: - Sparkline chart
 
+/// Fake day chart: two smooth polylines + grid + endpoint dots (inputs are mock `[0…1]` series).
 private struct DayBattleSparklinePreview: View {
     let userValues: [CGFloat]
     let opponentValues: [CGFloat]
@@ -1168,11 +1699,13 @@ private struct DayBattleSparklinePreview: View {
             GeometryReader { geo in
                 let w = geo.size.width
                 let h = geo.size.height
-                let ptsU = sampledPoints(for: userValues, in: CGSize(width: w, height: h), pad: CGPoint(x: 10, y: 10))
-                let ptsO = sampledPoints(for: opponentValues, in: CGSize(width: w, height: h), pad: CGPoint(x: 10, y: 10))
+                let ptsU = sampledPoints(for: userValues, in: CGSize(width: w, height: h), pad: CGPoint(x: 14, y: 14))
+                let ptsO = sampledPoints(for: opponentValues, in: CGSize(width: w, height: h), pad: CGPoint(x: 14, y: 14))
 
                 ZStack {
                     roundedChartBackground()
+
+                    fadedDistanceGrid(rect: CGRect(origin: .zero, size: geo.size))
 
                     subtleGrid(rect: CGRect(origin: .zero, size: geo.size))
 
@@ -1211,28 +1744,84 @@ private struct DayBattleSparklinePreview: View {
         )
     }
 
+    /// Dark rounded plate behind chart paths.
     private func roundedChartBackground() -> some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
             .fill(Color.black.opacity(0.32))
     }
 
-    private func subtleGrid(rect: CGRect) -> some View {
-        Path { p in
-            let cols = [rect.minX + rect.width * 0.25, rect.minX + rect.width * 0.5, rect.minX + rect.width * 0.75]
-            for x in cols {
-                p.move(to: CGPoint(x: x, y: rect.minY + 12))
-                p.addLine(to: CGPoint(x: x, y: rect.maxY - 12))
-            }
-            let rows = [rect.minY + rect.height * 0.34, rect.minY + rect.height * 0.66]
-            for y in rows {
-                p.move(to: CGPoint(x: rect.minX + 12, y: y))
-                p.addLine(to: CGPoint(x: rect.maxX - 12, y: y))
-            }
+    /// Wide-spaced faint mesh: few divisions + dim cyan/blue/orange gradient (neon wash, not white graph paper).
+    @ViewBuilder
+    private func fadedDistanceGrid(rect: CGRect) -> some View {
+        let inset: CGFloat = 16
+        let inner = rect.insetBy(dx: inset, dy: inset)
+        if inner.width > 4 && inner.height > 4 {
+            // Fewer lines ⇒ larger cells; lower counts if you want even airier spacing.
+            let nx = 4
+            let ny = 3
+            let mesh = distanceMeshPath(inner: inner, nx: nx, ny: ny)
+            let neonWash = LinearGradient(
+                colors: [
+                    FitUpColors.Neon.cyan.opacity(0.055),
+                    FitUpColors.Neon.blue.opacity(0.04),
+                    FitUpColors.Neon.orange.opacity(0.048),
+                    FitUpColors.Neon.cyan.opacity(0.038),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            mesh
+                .stroke(neonWash, style: StrokeStyle(lineWidth: 0.55, lineCap: .round))
+                .blendMode(.plusLighter)
+                .opacity(0.85)
         }
-        .stroke(Color.white.opacity(0.07), style: StrokeStyle(lineWidth: 1, dash: [2, 6]))
-        .blur(radius: 0)
     }
 
+    private func distanceMeshPath(inner: CGRect, nx: Int, ny: Int) -> Path {
+        var mesh = Path()
+        for i in 0 ... nx {
+            let t = CGFloat(i) / CGFloat(nx)
+            let x = inner.minX + t * inner.width
+            mesh.move(to: CGPoint(x: x, y: inner.minY))
+            mesh.addLine(to: CGPoint(x: x, y: inner.maxY))
+        }
+        for j in 0 ... ny {
+            let t = CGFloat(j) / CGFloat(ny)
+            let y = inner.minY + t * inner.height
+            mesh.move(to: CGPoint(x: inner.minX, y: y))
+            mesh.addLine(to: CGPoint(x: inner.maxX, y: y))
+        }
+        return mesh
+    }
+
+    /// Sparse dashed guides on top of the mesh (thirds + mid band); gradient keeps the neon “chart” read subtle.
+    private func subtleGrid(rect: CGRect) -> some View {
+        let pad: CGFloat = 16
+        return Path { p in
+            let cols = [rect.minX + rect.width * (1.0 / 3.0), rect.minX + rect.width * (2.0 / 3.0)]
+            for x in cols {
+                p.move(to: CGPoint(x: x, y: rect.minY + pad))
+                p.addLine(to: CGPoint(x: x, y: rect.maxY - pad))
+            }
+            let midY = rect.minY + rect.height * 0.5
+            p.move(to: CGPoint(x: rect.minX + pad, y: midY))
+            p.addLine(to: CGPoint(x: rect.maxX - pad, y: midY))
+        }
+        .stroke(
+            LinearGradient(
+                colors: [
+                    FitUpColors.Neon.cyan.opacity(0.09),
+                    FitUpColors.Neon.orange.opacity(0.075),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            ),
+            style: StrokeStyle(lineWidth: 0.85, lineCap: .round, dash: [4, 12])
+        )
+        .blendMode(.plusLighter)
+    }
+
+    /// Maps normalized series values into pixel points with padding.
     private func sampledPoints(for values: [CGFloat], in size: CGSize, pad: CGPoint) -> [CGPoint] {
         guard values.count >= 2 else { return [] }
         let minX = pad.x
@@ -1256,6 +1845,7 @@ private struct DayBattleSparklinePreview: View {
         }
     }
 
+    /// One sparkline: thick blurred stroke + sharp overlay stroke.
     private func sparkline(points: [CGPoint], color: Color, glowMultiplier: CGFloat) -> some View {
         let path = smoothPath(for: points)
         return path
@@ -1266,6 +1856,7 @@ private struct DayBattleSparklinePreview: View {
             )
     }
 
+    /// Last-point markers for user (cyan) and opponent (orange) curves.
     private func endpointDots(ptsU: [CGPoint], ptsO: [CGPoint]) -> some View {
         ZStack {
             if let lu = ptsU.last {
@@ -1277,6 +1868,7 @@ private struct DayBattleSparklinePreview: View {
         }
     }
 
+    /// Glowing endpoint disc used by `endpointDots`.
     private func dot(at point: CGPoint, color: Color) -> some View {
         ZStack {
             Circle()
@@ -1297,6 +1889,7 @@ private struct DayBattleSparklinePreview: View {
         .allowsTightening(true)
     }
 
+    /// Simple quadratic smoothing between sampled sparkline points.
     private func smoothPath(for points: [CGPoint]) -> Path {
         var path = Path()
         guard points.count >= 2 else { return path }
@@ -1311,6 +1904,7 @@ private struct DayBattleSparklinePreview: View {
         return path
     }
 
+    /// Small axis caption under the chart (12 AM / NOON / NOW mock).
     private func chartAxisLabel(_ text: String) -> some View {
         Text(text)
             .lineLimit(1)
@@ -1324,6 +1918,7 @@ private struct DayBattleSparklinePreview: View {
 
 // MARK: - Day progress bar
 
+/// Mock “day elapsed” capsule with gradient fill and a white knob (static caption string).
 private struct DayElapsedProgressPreview: View {
     let fractionElapsed: CGFloat
 
@@ -1376,7 +1971,7 @@ private struct DayElapsedProgressPreview: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Fixed mock caption per spec visuals.
+    /// Fixed caption under the progress preview (edit string for different mock copy).
     private var dayProgressLabelMock: String {
         "3 PM · 62% of day elapsed"
     }
@@ -1384,6 +1979,7 @@ private struct DayElapsedProgressPreview: View {
 
 // MARK: - Formatters
 
+/// Shared `NumberFormatter`s for battle score and step strings in this preview file.
 private enum EnergyBeamNumberFormatting {
     static let score: NumberFormatter = {
         let nf = NumberFormatter()

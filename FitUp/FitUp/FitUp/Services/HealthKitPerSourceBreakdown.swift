@@ -20,18 +20,13 @@ struct MetricSourceRow: Identifiable, Equatable {
 struct HealthDataInfoBreakdownResult: Equatable {
     let stepsSources: [MetricSourceRow]
     let caloriesSources: [MetricSourceRow]
-    /// Approximate asleep hours per source (simple sum; does not match canonical `fetchSleepSummary`).
-    let sleepSources: [MetricSourceRow]
     /// Latest resting HR sample per source in the lookback window (may differ from global “most recent” headline).
     let restingHRSources: [MetricSourceRow]
     let stepsSampleCount: Int
     let caloriesSampleCount: Int
-    let sleepSampleCount: Int
     let restingHRSampleCount: Int
     let todayQueryStart: Date
     let todayQueryEnd: Date
-    let lastNightWindowStart: Date
-    let lastNightWindowEnd: Date
 }
 
 enum HealthKitPerSourceBreakdown {
@@ -48,8 +43,6 @@ enum HealthKitPerSourceBreakdown {
             throw HealthKitError.notAvailable
         }
 
-        let calendar = Calendar.current
-
         let (todayStart, todayEnd) = todayQueryBounds(now: referenceNow)
         let todayPredicate = HKQuery.predicateForSamples(
             withStart: todayStart,
@@ -62,11 +55,9 @@ enum HealthKitPerSourceBreakdown {
             todayStart: todayStart,
             todayEnd: todayEnd
         )
-        async let sleepTask = fetchSleepPerSourceApproximate(calendar: calendar, referenceNow: referenceNow)
         async let rhrTask = fetchRestingHRPerSourceLatest(referenceNow: referenceNow)
 
         let (stepsBy, calsBy, stepsCount, calsCount) = try await stepsCalsTask
-        let (sleepBy, sleepCount, lnStart, lnEnd) = try await sleepTask
         let (rhrBy, rhrCount) = try await rhrTask
 
         let nameUnion = Set(stepsBy.keys).union(calsBy.keys)
@@ -88,15 +79,6 @@ enum HealthKitPerSourceBreakdown {
             )
         }
 
-        let sleepSources: [MetricSourceRow] = sleepBy.keys.sorted().map { name in
-            let hrs = (sleepBy[name] ?? 0) / 3600
-            return MetricSourceRow(
-                id: "sleep-\(name)",
-                sourceName: name,
-                detail: String(format: "%.1fh", hrs)
-            )
-        }
-
         let restingHRSources: [MetricSourceRow] = rhrBy.keys.sorted().map { name in
             MetricSourceRow(
                 id: "rhr-\(name)",
@@ -108,16 +90,12 @@ enum HealthKitPerSourceBreakdown {
         return HealthDataInfoBreakdownResult(
             stepsSources: stepsSources,
             caloriesSources: caloriesSources,
-            sleepSources: sleepSources,
             restingHRSources: restingHRSources,
             stepsSampleCount: stepsCount,
             caloriesSampleCount: calsCount,
-            sleepSampleCount: sleepCount,
             restingHRSampleCount: rhrCount,
             todayQueryStart: todayStart,
-            todayQueryEnd: todayEnd,
-            lastNightWindowStart: lnStart,
-            lastNightWindowEnd: lnEnd
+            todayQueryEnd: todayEnd
         )
     }
 
@@ -128,16 +106,6 @@ enum HealthKitPerSourceBreakdown {
         let calendar = Calendar.current
         let start = calendar.startOfDay(for: now)
         return (start, now)
-    }
-
-    /// Same clock window as `HealthKitService.lastNightClockWindowBounds` (previous day 18:00 → today 12:00 local).
-    static func lastNightClockWindowBounds(calendar: Calendar = .current, referenceNow: Date = Date()) -> (start: Date, end: Date)? {
-        let todayStart = calendar.startOfDay(for: referenceNow)
-        guard let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: todayStart),
-              let windowStart = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: yesterdayStart),
-              let windowEnd = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: todayStart),
-              windowStart < windowEnd else { return nil }
-        return (windowStart, windowEnd)
     }
 
     // MARK: - Steps + calories
@@ -179,59 +147,6 @@ enum HealthKitPerSourceBreakdown {
             bySource[key, default: 0] += sample.quantity.doubleValue(for: unit)
         }
         return (bySource, samples.count)
-    }
-
-    // MARK: - Sleep (approximate)
-
-    /// Sums clipped asleep segment length per source; does **not** replicate canonical overlap resolution in `HealthKitService`.
-    private static func fetchSleepPerSourceApproximate(
-        calendar: Calendar,
-        referenceNow: Date
-    ) async throws -> ([String: TimeInterval], Int, Date, Date) {
-        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
-            throw HealthKitError.noStatisticsData
-        }
-        guard let bounds = lastNightClockWindowBounds(calendar: calendar, referenceNow: referenceNow) else {
-            return ([:], 0, referenceNow, referenceNow)
-        }
-        let windowStart = bounds.start
-        let windowEnd = bounds.end
-
-        // Include samples overlapping the window (do not use `.strictStartDate` — segments may start before the window).
-        let predicate = HKQuery.predicateForSamples(
-            withStart: windowStart,
-            end: windowEnd,
-            options: []
-        )
-
-        let raw = try await executeSampleQuery(sampleType: sleepType, predicate: predicate)
-        let samples = raw.compactMap { $0 as? HKCategorySample }
-        let overlapping = samples.filter { $0.startDate < windowEnd && $0.endDate > windowStart }
-
-        var asleepSecondsBySource: [String: TimeInterval] = [:]
-        for sample in overlapping {
-            let clipStart = max(sample.startDate, windowStart)
-            let clipEnd = min(sample.endDate, windowEnd)
-            guard clipStart < clipEnd else { continue }
-            guard let category = HKCategoryValueSleepAnalysis(rawValue: sample.value), isAsleepCategory(category) else {
-                continue
-            }
-            let duration = clipEnd.timeIntervalSince(clipStart)
-            let key = sourceKey(for: sample)
-            asleepSecondsBySource[key, default: 0] += duration
-        }
-
-        return (asleepSecondsBySource, overlapping.count, windowStart, windowEnd)
-    }
-
-    /// Asleep stages only (excludes awake and inBed — simple attribution sum).
-    private static func isAsleepCategory(_ v: HKCategoryValueSleepAnalysis) -> Bool {
-        switch v {
-        case .asleepDeep, .asleepCore, .asleepREM, .asleepUnspecified:
-            return true
-        default:
-            return false
-        }
     }
 
     // MARK: - Resting HR (latest per source)
@@ -298,14 +213,6 @@ enum HealthKitPerSourceBreakdown {
     }
 
     private static func sourceKey(for sample: HKQuantitySample) -> String {
-        let name = sample.sourceRevision.source.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !name.isEmpty { return name }
-        let bundle = sample.sourceRevision.source.bundleIdentifier
-        if !bundle.isEmpty { return bundle }
-        return "Unknown"
-    }
-
-    private static func sourceKey(for sample: HKCategorySample) -> String {
         let name = sample.sourceRevision.source.name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty { return name }
         let bundle = sample.sourceRevision.source.bundleIdentifier

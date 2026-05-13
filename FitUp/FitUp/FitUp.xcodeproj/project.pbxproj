@@ -384,9 +384,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/Info-Additional.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "FitUp reads your steps, active calories, resting heart rate, and sleep to score matches and show your health stats. Data is never entered manually.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitUp reads your steps, active calories, resting heart rate, and sleep to score matches and show your health stats. Data is never entered manually.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitUp reads your steps, active calories, resting heart rate, and sleep to score matches and show your health stats. Data is never entered manually.";
+				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "FitUp reads your steps, active calories, and resting heart rate to score matches and show your health stats. Data is never entered manually.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitUp reads your steps, active calories, and resting heart rate to score matches and show your health stats. Data is never entered manually.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitUp reads your steps, active calories, and resting heart rate to score matches and show your health stats. Data is never entered manually.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -429,9 +429,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/Info-Additional.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "FitUp reads your steps, active calories, resting heart rate, and sleep to score matches and show your health stats. Data is never entered manually.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitUp reads your steps, active calories, resting heart rate, and sleep to score matches and show your health stats. Data is never entered manually.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitUp reads your steps, active calories, resting heart rate, and sleep to score matches and show your health stats. Data is never entered manually.";
+				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "FitUp reads your steps, active calories, and resting heart rate to score matches and show your health stats. Data is never entered manually.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitUp reads your steps, active calories, and resting heart rate to score matches and show your health stats. Data is never entered manually.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitUp reads your steps, active calories, and resting heart rate to score matches and show your health stats. Data is never entered manually.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

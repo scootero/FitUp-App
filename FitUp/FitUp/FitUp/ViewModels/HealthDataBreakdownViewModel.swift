@@ -15,23 +15,18 @@ final class HealthDataBreakdownViewModel: ObservableObject {
 
     @Published private(set) var stepsToday: Int?
     @Published private(set) var caloriesToday: Int?
-    @Published private(set) var sleepLastNightDisplay = "—"
     @Published private(set) var restingHRDisplay = "—"
 
     @Published private(set) var stepsSources: [MetricSourceRow] = []
     @Published private(set) var caloriesSources: [MetricSourceRow] = []
-    @Published private(set) var sleepSources: [MetricSourceRow] = []
     @Published private(set) var restingHRSources: [MetricSourceRow] = []
 
     @Published private(set) var stepsSampleCount = 0
     @Published private(set) var caloriesSampleCount = 0
-    @Published private(set) var sleepSampleCount = 0
     @Published private(set) var restingHRSampleCount = 0
 
     @Published private(set) var queryStart: Date?
     @Published private(set) var queryEnd: Date?
-    @Published private(set) var lastNightWindowStart: Date?
-    @Published private(set) var lastNightWindowEnd: Date?
 
     @Published private(set) var breakdownError: String?
 
@@ -45,13 +40,11 @@ final class HealthDataBreakdownViewModel: ObservableObject {
 
         async let stepsTask = fetchSteps()
         async let calsTask = fetchCals()
-        async let sleepTask = HealthKitService.fetchSleepSummary(nights: 7)
         async let restingTask = fetchResting()
         async let breakdownTask = fetchBreakdown()
 
         let steps = await stepsTask
         let cals = await calsTask
-        let sleepSummary = await sleepTask
         let resting = await restingTask
         let breakdown = await breakdownTask
 
@@ -61,23 +54,17 @@ final class HealthDataBreakdownViewModel: ObservableObject {
             errorMessage = err
         }
 
-        let sleepHrs = sleepSummary.lastNightAsleepHours
-        sleepLastNightDisplay = Self.formatSleepHours(sleepHrs)
         restingHRDisplay = resting.map { "\(Int($0.rounded()))" } ?? "—"
 
         if let b = breakdown.value {
             stepsSources = b.stepsSources
             caloriesSources = b.caloriesSources
-            sleepSources = b.sleepSources
             restingHRSources = b.restingHRSources
             stepsSampleCount = b.stepsSampleCount
             caloriesSampleCount = b.caloriesSampleCount
-            sleepSampleCount = b.sleepSampleCount
             restingHRSampleCount = b.restingHRSampleCount
             queryStart = b.todayQueryStart
             queryEnd = b.todayQueryEnd
-            lastNightWindowStart = b.lastNightWindowStart
-            lastNightWindowEnd = b.lastNightWindowEnd
         } else {
             clearBreakdownState()
             if let err = breakdown.error {
@@ -89,22 +76,13 @@ final class HealthDataBreakdownViewModel: ObservableObject {
     private func clearBreakdownState() {
         stepsSources = []
         caloriesSources = []
-        sleepSources = []
         restingHRSources = []
         stepsSampleCount = 0
         caloriesSampleCount = 0
-        sleepSampleCount = 0
         restingHRSampleCount = 0
         let bounds = HealthKitPerSourceBreakdown.todayQueryBounds()
         queryStart = bounds.start
         queryEnd = bounds.end
-        if let ln = HealthKitPerSourceBreakdown.lastNightClockWindowBounds() {
-            lastNightWindowStart = ln.start
-            lastNightWindowEnd = ln.end
-        } else {
-            lastNightWindowStart = nil
-            lastNightWindowEnd = nil
-        }
     }
 
     private func fetchSteps() async -> (value: Int?, error: String?) {
@@ -140,10 +118,5 @@ final class HealthDataBreakdownViewModel: ObservableObject {
         } catch {
             return (nil, error.localizedDescription)
         }
-    }
-
-    private static func formatSleepHours(_ h: Double?) -> String {
-        guard let h, h > 0 else { return "—" }
-        return String(format: "%.1fh", h)
     }
 }

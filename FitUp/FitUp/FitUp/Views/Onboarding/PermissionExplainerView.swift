@@ -51,7 +51,7 @@ struct PermissionExplainerView: View {
         BackgroundGradientView()
         PermissionExplainerView(
             title: "Apple Health Access",
-            bodyText: "FitUp reads your steps, active calories, sleep, and resting heart rate to score matches.",
+            bodyText: "FitUp reads your steps, active calories, and resting heart rate to score matches.",
             iconSystemName: "heart.text.square.fill",
             buttonTitle: "Continue",
             onContinue: {}

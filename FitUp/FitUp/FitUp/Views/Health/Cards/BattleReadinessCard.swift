@@ -11,7 +11,6 @@ struct BattleReadinessCard: View {
     let score: Int
     let title: String
     let subtitle: String
-    let sleepText: String
     let hrText: String
     let stepsText: String
     let calsText: String
@@ -38,7 +37,6 @@ struct BattleReadinessCard: View {
             .padding(.bottom, 16)
 
             HStack(spacing: 8) {
-                quickChip(icon: "🌙", value: sleepText, label: "Sleep")
                 quickChip(icon: "❤️", value: hrText, label: "Resting HR")
                 quickChip(icon: "👟", value: stepsText, label: "Steps")
                 quickChip(icon: "🔥", value: calsText, label: "Active Cal")
@@ -73,7 +71,6 @@ struct BattleReadinessCard: View {
         score: 73,
         title: "Strong Readiness",
         subtitle: "You're well-primed for battle today.",
-        sleepText: "7.6h",
         hrText: "58",
         stepsText: "11.2k",
         calsText: "520"

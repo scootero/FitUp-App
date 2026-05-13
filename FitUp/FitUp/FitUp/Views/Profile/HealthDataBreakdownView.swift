@@ -69,20 +69,6 @@ struct HealthDataBreakdownView: View {
 
                 Section {
                     metricBlock(
-                        title: "Sleep last night",
-                        total: viewModel.sleepLastNightDisplay,
-                        sources: viewModel.sleepSources
-                    )
-                } header: {
-                    sectionHeader("Sleep")
-                } footer: {
-                    Text("Per-source values are approximate and may not equal total due to aggregation logic.")
-                        .font(FitUpFont.body(11))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
-                }
-
-                Section {
-                    metricBlock(
                         title: "Resting heart rate",
                         total: viewModel.restingHRDisplay,
                         sources: viewModel.restingHRSources
@@ -98,10 +84,8 @@ struct HealthDataBreakdownView: View {
                 Section {
                     debugRow(label: "Steps samples", value: "\(viewModel.stepsSampleCount)")
                     debugRow(label: "Active calorie samples", value: "\(viewModel.caloriesSampleCount)")
-                    debugRow(label: "Sleep samples (last-night window)", value: "\(viewModel.sleepSampleCount)")
                     debugRow(label: "Resting HR samples (lookback)", value: "\(viewModel.restingHRSampleCount)")
                     debugRow(label: "Today query range", value: todayQueryRangeString)
-                    debugRow(label: "Last night window", value: lastNightWindowString)
                     debugRow(label: "Device timezone", value: TimeZone.current.identifier)
                     debugRow(
                         label: "Profile timezone",
@@ -141,15 +125,6 @@ struct HealthDataBreakdownView: View {
 
     private var todayQueryRangeString: String {
         guard let start = viewModel.queryStart, let end = viewModel.queryEnd else {
-            return "—"
-        }
-        let a = Self.rangeFormatter.string(from: start)
-        let b = Self.rangeFormatter.string(from: end)
-        return "\(a) → \(b)"
-    }
-
-    private var lastNightWindowString: String {
-        guard let start = viewModel.lastNightWindowStart, let end = viewModel.lastNightWindowEnd else {
             return "—"
         }
         let a = Self.rangeFormatter.string(from: start)

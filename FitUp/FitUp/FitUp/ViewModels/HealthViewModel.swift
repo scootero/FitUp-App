@@ -101,7 +101,6 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var battleReadinessLabel = ""
     @Published private(set) var battleReadinessSubtitle = ""
 
-    @Published private(set) var sleepHoursDisplay = "—"
     @Published private(set) var restingHRDisplay = "—"
     @Published private(set) var stepsTodayDisplay = "—"
     @Published private(set) var caloriesTodayDisplay = "—"
@@ -110,8 +109,6 @@ final class HealthViewModel: ObservableObject {
 
     @Published private(set) var weekSteps: [Int] = Array(repeating: 0, count: 7)
     @Published private(set) var weekCalories: [Int] = Array(repeating: 0, count: 7)
-
-    @Published private(set) var sleepSummary: HealthSleepSummary?
 
     @Published private(set) var weekComparisonSteps: HealthWeekComparison?
     @Published private(set) var weekComparisonCalories: HealthWeekComparison?
@@ -143,7 +140,6 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var showSyncedBadge = false
     @Published private(set) var lastLoadFinishedAt: Date?
 
-    @Published private(set) var sleepLastNightHours: Double?
     /// Raw values for component breakdown rows (matches JSX `metric.actual / metric.goal`).
     @Published private(set) var stepsTodayValue = 0
     @Published private(set) var caloriesTodayValue = 0
@@ -351,9 +347,6 @@ final class HealthViewModel: ObservableObject {
         async let restingOutcome = loadOptionalHK("resting_heart_rate", userId: userId, fallback: nil as Double?) {
             try await HealthKitService.fetchRestingHeartRate()
         }
-        async let sleepOutcome = loadOptionalHK("sleep_summary_7n", userId: userId, fallback: nil as HealthSleepSummary?) {
-            await HealthKitService.fetchSleepSummary(nights: 7)
-        }
         async let weekStepsOutcome = loadOptionalHK("week_steps_array", userId: userId, fallback: Array(repeating: 0, count: 7)) {
             try await HealthKitService.fetchSevenDayStepsArray()
         }
@@ -362,19 +355,15 @@ final class HealthViewModel: ObservableObject {
         }
 
         let restingResult = await restingOutcome
-        let sleepResult = await sleepOutcome
         let wStepsResult = await weekStepsOutcome
         let wCalsResult = await weekCalsOutcome
 
         let resting = restingResult.value
-        let sleepAgg = sleepResult.value
         let wSteps = wStepsResult.value
         let wCals = wCalsResult.value
 
-        let sleepForReadiness = sleepAgg?.lastNightAsleepHours
-
         let score = ReadinessCalculator.compute(
-            sleepHrsLastNight: sleepForReadiness,
+            sleepHrsLastNight: nil,
             restingHR: resting,
             stepsToday: stepsToday,
             calsToday: calsToday,
@@ -385,14 +374,11 @@ final class HealthViewModel: ObservableObject {
         battleReadinessLabel = ReadinessCalculator.label(for: score)
         battleReadinessSubtitle = ReadinessCalculator.subtitle(for: score)
 
-        sleepLastNightHours = sleepAgg?.lastNightAsleepHours
-        sleepHoursDisplay = formatSleepHours(sleepForReadiness)
         restingHRDisplay = resting.map { "\(Int($0.rounded()))" } ?? "—"
         restingHRValue = resting
 
         weekSteps = wSteps
         weekCalories = wCals
-        sleepSummary = sleepAgg
 
         async let weekComparisonResult = buildWeekComparisons()
         async let activeMatches = homeRepository.loadActiveMatches(for: userId, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
@@ -417,7 +403,6 @@ final class HealthViewModel: ObservableObject {
             stepsToday: stepsToday,
             calsToday: calsToday,
             restingBPM: resting,
-            sleepAgg: sleepAgg,
             weekSteps: wSteps,
             weekCalories: wCals,
             readinessScore: score
@@ -431,7 +416,6 @@ final class HealthViewModel: ObservableObject {
         meta["battle_matches_played"] = "\(battleStats.matchesPlayed)"
         meta["battle_wins"] = "\(battleStats.wins)"
         meta["optional_resting_ok"] = "\(restingResult.ok)"
-        meta["optional_sleep_ok"] = "\(sleepResult.ok)"
         meta["optional_week_steps_ok"] = "\(wStepsResult.ok)"
         meta["optional_week_cals_ok"] = "\(wCalsResult.ok)"
         AppLogger.log(
@@ -497,14 +481,11 @@ final class HealthViewModel: ObservableObject {
         battleReadinessScore = 0
         battleReadinessLabel = ""
         battleReadinessSubtitle = ""
-        sleepHoursDisplay = "—"
         restingHRDisplay = "—"
         stepsTodayDisplay = "—"
         caloriesTodayDisplay = "—"
         weekSteps = Array(repeating: 0, count: 7)
         weekCalories = Array(repeating: 0, count: 7)
-        sleepSummary = nil
-        sleepLastNightHours = nil
         stepsTodayValue = 0
         caloriesTodayValue = 0
         restingHRValue = nil
@@ -737,54 +718,24 @@ final class HealthViewModel: ObservableObject {
         stepsToday: Int,
         calsToday: Int,
         restingBPM: Double?,
-        sleepAgg: HealthSleepSummary?,
         weekSteps: [Int],
         weekCalories: [Int],
         readinessScore: Int
     ) -> [String: String] {
-        let snapshot: String
-        if let sleepAgg {
-            let stages = sleepAgg.stagePercentagesSevenNight
-            snapshot = [
-                "source=\(source)",
-                "readiness_score=\(readinessScore)",
-                "today_steps=\(stepsToday)",
-                "today_active_kcal=\(calsToday)",
-                "resting_hr_bpm=\(restingBPM.map { String(format: "%.1f", $0) } ?? "nil")",
-                "sleep_avg_hrs_7n=\(String(format: "%.2f", sleepAgg.averageHoursLastNights))",
-                "sleep_variance_hrs=\(String(format: "%.2f", sleepAgg.varianceHours))",
-                "sleep_last_night_hrs=\(sleepAgg.lastNightAsleepHours.map { String(format: "%.2f", $0) } ?? "nil")",
-                "sleep_nightly_hrs_oldest_to_today=\(sleepAgg.nightlyAsleepHoursOldestFirst.map { String(format: "%.2f", $0) }.joined(separator: ","))",
-                "sleep_last_night_timeline_segments=\(sleepAgg.lastNightTimeline.count)",
-                "sleep_ratio_deep_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.deepPercent) } ?? "nil")",
-                "sleep_ratio_light_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.lightPercent) } ?? "nil")",
-                "sleep_ratio_rem_pct=\(sleepAgg.lastNightSleepRatio.map { String(format: "%.1f", $0.remPercent) } ?? "nil")",
-                "sleep_stages_7n_pct_deep=\(String(format: "%.1f", stages.deep)) core=\(String(format: "%.1f", stages.core)) rem=\(String(format: "%.1f", stages.rem)) awake=\(String(format: "%.1f", stages.awake))",
-                "week_steps_oldest_to_today=\(weekSteps.map(String.init).joined(separator: ","))",
-                "week_cal_oldest_to_today=\(weekCalories.map(String.init).joined(separator: ","))",
-            ].joined(separator: "\n")
-        } else {
-            snapshot = [
-                "source=\(source)",
-                "readiness_score=\(readinessScore)",
-                "today_steps=\(stepsToday)",
-                "today_active_kcal=\(calsToday)",
-                "resting_hr_bpm=\(restingBPM.map { String(format: "%.1f", $0) } ?? "nil")",
-                "sleep_summary=—",
-                "week_steps_oldest_to_today=\(weekSteps.map(String.init).joined(separator: ","))",
-                "week_cal_oldest_to_today=\(weekCalories.map(String.init).joined(separator: ","))",
-            ].joined(separator: "\n")
-        }
+        let snapshot = [
+            "source=\(source)",
+            "readiness_score=\(readinessScore)",
+            "today_steps=\(stepsToday)",
+            "today_active_kcal=\(calsToday)",
+            "resting_hr_bpm=\(restingBPM.map { String(format: "%.1f", $0) } ?? "nil")",
+            "week_steps_oldest_to_today=\(weekSteps.map(String.init).joined(separator: ","))",
+            "week_cal_oldest_to_today=\(weekCalories.map(String.init).joined(separator: ","))",
+        ].joined(separator: "\n")
         return [
             "hk_snapshot": snapshot,
             "week_steps_csv": weekSteps.map(String.init).joined(separator: ","),
             "week_cal_csv": weekCalories.map(String.init).joined(separator: ","),
         ]
-    }
-
-    private func formatSleepHours(_ h: Double?) -> String {
-        guard let h, h > 0 else { return "—" }
-        return String(format: "%.1fh", h)
     }
 
     private func formatStepsShort(_ n: Int) -> String {
