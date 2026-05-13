@@ -7,6 +7,8 @@
 
 import SwiftUI
 
+private let useEnergyBeamHomeHero = true
+
 struct HomeView: View {
     let profile: Profile?
     let showOnboardingSearching: Bool
@@ -47,7 +49,26 @@ struct HomeView: View {
                             .accessibilityHidden(true)
                             .padding(.top, 10)
                     } else {
-                        if let primaryMatch = viewModel.featuredHomeStepMatch {
+                        if useEnergyBeamHomeHero {
+                            if let primaryMatch = viewModel.featuredHomeStepMatch {
+                                Button {
+                                    onOpenMatchDetails(primaryMatch.id, primaryMatch.opponent.displayName)
+                                } label: {
+                                    HomeEnergyBeamHeroCard(
+                                        match: primaryMatch,
+                                        profile: profile
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.top, 10)
+                            } else {
+                                HomeEnergyBeamHeroCard(
+                                    match: nil,
+                                    profile: profile
+                                )
+                                .padding(.top, 10)
+                            }
+                        } else if let primaryMatch = viewModel.featuredHomeStepMatch {
                             Button {
                                 onOpenMatchDetails(primaryMatch.id, primaryMatch.opponent.displayName)
                             } label: {
