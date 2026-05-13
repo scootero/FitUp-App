@@ -7,20 +7,63 @@
 
 import SwiftUI
 
+/// Local-only persistence for the last hero comparable margin the user saw (per active match).
+private enum EnergyBeamHeroLastDisplayedMarginStore {
+    private static let keyPrefix = "fitup.energyBeamHero.lastDisplayedComparableMargin."
+
+    private static func key(for matchId: UUID) -> String {
+        keyPrefix + matchId.uuidString
+    }
+
+    static func load(for matchId: UUID) -> Int? {
+        let k = key(for: matchId)
+        guard UserDefaults.standard.object(forKey: k) != nil else { return nil }
+        return UserDefaults.standard.integer(forKey: k)
+    }
+
+    static func save(margin: Int, for matchId: UUID) {
+        UserDefaults.standard.set(margin, forKey: key(for: matchId))
+    }
+}
+
 struct HomeEnergyBeamHeroCard: View {
     let match: HomeActiveMatch?
     let profile: Profile?
+    /// DEBUG Home beam lab: when non-nil, procedural beam uses this margin; copy and momentum use real `displayMargin`.
+    let beamCollisionMarginOverride: Int?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var displayMargin: Double
 
-    /// Drives beam collision + headline/momentum during eased transitions (aligned with prototype).
+    /// Drives headline/momentum during eased transitions (aligned with prototype).
     private var displayedMarginInt: Int { Int(displayMargin.rounded(.towardZero)) }
 
-    init(match: HomeActiveMatch?, profile: Profile?) {
+    /// Hero column label when `displayName` is missing or whitespace (does not change navigation title in `HomeView`).
+    private static func resolvedOpponentDisplayName(for opponent: HomeOpponent) -> String {
+        let trimmed = opponent.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+        let initials = opponent.initials.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !initials.isEmpty { return initials }
+        return "Opponent"
+    }
+
+    init(match: HomeActiveMatch?, profile: Profile?, beamCollisionMarginOverride: Int? = nil) {
         self.match = match
         self.profile = profile
-        _displayMargin = State(initialValue: Double(match?.comparableMargin ?? 0))
+        self.beamCollisionMarginOverride = beamCollisionMarginOverride
+        let initial: Double
+        if let match {
+            let live = match.comparableMargin
+            if let stored = EnergyBeamHeroLastDisplayedMarginStore.load(for: match.id) {
+                initial = Double(stored)
+            } else {
+                initial = Double(live)
+            }
+        } else {
+            initial = 0
+        }
+        _displayMargin = State(initialValue: initial)
     }
 
     var body: some View {
@@ -30,7 +73,7 @@ struct HomeEnergyBeamHeroCard: View {
                     margin: displayMargin,
                     referenceBattleValue: EnergyBeamHeroLayout.defaultBeamReferenceValue,
                     userName: profile?.displayName ?? "You",
-                    opponentName: match.opponent.displayName,
+                    opponentName: Self.resolvedOpponentDisplayName(for: match.opponent),
                     userSteps: match.myToday,
                     opponentSteps: match.theirToday,
                     userBattleScore: match.myBattleScore,
@@ -44,13 +87,30 @@ struct HomeEnergyBeamHeroCard: View {
                     sparklineOpponentValues: EnergyBeamHeroMockSeries.cumulativeOpponent(wiggle: 0),
                     dayElapsedFraction: Self.dayProgressState(for: profile?.timezone).fraction,
                     dayProgressCaption: Self.dayProgressState(for: profile?.timezone).caption,
-                    showMockTimelineDebugLabel: mockTimelineDebugFlag
+                    showMockTimelineDebugLabel: mockTimelineDebugFlag,
+                    collisionMarginOverride: beamCollisionMarginOverride
                 )
                 .onAppear {
-                    syncMargin(from: match, animated: false)
+                    reconcileToTarget(match, animated: !reduceMotion)
                 }
-                .onChange(of: match) { _, newMatch in
-                    syncMargin(from: newMatch, animated: !reduceMotion)
+                .onDisappear {
+                    persistDisplayedMargin(for: match)
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .inactive || phase == .background {
+                        persistDisplayedMargin(for: match)
+                    }
+                }
+                .onChange(of: match) { oldMatch, newMatch in
+                    if oldMatch.id != newMatch.id {
+                        let live = newMatch.comparableMargin
+                        if let stored = EnergyBeamHeroLastDisplayedMarginStore.load(for: newMatch.id) {
+                            displayMargin = Double(stored)
+                        } else {
+                            displayMargin = Double(live)
+                        }
+                    }
+                    reconcileToTarget(newMatch, animated: !reduceMotion)
                 }
             } else {
                 emptyHeroCard
@@ -80,7 +140,7 @@ struct HomeEnergyBeamHeroCard: View {
                 .padding(.horizontal, 12)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 36)
+        .padding(.vertical, 40)
         .padding(.horizontal, 18)
         .background {
             ZStack {
@@ -96,13 +156,32 @@ struct HomeEnergyBeamHeroCard: View {
         .shadow(color: .black.opacity(0.45), radius: 14, y: 8)
     }
 
-    private func syncMargin(from match: HomeActiveMatch, animated: Bool) {
+    private func persistDisplayedMargin(for match: HomeActiveMatch) {
+        let value = Int(displayMargin.rounded(.towardZero))
+        EnergyBeamHeroLastDisplayedMarginStore.save(margin: value, for: match.id)
+    }
+
+    private func reconcileToTarget(_ match: HomeActiveMatch, animated: Bool) {
         let target = Double(match.comparableMargin)
         guard animated else {
             displayMargin = target
             return
         }
-        withAnimation(.easeInOut(duration: EnergyBeamHeroLayout.marginDrivenAnimationSeconds)) {
+        let start = displayMargin
+        guard start != target else { return }
+
+        let deltaI = abs(Int(target.rounded(.towardZero)) - Int(start.rounded(.towardZero)))
+        if deltaI <= EnergyBeamHeroLayout.marginTransitionTinyIntDelta {
+            withAnimation(
+                EnergyBeamHeroLayout.marginTransitionAnimation(duration: EnergyBeamHeroLayout.marginTransitionTinySeconds)
+            ) {
+                displayMargin = target
+            }
+            return
+        }
+
+        let duration = EnergyBeamHeroLayout.marginTransitionDuration(start: start, target: target)
+        withAnimation(EnergyBeamHeroLayout.marginTransitionAnimation(duration: duration)) {
             displayMargin = target
         }
     }
@@ -189,6 +268,129 @@ struct HomeEnergyBeamHeroCard: View {
             avatarURL: nil,
             subscriptionTier: "free",
             timezone: "America/Los_Angeles",
+            notificationsEnabled: true,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+    )
+    .padding()
+    .background(FitUpColors.Bg.base)
+}
+
+#Preview("Home energy beam — raw behind huge margin") {
+    HomeEnergyBeamHeroCard(
+        match: HomeActiveMatch(
+            id: UUID(),
+            metricType: "steps",
+            durationDays: 7,
+            sportLabel: "Steps",
+            seriesLabel: "7D",
+            daysLeft: 4,
+            finalDayCutoffAt: nil,
+            finalDayScoreEndsAt: nil,
+            myToday: 4_200,
+            theirToday: 48_900,
+            myScore: 0,
+            theirScore: 1,
+            isWinning: false,
+            opponent: HomeOpponent(id: UUID(), displayName: "Jordan", initials: "JO", colorHex: "#BF5FFF"),
+            opponentTodayUpdatedAt: nil,
+            dayPips: [],
+            scoringMode: nil,
+            difficulty: nil,
+            myBaselineSteps: nil,
+            theirBaselineSteps: nil
+        ),
+        profile: Profile(
+            id: UUID(),
+            authUserId: UUID(),
+            displayName: "Alex Verylongdisplayname",
+            initials: "AL",
+            avatarURL: nil,
+            subscriptionTier: "free",
+            timezone: "America/New_York",
+            notificationsEnabled: true,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+    )
+    .padding()
+    .background(FitUpColors.Bg.base)
+}
+
+#Preview("Home energy beam — balanced tie") {
+    HomeEnergyBeamHeroCard(
+        match: HomeActiveMatch(
+            id: UUID(),
+            metricType: "steps",
+            durationDays: 1,
+            sportLabel: "Steps",
+            seriesLabel: "1D",
+            daysLeft: 1,
+            finalDayCutoffAt: nil,
+            finalDayScoreEndsAt: nil,
+            myToday: 6_000,
+            theirToday: 6_000,
+            myScore: 0,
+            theirScore: 0,
+            isWinning: true,
+            opponent: HomeOpponent(id: UUID(), displayName: "Sam", initials: "SA", colorHex: "#39FF14"),
+            opponentTodayUpdatedAt: nil,
+            dayPips: [],
+            scoringMode: "balanced",
+            difficulty: nil,
+            myBaselineSteps: 8_000,
+            theirBaselineSteps: 8_000
+        ),
+        profile: Profile(
+            id: UUID(),
+            authUserId: UUID(),
+            displayName: "You",
+            initials: "YO",
+            avatarURL: nil,
+            subscriptionTier: "free",
+            timezone: "UTC",
+            notificationsEnabled: true,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+    )
+    .padding()
+    .background(FitUpColors.Bg.base)
+}
+
+#Preview("Home energy beam — empty opponent name") {
+    HomeEnergyBeamHeroCard(
+        match: HomeActiveMatch(
+            id: UUID(),
+            metricType: "steps",
+            durationDays: 7,
+            sportLabel: "Steps",
+            seriesLabel: "7D",
+            daysLeft: 3,
+            finalDayCutoffAt: nil,
+            finalDayScoreEndsAt: nil,
+            myToday: 120,
+            theirToday: 80,
+            myScore: 1,
+            theirScore: 1,
+            isWinning: true,
+            opponent: HomeOpponent(id: UUID(), displayName: "   ", initials: "QZ", colorHex: "#00CED1"),
+            opponentTodayUpdatedAt: nil,
+            dayPips: [],
+            scoringMode: nil,
+            difficulty: nil,
+            myBaselineSteps: nil,
+            theirBaselineSteps: nil
+        ),
+        profile: Profile(
+            id: UUID(),
+            authUserId: UUID(),
+            displayName: "Pat",
+            initials: "PT",
+            avatarURL: nil,
+            subscriptionTier: "free",
+            timezone: nil,
             notificationsEnabled: true,
             createdAt: Date(),
             updatedAt: Date()

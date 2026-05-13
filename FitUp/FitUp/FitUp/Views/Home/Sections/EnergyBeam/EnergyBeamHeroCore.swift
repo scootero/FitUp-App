@@ -3,7 +3,7 @@
 //  FitUp
 //
 //  Always-compiled energy beam hero visuals (beam, sparkline, momentum, glass chrome).
-//  DEBUG-only preview harness lives in EnergyBeamHeroPrototypeView.swift.
+//  DEBUG playground: DevPrototypes/EnergyBeamHeroPrototypeView.swift
 //
 
 import SwiftUI
@@ -11,10 +11,37 @@ import SwiftUI
 // MARK: - Layout / timing (shared with Home + DEBUG prototype)
 
 enum EnergyBeamHeroLayout {
-    /// Seconds for margin-driven beam collision slide and related eased UI.
-    static let marginDrivenAnimationSeconds: Double = 6.0
     /// Default `referenceBattleValue` for `normalizedBeamOffset` (prototype parity).
     static let defaultBeamReferenceValue: Int = 8_431
+
+    // MARK: - Hero margin transition (Home + DEBUG previews)
+
+    /// Midpoint duration for sliders / presets when not using delta-scaled timing.
+    static let marginDrivenAnimationSeconds: Double = 3.75
+
+    static let marginTransitionMinSeconds: Double = 2.5
+    static let marginTransitionMaxSeconds: Double = 5.0
+    /// Integer delta at or below this uses a very short transition (or caller may snap).
+    static let marginTransitionTinyIntDelta: Int = 3
+    static let marginTransitionTinySeconds: Double = 0.28
+    /// Above this magnitude of `target - start` (in margin points), duration reaches `marginTransitionMaxSeconds`.
+    private static let marginTransitionDeltaSpan: Double = 7500
+
+    /// Duration for animating from `start` to `target` comparable margin (steps or battle-score points).
+    static func marginTransitionDuration(start: Double, target: Double) -> Double {
+        let deltaI = abs(Int(target.rounded(.towardZero)) - Int(start.rounded(.towardZero)))
+        if deltaI <= marginTransitionTinyIntDelta {
+            return marginTransitionTinySeconds
+        }
+        let dMag = abs(target - start)
+        let span = min(1, dMag / marginTransitionDeltaSpan)
+        return marginTransitionMinSeconds + span * (marginTransitionMaxSeconds - marginTransitionMinSeconds)
+    }
+
+    /// Slow start / fast middle / slow finish — shared by beam collision slide and hero number.
+    static func marginTransitionAnimation(duration: Double) -> Animation {
+        .timingCurve(0.42, 0, 0.58, 1, duration: duration)
+    }
 }
 
 // MARK: - Mock sparkline series (Home fallback + DEBUG wiggle)
@@ -188,21 +215,21 @@ private enum ProceduralEnergyBeamConfig {
     /// `TimelineView` minimum interval (seconds). **Smaller** ⇒ more redraws (smoother plasma, more CPU). `2.0/16` ≈ 8 Hz vs `1.0/16` ≈ 16 Hz.
     static let timelineInterval: TimeInterval = 1.0 / 16.0
     /// Main lightning lanes drawn per side (cyan / orange); more ⇒ denser beam.
-    static let lanesPerSide = 5
+    static let lanesPerSide = 0
     /// Collision sparkle strokes; more ⇒ busier impact.
-    static let sparkCount = 12
+    static let sparkCount = 0
     /// Upper bound on tendril polyline segments (per lane); higher ⇒ smoother curves, costlier. Must be ≥ `tendrilSegmentMin`.
-    static let tendrilSegmentMax = 5
+    static let tendrilSegmentMax = 0
     /// Lower bound on tendril segments (randomized per lane between min…max).
-    static let tendrilSegmentMin = 2
+    static let tendrilSegmentMin = 0
     /// If deterministic lane random exceeds this, a short fork branch is drawn (0…1).
-    static let forkProbabilityThreshold: CGFloat = 0.72
+    static let forkProbabilityThreshold: CGFloat = 0.00
     /// Count of fast “flow streak” segments per side toward collision.
-    static let flowStreakCount = 3
+    static let flowStreakCount = 0
     /// Count of traveling packets / fireball sprites per side.
-    static let flowPacketCount = 4
+    static let flowPacketCount = 0
     /// Base count of reflected fragment polylines per side (scaled up with impact in renderer).
-    static let reflectFragmentCount = 1
+    static let reflectFragmentCount = 0
 }
 
 /// Electric-plasma palette for Canvas strokes/fills (RGB constants); tweak for different hue reads.
@@ -218,11 +245,11 @@ private enum BeamTeamColors {
     static let oppEmber = Color(red: 1, green: 0.22, blue: 0.05)
 }
 
-/// DEBUG-only beam: `GeometryReader` supplies width; `collisionX` follows `marginPrecise` (animated by parent `heroCard`).
+/// DEBUG-only beam: `GeometryReader` supplies width; `collisionX` follows `marginPrecise` (animated by caller `withAnimation`).
 /// `TimelineView` supplies `wall` time for procedural motion; **that** motion stays fast—only `margin` changes slide the impact slowly.
 /// `marginRounded` reseeds deterministic noise and triggers `impactBoost` flashes via `onChange`.
 private struct ProceduralEnergyBeamView: View {
-    /// Same as parent `margin`; collision X interpolates when this animates (parent `.animation(..., value: margin)`).
+    /// Same as parent `margin`; collision X interpolates when this animates (caller `withAnimation` / transaction).
     let marginPrecise: Double
     /// Same as `EnergyBeamHeroMock.beamReferenceValue`; passed into `normalizedBeamOffset`.
     let referenceBattleValue: Int
@@ -261,7 +288,7 @@ private struct ProceduralEnergyBeamView: View {
             }
         }
         .frame(height: ProceduralBeamRenderer.beamOuterHeight)
-        // Collision slide is animated by ancestor `heroCard` (do not add a second conflicting `.animation` here).
+        // Collision slide is animated by the caller (`withAnimation`); do not add a second conflicting `.animation` here.
         .onChange(of: marginRounded) { _, _ in
             lastImpactAtWall = Date().timeIntervalSinceReferenceDate
         }
@@ -1657,9 +1684,20 @@ struct EnergyBeamHeroGlassCardView: View {
     let dayElapsedFraction: CGFloat
     let dayProgressCaption: String
     var showMockTimelineDebugLabel: Bool = false
+    /// When non-nil, only the procedural beam uses this collision margin; momentum and headline inputs stay tied to `margin` / caller-passed copy.
+    var collisionMarginOverride: Int? = nil
 
-    private var battleMarginInt: Int { Int(margin.rounded(.towardZero)) }
-    private var momentum: MomentumState { MomentumState.inferred(fromMargin: battleMarginInt) }
+    private var narrativeMarginInt: Int { Int(margin.rounded(.towardZero)) }
+    private var beamCollisionMarginPrecise: Double {
+        if let override = collisionMarginOverride { return Double(override) }
+        return margin
+    }
+
+    private var beamCollisionMarginRounded: Int {
+        collisionMarginOverride ?? narrativeMarginInt
+    }
+
+    private var momentum: MomentumState { MomentumState.inferred(fromMargin: narrativeMarginInt) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1672,9 +1710,9 @@ struct EnergyBeamHeroGlassCardView: View {
                 .padding(.bottom, 14)
 
             ProceduralEnergyBeamView(
-                marginPrecise: margin,
+                marginPrecise: beamCollisionMarginPrecise,
                 referenceBattleValue: referenceBattleValue,
-                marginRounded: battleMarginInt
+                marginRounded: beamCollisionMarginRounded
             )
             .padding(.horizontal, 18)
             .padding(.bottom, 12)
@@ -1736,7 +1774,11 @@ struct EnergyBeamHeroGlassCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: FitUpColors.Neon.cyan.opacity(0.12), radius: 28, y: 10)
         .shadow(color: .black.opacity(0.65), radius: 18, y: 10)
-        .animation(.easeInOut(duration: EnergyBeamHeroLayout.marginDrivenAnimationSeconds), value: margin)
+        // Margin-driven motion is animated by the caller (`withAnimation` on Home / prototype) so beam + number share one curve.
+        .animation(
+            EnergyBeamHeroLayout.marginTransitionAnimation(duration: EnergyBeamHeroLayout.marginDrivenAnimationSeconds),
+            value: collisionMarginOverride
+        )
     }
 
     private var headerBlock: some View {
@@ -1785,6 +1827,9 @@ struct EnergyBeamHeroGlassCardView: View {
             Text(resultHeroNumberText)
                 .font(FitUpFont.display(41, weight: .heavy))
                 .foregroundStyle(Color.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.48)
+                .allowsTightening(true)
 
             Text(unitLabel)
                 .font(FitUpFont.body(12, weight: .semibold))

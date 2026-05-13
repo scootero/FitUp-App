@@ -8,6 +8,8 @@
 import SwiftUI
 
 private let useEnergyBeamHomeHero = true
+/// Approximates loaded energy beam hero height (card + beam + chart + day bar) for skeleton parity.
+private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 400
 
 struct HomeView: View {
     let profile: Profile?
@@ -29,6 +31,11 @@ struct HomeView: View {
     @State private var inviteWaitingPulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+#if DEBUG
+    @State private var beamLabUseBeamPreviewOffset = false
+    @State private var beamLabSliderOffset: Double = 0
+#endif
+
     var body: some View {
         ZStack {
             StaticPageGradientBackgroundView()
@@ -42,7 +49,7 @@ struct HomeView: View {
                     #endif
 
                     if viewModel.isHeroLoading {
-                        skeletonBlock(height: 200)
+                        skeletonBlock(height: homeEnergyBeamHeroSkeletonHeight)
                             .homeLiquidGlassCard(.base)
                             .redacted(reason: .placeholder)
                             .allowsHitTesting(false)
@@ -51,20 +58,24 @@ struct HomeView: View {
                     } else {
                         if useEnergyBeamHomeHero {
                             if let primaryMatch = viewModel.featuredHomeStepMatch {
+                                // Match details title uses raw `displayName` (may be empty) to stay consistent with other Home entry points.
                                 Button {
                                     onOpenMatchDetails(primaryMatch.id, primaryMatch.opponent.displayName)
                                 } label: {
                                     HomeEnergyBeamHeroCard(
                                         match: primaryMatch,
-                                        profile: profile
+                                        profile: profile,
+                                        beamCollisionMarginOverride: beamCollisionOverrideForDebug(match: primaryMatch)
                                     )
                                 }
                                 .buttonStyle(.plain)
+                                .transaction { $0.disablesAnimations = false }
                                 .padding(.top, 10)
                             } else {
                                 HomeEnergyBeamHeroCard(
                                     match: nil,
-                                    profile: profile
+                                    profile: profile,
+                                    beamCollisionMarginOverride: nil
                                 )
                                 .padding(.top, 10)
                             }
@@ -87,6 +98,13 @@ struct HomeView: View {
                             .padding(.top, 10)
                         }
                     }
+
+                    #if DEBUG
+                    if useEnergyBeamHomeHero, !viewModel.isHeroLoading {
+                        homeEnergyBeamDebugLabStrip
+                            .padding(.top, 6)
+                    }
+                    #endif
 
                     heroSummaryLine
                     battleStatusStrip
@@ -552,6 +570,89 @@ struct HomeView: View {
         let sign = value >= 0 ? "+" : "-"
         return "\(sign)\(abs(value).formatted())"
     }
+
+    private func beamCollisionOverrideForDebug(match: HomeActiveMatch?) -> Int? {
+        #if DEBUG
+        guard useEnergyBeamHomeHero, beamLabUseBeamPreviewOffset, let m = match else { return nil }
+        let delta = Int(beamLabSliderOffset.rounded())
+        return min(10_000, max(-10_000, m.comparableMargin + delta))
+        #else
+        return nil
+        #endif
+    }
+
+    @ViewBuilder
+    private var homeEnergyBeamDebugLabStrip: some View {
+        #if DEBUG
+        VStack(alignment: .leading, spacing: 10) {
+            Text("DEBUG — Beam collision lab")
+                .font(FitUpFont.body(11, weight: .heavy))
+                .foregroundStyle(Color.white.opacity(0.4))
+                .tracking(1.2)
+
+            Toggle("Use Beam Preview Offset", isOn: $beamLabUseBeamPreviewOffset)
+                .font(FitUpFont.body(13, weight: .semibold))
+                .tint(FitUpColors.Neon.cyan)
+
+            Slider(
+                value: $beamLabSliderOffset,
+                in: -10_000 ... 10_000,
+                step: 1
+            )
+            .tint(FitUpColors.Neon.cyan)
+            .disabled(!beamLabUseBeamPreviewOffset)
+
+            HStack(spacing: 8) {
+                beamLabPresetButton(title: "Center") {
+                    beamLabSliderOffset = 0
+                }
+                beamLabPresetButton(title: "User Push") {
+                    beamLabSliderOffset = 2_500
+                }
+                beamLabPresetButton(title: "Opponent Push") {
+                    beamLabSliderOffset = -2_500
+                }
+            }
+
+            Text("Adjusts beam collision only; scores and copy stay live.")
+                .font(FitUpFont.body(11, weight: .medium))
+                .foregroundStyle(FitUpColors.Text.tertiary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+        #else
+        EmptyView()
+        #endif
+    }
+
+#if DEBUG
+    private func beamLabPresetButton(title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(FitUpFont.body(12, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                        .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+                )
+                .foregroundStyle(Color.white.opacity(0.92))
+        }
+        .buttonStyle(.plain)
+    }
+#endif
 
     private var heroSortedStepMatches: [HomeActiveMatch] {
         viewModel.sortedActiveMatchesForHome.filter { $0.metricType != "active_calories" }
