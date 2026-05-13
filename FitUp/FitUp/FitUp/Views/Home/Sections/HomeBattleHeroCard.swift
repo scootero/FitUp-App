@@ -48,6 +48,9 @@ struct HomeBattleHeroCard: View {
     }
 
     let matches: [HomeActiveMatch]
+    /// When set, ring and primary hero copy use this match (same as Home tap target). When `nil`, falls back to legacy selection inside the card.
+    var featuredMatch: HomeActiveMatch? = nil
+
     private let selectedMetric: HeroMetric = .steps
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -63,34 +66,26 @@ struct HomeBattleHeroCard: View {
         matches.filter { normalizedMetric(for: $0.metricType) == selectedMetric }
     }
 
-    private func comparableMyScore(_ match: HomeActiveMatch) -> Int {
-        match.isBalancedStepsBattle ? match.myBattleScore : match.myToday
-    }
-
-    private func comparableTheirScore(_ match: HomeActiveMatch) -> Int {
-        match.isBalancedStepsBattle ? match.theirBattleScore : match.theirToday
-    }
-
     private var topOpponentMatch: HomeActiveMatch? {
-        matchesForSelectedMetric.max(by: { comparableTheirScore($0) < comparableTheirScore($1) })
+        matchesForSelectedMetric.max(by: { $0.comparableTheirScore < $1.comparableTheirScore })
     }
 
     private var closestAheadMatch: HomeActiveMatch? {
         matchesForSelectedMetric
-            .filter { comparableTheirScore($0) > comparableMyScore($0) }
+            .filter { $0.comparableTheirScore > $0.comparableMyScore }
             .min(by: {
-                (comparableTheirScore($0) - comparableMyScore($0)) < (comparableTheirScore($1) - comparableMyScore($1))
+                ($0.comparableTheirScore - $0.comparableMyScore) < ($1.comparableTheirScore - $1.comparableMyScore)
             })
     }
 
     private var closestBehindMatch: HomeActiveMatch? {
         matchesForSelectedMetric
-            .filter { comparableTheirScore($0) <= comparableMyScore($0) }
-            .max(by: { comparableTheirScore($0) < comparableTheirScore($1) })
+            .filter { $0.comparableTheirScore <= $0.comparableMyScore }
+            .max(by: { $0.comparableTheirScore < $1.comparableTheirScore })
     }
 
     private var focusOpponentMatch: HomeActiveMatch? {
-        closestAheadMatch ?? closestBehindMatch ?? topOpponentMatch
+        featuredMatch ?? (closestAheadMatch ?? closestBehindMatch ?? topOpponentMatch)
     }
 
     private var hasAnyActiveMatch: Bool {
@@ -104,7 +99,7 @@ struct HomeBattleHeroCard: View {
     /// Pace target for the ring: closest opponent ahead, else closest behind, else highest opponent total.
     private var focusOpponentToday: Int {
         guard let m = focusOpponentMatch else { return 0 }
-        return comparableTheirScore(m)
+        return m.comparableTheirScore
     }
 
     private var targetOpponentName: String {
@@ -119,7 +114,7 @@ struct HomeBattleHeroCard: View {
               let focus = focusOpponentMatch,
               top.opponent.id != focus.opponent.id
         else { return nil }
-        let topMargin = comparableMyScore(top) - comparableTheirScore(top)
+        let topMargin = top.comparableMargin
         let status = topMargin == 0 ? "TIED" : (topMargin > 0 ? "AHEAD" : "BEHIND")
         return "Top: \(top.opponent.displayName) · \(status) \(formattedDelta(topMargin))"
     }
@@ -149,8 +144,8 @@ struct HomeBattleHeroCard: View {
 
     private var opponentComparableRingProgress: Double {
         guard hasAnyActiveMatch, let focus = focusOpponentMatch else { return 0 }
-        let mine = comparableMyScore(focus)
-        let theirs = comparableTheirScore(focus)
+        let mine = focus.comparableMyScore
+        let theirs = focus.comparableTheirScore
         let scale = max(1, mine, theirs)
         return min(max(Double(theirs) / Double(scale), 0), 1)
     }
@@ -159,8 +154,8 @@ struct HomeBattleHeroCard: View {
     /// Uses today's observed pace from both users so lead/deficit feels proportional.
     private var relativeDailyBaseline: Int {
         guard let focus = focusOpponentMatch else { return 3_000 }
-        let mine = comparableMyScore(focus)
-        let theirs = comparableTheirScore(focus)
+        let mine = focus.comparableMyScore
+        let theirs = focus.comparableTheirScore
         let nonZeroTotals = [mine, theirs].filter { $0 > 0 }
         guard !nonZeroTotals.isEmpty else { return 3_000 }
         let mean = Double(nonZeroTotals.reduce(0, +)) / Double(nonZeroTotals.count)
@@ -235,7 +230,7 @@ struct HomeBattleHeroCard: View {
 
     private var marginVsTopOpponent: Int {
         guard let focus = focusOpponentMatch else { return 0 }
-        return comparableMyScore(focus) - comparableTheirScore(focus)
+        return focus.comparableMargin
     }
 
     private var isBehindState: Bool {
@@ -247,7 +242,7 @@ struct HomeBattleHeroCard: View {
     }
 
     private var ringCenterUnitText: String {
-        if let m = focusOpponentMatch, m.isBalancedStepsBattle { return "BATTLE SCORE" }
+        if let m = focusOpponentMatch, m.isBalancedStepsBattle { return "Battle Score" }
         return "STEPS"
     }
 
@@ -294,14 +289,14 @@ struct HomeBattleHeroCard: View {
     private var myScoreForRivalList: Int {
         guard !matchesForSelectedMetric.isEmpty else { return 0 }
         if matchesForSelectedMetric.contains(where: \.isBalancedStepsBattle) {
-            return matchesForSelectedMetric.map(comparableMyScore).max() ?? 0
+            return matchesForSelectedMetric.map(\.comparableMyScore).max() ?? 0
         }
         return myToday
     }
 
     private var displayedOpponentOrbs: [OpponentOrb] {
         Array(matchesForSelectedMetric.prefix(4).enumerated()).map { index, match in
-            let margin = comparableMyScore(match) - comparableTheirScore(match)
+            let margin = match.comparableMargin
             let rawInitials = match.opponent.initials.trimmingCharacters(in: .whitespacesAndNewlines)
             let fallback = String(match.opponent.displayName.prefix(2)).uppercased()
             return OpponentOrb(
@@ -325,7 +320,7 @@ struct HomeBattleHeroCard: View {
         for match in matchesForSelectedMetric {
             let key = match.opponent.id.uuidString
             let existing = byOpponent[key]
-            let score = comparableTheirScore(match)
+            let score = match.comparableTheirScore
             if existing == nil || score > (existing?.score ?? 0) {
                 byOpponent[key] = RankedCompetitor(
                     id: key,
@@ -453,6 +448,10 @@ struct HomeBattleHeroCard: View {
             startUrgentOrbPulse()
         }
         .onChange(of: matches.map(\.id)) { _, _ in
+            animateHeroRing()
+            startUrgentOrbPulse()
+        }
+        .onChange(of: featuredMatch?.id) { _, _ in
             animateHeroRing()
             startUrgentOrbPulse()
         }
@@ -841,8 +840,9 @@ struct HomeBattleHeroCard: View {
     }
 
     private func formattedDelta(_ delta: Int) -> String {
-        let sign = delta >= 0 ? "+" : "-"
-        return "\(sign)\(abs(delta).formatted())"
+        if delta > 0 { return "+\(delta.formatted())" }
+        if delta < 0 { return abs(delta).formatted() }
+        return "0"
     }
 
     private var metricToggle: some View {

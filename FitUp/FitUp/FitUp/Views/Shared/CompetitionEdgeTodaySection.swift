@@ -17,10 +17,13 @@ struct CompetitionEdgeTodaySection: View {
 
         var merged: [String: CompetitionEdgeTodayRowData] = [:]
         for m in dedupedMatches {
-            let key = "\(m.opponent.id.uuidString)|\(m.metricType)"
+            let bucket = m.isBalancedStepsBattle ? "balanced" : "raw"
+            let key = "\(m.opponent.id.uuidString)|\(m.metricType)|\(bucket)"
             if var existing = merged[key] {
                 existing.myToday += m.myToday
                 existing.theirToday += m.theirToday
+                existing.myComparableSum += m.comparableMyScore
+                existing.theirComparableSum += m.comparableTheirScore
                 existing.matchCount += 1
                 merged[key] = existing
             } else {
@@ -28,16 +31,19 @@ struct CompetitionEdgeTodaySection: View {
                     id: key,
                     opponent: m.opponent,
                     metricType: m.metricType,
+                    usesBattleScoreDelta: m.isBalancedStepsBattle,
                     myToday: m.myToday,
                     theirToday: m.theirToday,
+                    myComparableSum: m.comparableMyScore,
+                    theirComparableSum: m.comparableTheirScore,
                     matchCount: 1
                 )
             }
         }
 
         return merged.values.sorted { lhs, rhs in
-            let lhsDelta = lhs.myToday - lhs.theirToday
-            let rhsDelta = rhs.myToday - rhs.theirToday
+            let lhsDelta = lhs.comparableMargin
+            let rhsDelta = rhs.comparableMargin
             if lhsDelta != rhsDelta {
                 return lhsDelta > rhsDelta
             }
@@ -52,7 +58,7 @@ struct CompetitionEdgeTodaySection: View {
 
     private var sectionSubtitle: String {
         if matches.contains(where: { $0.isBalancedStepsBattle }) {
-            return "Step battles compare raw steps. Balanced battles use Battle Score (see each match)."
+            return "Raw step battles use step totals. Balanced battles use Battle Score (actual steps still shown below)."
         }
         return "Per opponent, see who is ahead right now."
     }
@@ -138,9 +144,14 @@ private struct CompetitionEdgeTodayRowData: Identifiable, Equatable {
     let id: String
     let opponent: HomeOpponent
     let metricType: String
+    let usesBattleScoreDelta: Bool
     var myToday: Int
     var theirToday: Int
+    var myComparableSum: Int
+    var theirComparableSum: Int
     var matchCount: Int
+
+    var comparableMargin: Int { myComparableSum - theirComparableSum }
 }
 
 private struct CompetitionEdgeTodayRow: View {
@@ -151,12 +162,21 @@ private struct CompetitionEdgeTodayRow: View {
     @State private var introGlow = false
     @State private var hasIntroGlowed = false
 
-    private var delta: Int { row.myToday - row.theirToday }
-    private var isAhead: Bool { delta >= 0 }
+    private var comparableMargin: Int { row.comparableMargin }
+    private var isAhead: Bool { comparableMargin > 0 }
+    private var isTied: Bool { comparableMargin == 0 }
     private var unitLabel: String { row.metricType == "steps" ? "steps" : "cal" }
-    private var deltaLabel: String { "\(abs(delta)) \(unitLabel)" }
+    private var deltaLabel: String {
+        if row.usesBattleScoreDelta {
+            return "\(abs(comparableMargin)) Battle Score"
+        }
+        return "\(abs(comparableMargin)) \(unitLabel)"
+    }
     private var totalsLabel: String {
-        "You \(row.myToday.formatted()) · Them \(row.theirToday.formatted()) \(unitLabel)"
+        if row.usesBattleScoreDelta {
+            return "You \(row.myToday.formatted()) · Them \(row.theirToday.formatted()) actual steps"
+        }
+        return "You \(row.myToday.formatted()) · Them \(row.theirToday.formatted()) \(unitLabel)"
     }
     private var matchCountBadge: String? {
         guard row.matchCount > 1 else { return nil }
@@ -176,6 +196,9 @@ private struct CompetitionEdgeTodayRow: View {
 
     /// Single shadow + stroke keeps glow cheap vs. multi-layer blurs.
     private var edgeGlow: Color {
+        if isTied {
+            return FitUpColors.Text.tertiary.opacity(0.45)
+        }
         if isAhead {
             return FitUpColors.Neon.green.opacity(0.55)
         }
@@ -183,6 +206,9 @@ private struct CompetitionEdgeTodayRow: View {
     }
 
     private var edgeGlowInner: Color {
+        if isTied {
+            return FitUpColors.Text.tertiary.opacity(0.25)
+        }
         if isAhead {
             return FitUpColors.Neon.cyan.opacity(0.35)
         }
@@ -195,7 +221,7 @@ private struct CompetitionEdgeTodayRow: View {
                 Text(row.opponent.displayName)
                     .font(FitUpFont.display(20, weight: .heavy))
                     .foregroundStyle(opponentAccent)
-                    .shadow(color: opponentAccent.opacity(isAhead ? 0.45 : 0.35), radius: 6, x: 0, y: 0)
+                    .shadow(color: opponentAccent.opacity(isTied ? 0.28 : (isAhead ? 0.45 : 0.35)), radius: 6, x: 0, y: 0)
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
 
@@ -219,12 +245,21 @@ private struct CompetitionEdgeTodayRow: View {
                 Spacer(minLength: 6)
 
                 HStack(spacing: 4) {
-                    Image(systemName: isAhead ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(isAhead ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange)
-                    Text("\(isAhead ? "+" : "-")\(deltaLabel)")
-                        .font(FitUpFont.display(13, weight: .bold))
-                        .foregroundStyle(isAhead ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange)
+                    if isTied {
+                        Image(systemName: "equal")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                        Text("Even")
+                            .font(FitUpFont.display(13, weight: .bold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                    } else {
+                        Image(systemName: isAhead ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(isAhead ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange)
+                        Text("\(isAhead ? "+" : "-")\(deltaLabel)")
+                            .font(FitUpFont.display(13, weight: .bold))
+                            .foregroundStyle(isAhead ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange)
+                    }
                 }
                 .layoutPriority(1)
             }

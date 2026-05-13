@@ -104,19 +104,13 @@ final class HomeViewModel: ObservableObject {
         activeMatches.filter { normalizedHeroMetricType($0.metricType) == HomeBattleHeroCard.HeroMetric.steps.metricType }
     }
 
-    var heroPrimaryStepMatch: HomeActiveMatch? {
-        let stepMatches = activeStepMatches
-        guard !stepMatches.isEmpty else { return nil }
-        let myTopScore = stepMatches.map(\.myToday).max() ?? 0
-        let closestAhead = stepMatches
-            .filter { $0.theirToday > myTopScore }
-            .min(by: { ($0.theirToday - myTopScore) < ($1.theirToday - myTopScore) })
-        let closestBehind = stepMatches
-            .filter { $0.theirToday <= myTopScore }
-            .max(by: { $0.theirToday < $1.theirToday })
-        let topOpponent = stepMatches.max(by: { $0.theirToday < $1.theirToday })
-        return closestAhead ?? closestBehind ?? topOpponent
+    /// Single featured step battle for the home hero, tap target, and comparable-margin summaries (balanced → Battle Score).
+    var featuredHomeStepMatch: HomeActiveMatch? {
+        HomeActiveMatch.featuredStepMatch(from: activeStepMatches)
     }
+
+    /// Same as ``featuredHomeStepMatch``; kept for call sites that still use the older name.
+    var heroPrimaryStepMatch: HomeActiveMatch? { featuredHomeStepMatch }
 
     private let repository = HomeRepository()
     private let activityRepository = ActivityRepository()
@@ -158,7 +152,7 @@ final class HomeViewModel: ObservableObject {
                 closestDeficit: nil
             )
         }
-        let margins = activeMatches.map { $0.myToday - $0.theirToday }
+        let margins = activeMatches.map(\.comparableMargin)
         let winningCount = margins.filter { $0 > 0 }.count
         let losingCount = margins.filter { $0 < 0 }.count
         return BattleSummaryStats(
@@ -192,10 +186,25 @@ final class HomeViewModel: ObservableObject {
     var heroSummaryText: String? {
         guard let total = battleSummaryStats.totalActive, total > 0 else { return nil }
         let wins = battleSummaryStats.winningCount ?? 0
+        let losses = battleSummaryStats.losingCount ?? 0
+        let margins = activeMatches.map(\.comparableMargin)
+        let ties = margins.filter { $0 == 0 }.count
+        let hasBalanced = activeMatches.contains(where: \.isBalancedStepsBattle)
+
         if let closestLead = battleSummaryStats.closestLead {
-            return "Leading \(wins) / \(total) matches · Closest: +\(closestLead.formatted())"
+            let leadSuffix = hasBalanced
+                ? " · Closest lead (Battle Score): +\(closestLead.formatted())"
+                : " · Closest: +\(closestLead.formatted()) steps"
+            return "Ahead in \(wins) / \(total) matches\(leadSuffix)"
         }
-        return "Leading \(wins) / \(total) matches"
+
+        if wins == 0, losses > 0 {
+            return "Trailing in \(losses) / \(total) matches"
+        }
+        if ties == total {
+            return "All \(total) matches tied right now"
+        }
+        return "Ahead in \(wins) / \(total) matches"
     }
 
     var statusStripState: StatusStripState {
@@ -266,8 +275,8 @@ final class HomeViewModel: ObservableObject {
 
     var sortedActiveMatchesForHome: [HomeActiveMatch] {
         activeMatches.sorted { lhs, rhs in
-            let lhsMargin = lhs.myToday - lhs.theirToday
-            let rhsMargin = rhs.myToday - rhs.theirToday
+            let lhsMargin = lhs.comparableMargin
+            let rhsMargin = rhs.comparableMargin
 
             let lhsCategory = sortCategory(for: lhsMargin)
             let rhsCategory = sortCategory(for: rhsMargin)

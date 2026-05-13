@@ -47,19 +47,21 @@ struct HomeView: View {
                             .accessibilityHidden(true)
                             .padding(.top, 10)
                     } else {
-                        if let primaryMatch = viewModel.heroPrimaryStepMatch {
+                        if let primaryMatch = viewModel.featuredHomeStepMatch {
                             Button {
                                 onOpenMatchDetails(primaryMatch.id, primaryMatch.opponent.displayName)
                             } label: {
                                 HomeBattleHeroCard(
-                                    matches: heroSortedStepMatches
+                                    matches: heroSortedStepMatches,
+                                    featuredMatch: primaryMatch
                                 )
                             }
                             .buttonStyle(.plain)
                             .padding(.top, 10)
                         } else {
                             HomeBattleHeroCard(
-                                matches: heroSortedStepMatches
+                                matches: heroSortedStepMatches,
+                                featuredMatch: nil
                             )
                             .padding(.top, 10)
                         }
@@ -485,7 +487,7 @@ struct HomeView: View {
             )
             miniStatCard(
                 label: "Closest Deficit",
-                value: summary.closestDeficit.map(formattedSignedMargin) ?? "--",
+                value: summary.closestDeficit.map { abs($0).formatted() } ?? "--",
                 accent: FitUpColors.Neon.red
             )
         }

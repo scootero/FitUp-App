@@ -156,6 +156,50 @@ struct HomeActiveMatch: Identifiable, Equatable {
     }
 }
 
+/// Home hero, sorting, and summaries: same comparable scores as Match Details (balanced → Battle Score; else raw metric totals).
+enum HomeComparableBattleState: Equatable, Sendable {
+    case ahead
+    case behind
+    case tied
+}
+
+extension HomeActiveMatch {
+    var comparableMyScore: Int {
+        isBalancedStepsBattle ? myBattleScore : myToday
+    }
+
+    var comparableTheirScore: Int {
+        isBalancedStepsBattle ? theirBattleScore : theirToday
+    }
+
+    var comparableMargin: Int {
+        comparableMyScore - comparableTheirScore
+    }
+
+    var homeComparableBattleState: HomeComparableBattleState {
+        let m = comparableMargin
+        if m > 0 { return .ahead }
+        if m < 0 { return .behind }
+        return .tied
+    }
+
+    /// Featured step battle for Home: closest deficit first, then closest cushion, then strongest opponent by comparable score.
+    static func featuredStepMatch(from stepMatches: [HomeActiveMatch]) -> HomeActiveMatch? {
+        guard !stepMatches.isEmpty else { return nil }
+        let closestAhead = stepMatches
+            .filter { $0.comparableTheirScore > $0.comparableMyScore }
+            .min(by: {
+                ($0.comparableTheirScore - $0.comparableMyScore) < ($1.comparableTheirScore - $1.comparableMyScore)
+            })
+        if let closestAhead { return closestAhead }
+        let closestBehind = stepMatches
+            .filter { $0.comparableTheirScore <= $0.comparableMyScore }
+            .max(by: { $0.comparableTheirScore < $1.comparableTheirScore })
+        if let closestBehind { return closestBehind }
+        return stepMatches.max(by: { $0.comparableTheirScore < $1.comparableTheirScore })
+    }
+}
+
 struct HomePendingMatch: Identifiable, Equatable {
     let id: UUID
     let challengeId: UUID?
