@@ -27,8 +27,22 @@ private enum EnergyBeamHeroLastDisplayedMarginStore {
 }
 
 struct HomeEnergyBeamHeroCard: View {
+    /// Flat zeros when opponent series not loaded yet; length matches ``HomeHeroSparklineLoader.normalizedSparklinePointCount``.
+    private static let neutralOpponentSparkline: [CGFloat] = Array(
+        repeating: 0,
+        count: HomeHeroSparklineLoader.normalizedSparklinePointCount
+    )
+
     let match: HomeActiveMatch?
     let profile: Profile?
+    /// When non-nil, replaces mock intraday sparkline for the current user (normalized 0…1 samples).
+    let sparklineUserValues: [CGFloat]?
+    /// When non-nil, replaces mock intraday sparkline for the opponent.
+    let sparklineOpponentValues: [CGFloat]?
+    /// Last successful HealthKit steps read (`HomeViewModel.heroViewerHealthKitStepsReadAt`).
+    let viewerIntradayHealthKitSyncedAt: Date?
+    /// Latest opponent tick `recorded_at` from sparkline fetch (`HomeViewModel.heroOpponentIntradayLatestTickAt`).
+    let opponentIntradayLatestTickAt: Date?
     /// DEBUG Home beam lab: when non-nil, procedural beam uses this margin; copy and momentum use real `displayMargin`.
     let beamCollisionMarginOverride: Int?
 
@@ -48,9 +62,21 @@ struct HomeEnergyBeamHeroCard: View {
         return "Opponent"
     }
 
-    init(match: HomeActiveMatch?, profile: Profile?, beamCollisionMarginOverride: Int? = nil) {
+    init(
+        match: HomeActiveMatch?,
+        profile: Profile?,
+        sparklineUserValues: [CGFloat]? = nil,
+        sparklineOpponentValues: [CGFloat]? = nil,
+        viewerIntradayHealthKitSyncedAt: Date? = nil,
+        opponentIntradayLatestTickAt: Date? = nil,
+        beamCollisionMarginOverride: Int? = nil
+    ) {
         self.match = match
         self.profile = profile
+        self.sparklineUserValues = sparklineUserValues
+        self.sparklineOpponentValues = sparklineOpponentValues
+        self.viewerIntradayHealthKitSyncedAt = viewerIntradayHealthKitSyncedAt
+        self.opponentIntradayLatestTickAt = opponentIntradayLatestTickAt
         self.beamCollisionMarginOverride = beamCollisionMarginOverride
         let initial: Double
         if let match {
@@ -83,12 +109,15 @@ struct HomeEnergyBeamHeroCard: View {
                     resultEyebrowColor: Self.resultEyebrowColor(for: displayedMarginInt),
                     resultHeroNumberText: Self.resultHeroNumberText(for: displayedMarginInt),
                     unitLabel: Self.unitLabel(for: match),
-                    sparklineUserValues: EnergyBeamHeroMockSeries.cumulativeUser(wiggle: 0),
-                    sparklineOpponentValues: EnergyBeamHeroMockSeries.cumulativeOpponent(wiggle: 0),
+                    sparklineUserValues: sparklineUserValues ?? EnergyBeamHeroMockSeries.cumulativeUser(wiggle: 0),
+                    sparklineOpponentValues: sparklineOpponentValues ?? Self.neutralOpponentSparkline,
                     dayElapsedFraction: Self.dayProgressState(for: profile?.timezone).fraction,
                     dayProgressCaption: Self.dayProgressState(for: profile?.timezone).caption,
                     showMockTimelineDebugLabel: mockTimelineDebugFlag,
-                    collisionMarginOverride: beamCollisionMarginOverride
+                    viewerIntradayHealthKitSyncedAt: viewerIntradayHealthKitSyncedAt,
+                    opponentIntradayLatestTickAt: opponentIntradayLatestTickAt,
+                    collisionMarginOverride: beamCollisionMarginOverride,
+                    showTopBrandHeader: false
                 )
                 .onAppear {
                     reconcileToTarget(match, animated: !reduceMotion)

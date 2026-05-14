@@ -9,6 +9,11 @@ import Combine
 import Foundation
 import SwiftUI
 
+/// Slice 7 — holds the next featured match while the opponent handoff overlay runs.
+struct HeroOpponentHandoffOverlayModel: Equatable {
+    let newMatch: HomeActiveMatch
+}
+
 @MainActor
 final class HomeViewModel: ObservableObject {
     struct ActivityStats: Equatable {
@@ -90,6 +95,15 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var isFriendRequestActionLoading = false
     /// Home hero stack is steps-only in this slice; kept for cache/logging compatibility.
     @Published var heroMetric: HomeBattleHeroCard.HeroMetric = .steps
+    /// Normalized 0…1 intraday samples for the energy hero sparkline; `nil` uses mock curves in `HomeEnergyBeamHeroCard`.
+    @Published private(set) var heroSparklineUserSeries: [CGFloat]?
+    @Published private(set) var heroSparklineOpponentSeries: [CGFloat]?
+    /// Last time HealthKit today’s **steps** read succeeded for the hero patch (Slice 6).
+    @Published private(set) var heroViewerHealthKitStepsReadAt: Date?
+    /// Latest opponent intraday tick `recorded_at` from the last successful sparkline fetch (Slice 6).
+    @Published private(set) var heroOpponentIntradayLatestTickAt: Date?
+    /// Slice 7: non-nil while the “new opponent” handoff overlay blocks the energy hero card.
+    @Published private(set) var heroOpponentHandoff: HeroOpponentHandoffOverlayModel?
     @Published private(set) var isHeroLoading = true
     @Published private(set) var isInitialLoading = true
     /// Full rows for the expandable Past Matches card (warmed by stats refresh; lazy-loaded if empty).
@@ -132,6 +146,9 @@ final class HomeViewModel: ObservableObject {
     /// When match-found and match-live both trigger in one reload, show live after the user dismisses match-found.
     private var deferredMatchActiveCelebration: HomeActiveMatch?
     private var heroHealthKitPatchTask: Task<Void, Never>?
+    private var heroSparklineFetchTask: Task<Void, Never>?
+    /// Bumps whenever sparkline scheduling changes so stale async results are ignored (Slice 5 + 6).
+    private var heroSparklineLoadGeneration: UInt64 = 0
     private var statsRefreshTask: Task<Void, Never>?
     private var heroHealthKitValueByMetric: [String: Int] = [:]
     private var heroLoadStartedAt: Date?
@@ -332,6 +349,12 @@ final class HomeViewModel: ObservableObject {
             isStatsLoading = false
             isStatsRefreshing = false
             heroHealthKitValueByMetric = [:]
+            heroSparklineUserSeries = nil
+            heroSparklineOpponentSeries = nil
+            heroViewerHealthKitStepsReadAt = nil
+            heroOpponentIntradayLatestTickAt = nil
+            heroSparklineLoadGeneration &+= 1
+            heroOpponentHandoff = nil
             heroLoadStartedAt = Date()
             heroStateResolvedAt = nil
             lastStatsRefreshAt = nil
@@ -368,6 +391,13 @@ final class HomeViewModel: ObservableObject {
         Task { await reload(force: false) }
     }
 
+    /// Resumes background polling when Home becomes visible again (e.g. after `stop()` ran under a full-screen cover).
+    func resumeHomeLivePipeline(profile: Profile?, sessionStore: SessionStore) {
+        guard let profileId = profile?.id, profileId == userId else { return }
+        self.sessionStore = sessionStore
+        startPollingIfNeeded()
+    }
+
     func stop() {
         celebrationDismissTask?.cancel()
         celebrationDismissTask = nil
@@ -377,6 +407,10 @@ final class HomeViewModel: ObservableObject {
         declineFeedbackDismissTask = nil
         heroHealthKitPatchTask?.cancel()
         heroHealthKitPatchTask = nil
+        heroSparklineFetchTask?.cancel()
+        heroSparklineFetchTask = nil
+        heroSparklineLoadGeneration &+= 1
+        heroOpponentHandoff = nil
         statsRefreshTask?.cancel()
         statsRefreshTask = nil
         completedMatchesListTask?.cancel()
@@ -457,6 +491,7 @@ final class HomeViewModel: ObservableObject {
         syncHeroMetricWithActiveMatches()
         if isHeroLoading { isHeroLoading = false }
         persistFreshHeroSnapshot(profileId: userId)
+        Task { await self.refreshFeaturedOpponentLatestTickFromBatch(userId: userId) }
         await MatchRepository().syncBalancedBaselineFloorsIfNeeded(userId: userId, floorSteps: baselineFloor)
 
         var celebration: HomePendingMatch?
@@ -517,6 +552,7 @@ final class HomeViewModel: ObservableObject {
             refreshHomeStatsInBackground(userId: userId, force: true)
             scheduleHeroHealthKitPatch()
         }
+        evaluateHeroOpponentHandoffIfNeeded(userId: userId)
         return true
     }
 
@@ -812,6 +848,73 @@ final class HomeViewModel: ObservableObject {
         )
     }
 
+    // MARK: - Energy beam hero sparklines (Slice 5)
+
+    private func scheduleHeroSparklineRefresh() {
+        heroSparklineFetchTask?.cancel()
+
+        guard let match = featuredHomeStepMatch else {
+            heroSparklineLoadGeneration &+= 1
+            heroSparklineUserSeries = nil
+            heroSparklineOpponentSeries = nil
+            heroOpponentIntradayLatestTickAt = nil
+            return
+        }
+        guard normalizedHeroMetricType(match.metricType) == "steps" else {
+            heroSparklineLoadGeneration &+= 1
+            heroSparklineUserSeries = nil
+            heroSparklineOpponentSeries = nil
+            heroOpponentIntradayLatestTickAt = nil
+            return
+        }
+
+        heroSparklineLoadGeneration &+= 1
+        let generation = heroSparklineLoadGeneration
+        let matchId = match.id
+        let tzId = profileTimeZoneIdentifier
+
+        heroSparklineFetchTask = Task { [weak self] in
+            guard let self else { return }
+            let result = await HomeHeroSparklineLoader.loadSparklineSeries(
+                profileTimeZoneIdentifier: tzId,
+                match: match
+            )
+            guard !Task.isCancelled else { return }
+            guard self.heroSparklineLoadGeneration == generation else { return }
+            guard self.featuredHomeStepMatch?.id == matchId else { return }
+            self.heroSparklineUserSeries = result.userSeries
+            self.heroSparklineOpponentSeries = result.opponentSeries
+            self.heroOpponentIntradayLatestTickAt = result.opponentLatestTickRecordedAt
+        }
+    }
+
+    /// Slice 8: one RPC for latest opponent tick times; primes ``heroOpponentIntradayLatestTickAt`` before the heavier sparkline fetch.
+    private func refreshFeaturedOpponentLatestTickFromBatch(userId: UUID) async {
+        guard self.userId == userId else { return }
+        guard let match = featuredHomeStepMatch else { return }
+        guard normalizedHeroMetricType(match.metricType) == "steps" else { return }
+        let opponentId = match.opponent.id
+        let featuredId = match.id
+        let tz = profileTimeZoneIdentifier
+
+        do {
+            let rows = try await UserIntradayStepTicksRepository().fetchLatestOpponentTicksForActiveMatches(
+                calendarDate: Date(),
+                viewerTimezoneIdentifier: tz
+            )
+            guard self.userId == userId else { return }
+            guard let row = rows.first(where: { $0.opponentProfileId == opponentId }) else { return }
+            guard featuredHomeStepMatch?.id == featuredId else { return }
+            if let existing = heroOpponentIntradayLatestTickAt {
+                heroOpponentIntradayLatestTickAt = max(existing, row.recordedAt)
+            } else {
+                heroOpponentIntradayLatestTickAt = row.recordedAt
+            }
+        } catch {
+            // RPC may be absent until manual SQL is applied; sparkline path still backfills.
+        }
+    }
+
     // MARK: - Hero HealthKit patch
 
     private func scheduleHeroHealthKitPatch() {
@@ -836,6 +939,7 @@ final class HomeViewModel: ObservableObject {
                 value = try await HealthKitService.fetchTodayStepCount()
             }
         } catch {
+            scheduleHeroSparklineRefresh()
             return
         }
         applyHeroHealthKitPatch(
@@ -874,6 +978,10 @@ final class HomeViewModel: ObservableObject {
                 "value": "\(value)",
             ]
         )
+        if metricType == "steps" {
+            heroViewerHealthKitStepsReadAt = Date()
+        }
+        scheduleHeroSparklineRefresh()
     }
 
     private func applyHealthKitOverrides(to matches: [HomeActiveMatch]) -> [HomeActiveMatch] {
@@ -933,6 +1041,11 @@ final class HomeViewModel: ObservableObject {
         defer { lastHomeProfileLocalDate = localDate }
         guard let previousDate = lastHomeProfileLocalDate, previousDate != localDate else { return }
         heroHealthKitValueByMetric.removeAll()
+        heroSparklineUserSeries = nil
+        heroSparklineOpponentSeries = nil
+        heroViewerHealthKitStepsReadAt = nil
+        heroOpponentIntradayLatestTickAt = nil
+        heroSparklineLoadGeneration &+= 1
         guard !activeMatches.isEmpty else { return }
         activeMatches = activeMatches.map { match in
             HomeActiveMatch(
@@ -1190,5 +1303,76 @@ final class HomeViewModel: ObservableObject {
             AppLogger.log(category: "matchmaking", level: .warning, message: "decline challenge failed", metadata: ["error": error.localizedDescription])
         }
     }
+
+    // MARK: - Featured opponent handoff (Slice 7)
+
+    private enum FeaturedOpponentHandoffStore {
+        private static func key(userId: UUID) -> String {
+            "fitup.heroHandoff.lastFeaturedOpponentProfile.\(userId.uuidString)"
+        }
+
+        static func lastOpponentProfileId(userId: UUID) -> UUID? {
+            guard let s = UserDefaults.standard.string(forKey: key(userId: userId)),
+                  let u = UUID(uuidString: s) else { return nil }
+            return u
+        }
+
+        static func saveLastOpponent(_ opponentProfileId: UUID, userId: UUID) {
+            UserDefaults.standard.set(opponentProfileId.uuidString, forKey: key(userId: userId))
+        }
+
+        static func clear(userId: UUID) {
+            UserDefaults.standard.removeObject(forKey: key(userId: userId))
+        }
+    }
+
+    private func evaluateHeroOpponentHandoffIfNeeded(userId: UUID) {
+        guard HomeFeaturedOpponentHandoffFeature.isEnabled else { return }
+        guard self.userId == userId else { return }
+        guard !isHeroLoading else { return }
+
+        if let handoff = heroOpponentHandoff {
+            if let cur = featuredHomeStepMatch,
+               cur.opponent.id == handoff.newMatch.opponent.id,
+               cur.id == handoff.newMatch.id {
+                return
+            }
+            heroOpponentHandoff = nil
+        }
+
+        guard let match = featuredHomeStepMatch else {
+            FeaturedOpponentHandoffStore.clear(userId: userId)
+            return
+        }
+        guard normalizedHeroMetricType(match.metricType) == "steps" else { return }
+
+        let newOppId = match.opponent.id
+        if let previous = FeaturedOpponentHandoffStore.lastOpponentProfileId(userId: userId), previous != newOppId {
+            heroOpponentHandoff = HeroOpponentHandoffOverlayModel(newMatch: match)
+        } else {
+            FeaturedOpponentHandoffStore.saveLastOpponent(newOppId, userId: userId)
+        }
+    }
+
+    func completeHeroOpponentHandoff() {
+        guard let userId else {
+            heroOpponentHandoff = nil
+            return
+        }
+        guard let model = heroOpponentHandoff else { return }
+        FeaturedOpponentHandoffStore.saveLastOpponent(model.newMatch.opponent.id, userId: userId)
+        heroOpponentHandoff = nil
+        scheduleHeroSparklineRefresh()
+    }
+
+    #if DEBUG
+    /// DEBUG only — plays Slice 7 overlay using the current featured opponent (no opponent change required).
+    func debugPreviewHeroOpponentHandoff() {
+        guard heroOpponentHandoff == nil else { return }
+        guard let m = featuredHomeStepMatch else { return }
+        guard normalizedHeroMetricType(m.metricType) == "steps" else { return }
+        heroOpponentHandoff = HeroOpponentHandoffOverlayModel(newMatch: m)
+    }
+    #endif
 
 }

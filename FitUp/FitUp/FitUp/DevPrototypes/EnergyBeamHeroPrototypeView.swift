@@ -20,7 +20,7 @@ private enum EnergyBeamHeroPrototypeKnobs {
     static let beamReferenceBattleValue: Int =  EnergyBeamHeroLayout.defaultBeamReferenceValue
 
     /// Opening slider / state value for battle margin (same units as Home: battle-score points for balanced preview). Directly drives starting **collision X** via the core’s `tanh` mapping. CPU: unchanged.
-    static let initialBattleMargin: Double = 100
+    static let initialBattleMargin: Double = 200
 
     /// Slider lower bound for margin experiments (large negative = “way behind” → collision slides toward the opponent side). CPU: unchanged.
     static let marginSliderMinimum: Double = -10_000
@@ -68,6 +68,9 @@ private enum EnergyBeamHeroPrototypeKnobs {
 
     /// When `true`, the sparkline shows a small DEBUG timeline label from the core. CPU: negligible (one extra Text).
     static let showMockTimelineDebugLabel: Bool = true
+
+    /// When `true`, the procedural beam uses `EnergyBeamVisualTuning.beginningIntro` (ghost / narrow preset). When `false`, matches Home (`endingProduction`).
+    static let useIntroBeamVisualTuning: Bool = false
 
     // MARK: “Simulate Health Update” random ranges
 
@@ -194,7 +197,10 @@ struct EnergyBeamHeroPrototypeView: View {
                     sparklineOpponentValues: EnergyBeamHeroMockSeries.cumulativeOpponent(wiggle: chartWiggleOpp),
                     dayElapsedFraction: EnergyBeamHeroPrototypeKnobs.mockDayElapsedFraction,
                     dayProgressCaption: EnergyBeamHeroPrototypeKnobs.mockDayProgressCaption,
-                    showMockTimelineDebugLabel: EnergyBeamHeroPrototypeKnobs.showMockTimelineDebugLabel
+                    showMockTimelineDebugLabel: EnergyBeamHeroPrototypeKnobs.showMockTimelineDebugLabel,
+                    viewerIntradayHealthKitSyncedAt: Date().addingTimeInterval(-320),
+                    opponentIntradayLatestTickAt: Date().addingTimeInterval(-4_200),
+                    beamVisualTuning: EnergyBeamHeroPrototypeKnobs.useIntroBeamVisualTuning ? .beginningIntro : .endingProduction
                 )
 
                 previewControlsSection

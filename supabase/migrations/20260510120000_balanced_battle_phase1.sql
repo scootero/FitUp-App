@@ -177,14 +177,21 @@ BEGIN
 
   v_base_date := (timezone(v_tz, v_starts_at))::date;
 
+  -- Balanced steps: snapshot rolling averages (subquery avoids invalid mp reference in FROM).
   UPDATE match_participants mp
-  SET baseline_steps = COALESCE(uhb.rolling_avg_30d_steps, uhb.rolling_avg_7d_steps)
-  FROM matches m
-  LEFT JOIN user_health_baselines uhb ON uhb.user_id = mp.user_id
-  WHERE mp.match_id = p_match_id
-    AND m.id = mp.match_id
-    AND m.scoring_mode = 'balanced'
-    AND m.metric_type = 'steps';
+  SET baseline_steps = src.baseline
+  FROM (
+    SELECT
+      mp2.id,
+      COALESCE(uhb.rolling_avg_30d_steps, uhb.rolling_avg_7d_steps) AS baseline
+    FROM match_participants mp2
+    INNER JOIN matches m ON m.id = mp2.match_id AND m.id = p_match_id
+    LEFT JOIN user_health_baselines uhb ON uhb.user_id = mp2.user_id
+    WHERE mp2.match_id = p_match_id
+      AND m.scoring_mode = 'balanced'
+      AND m.metric_type = 'steps'
+  ) src
+  WHERE mp.id = src.id;
 
   FOR v_day IN 1..v_duration LOOP
     INSERT INTO match_days (match_id, day_number, calendar_date, status)

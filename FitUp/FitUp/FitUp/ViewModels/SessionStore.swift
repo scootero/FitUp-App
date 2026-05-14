@@ -25,6 +25,9 @@ final class SessionStore: ObservableObject {
     @Published private(set) var healthKitPromptCompleted = false
     @Published private(set) var showSearchingCardOnHome = false
 
+    /// Bumped when root UI (e.g. challenge flow) dismisses so Home refetches searching rows without waiting for poll.
+    @Published private(set) var homeSnapshotRefreshToken: UInt64 = 0
+
     /// Set by push handling (`match_found`, `challenge_received`); consumed when Home loads a pending card for this id.
     private var pendingMatchFoundCelebrationMatchId: UUID?
 
@@ -389,6 +392,10 @@ final class SessionStore: ObservableObject {
     func clearSearchingCardOnHomeFlag() {
         guard showSearchingCardOnHome else { return }
         showSearchingCardOnHome = false
+    }
+
+    func requestHomeSnapshotRefresh() {
+        homeSnapshotRefreshToken &+= 1
     }
 
     func queueMatchFoundCelebration(matchId: UUID) {

@@ -1,0 +1,4 @@
+-- Optional read-only check for Slice 8 RPC (run in SQL Editor as `authenticated` / anon won’t see rows).
+-- Use the same calendar_date string the app sends for “today” in the viewer’s profile timezone.
+-- Example:
+--   SELECT * FROM public.fetch_latest_opponent_intraday_ticks_for_active_matches('2026-05-13'::date);

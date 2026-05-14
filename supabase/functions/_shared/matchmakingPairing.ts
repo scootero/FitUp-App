@@ -26,13 +26,17 @@ export async function runMatchmakingPairing(requestId: string): Promise<Matchmak
 
   const { data: matchRow, error: matchErr } = await supabaseAdmin
     .from("matches")
-    .select("metric_type, duration_days")
+    .select("metric_type, duration_days, state")
     .eq("id", matchIdStr)
     .limit(1)
     .maybeSingle();
   if (matchErr) {
     throw matchErr;
   }
+
+  const matchState = String(matchRow?.state ?? "").toLowerCase();
+  const eventType = matchState === "active" ? "match_active" : "match_found";
+  const deepLinkTarget = matchState === "active" ? "match_details" : "home";
 
   const { data: participantRows, error: participantErr } = await supabaseAdmin
     .from("match_participants")
@@ -63,13 +67,14 @@ export async function runMatchmakingPairing(requestId: string): Promise<Matchmak
 
     await invokeInternalFunction("dispatch-notification", {
       user_id: userId,
-      event_type: "match_found",
+      event_type: eventType,
       payload: {
         match_id: matchIdStr,
         metric_type: metricType,
         duration_days: durationDays,
+        day_number: 1,
         opponent_display_name: opponentDisplayName,
-        deep_link_target: "home",
+        deep_link_target: deepLinkTarget,
       },
     });
   }

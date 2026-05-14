@@ -28,6 +28,8 @@ actor MetricSyncCoordinator {
     private let snapshotRepository = MetricSnapshotRepository()
     private let matchDayRepository = MatchDayRepository()
     private let publicDailyActivityRepository = PublicDailyActivityRepository()
+    private let intradayStepTicksRepository = UserIntradayStepTicksRepository()
+    private let userDailyStepTotalsRepository = UserDailyStepTotalsRepository()
 
     private var activeProfile: Profile?
     private var hasObserverPipeline = false
@@ -133,6 +135,12 @@ actor MetricSyncCoordinator {
             handleHealthReadError(error, profile: profile, metricType: .steps)
         }
 
+        let intradayTickLogSummary = await appendIntradayStepTickIfEligible(
+            profile: profile,
+            stepsTotal: stepsTotal,
+            trigger: trigger
+        )
+
         do {
             caloriesTotal = try await HealthKitService.fetchTodayActiveCalories()
         } catch {
@@ -152,6 +160,18 @@ actor MetricSyncCoordinator {
                 category: "healthkit_sync",
                 level: .warning,
                 message: "public daily activity upsert failed",
+                userId: profile.id,
+                metadata: ["error": error.localizedDescription]
+            )
+        }
+
+        do {
+            try await userDailyStepTotalsRepository.syncRollingSevenCalendarDays(profile: profile)
+        } catch {
+            AppLogger.log(
+                category: "healthkit_sync",
+                level: .warning,
+                message: "user_daily_step_totals sync failed",
                 userId: profile.id,
                 metadata: ["error": error.localizedDescription]
             )
@@ -284,6 +304,7 @@ actor MetricSyncCoordinator {
                 "active_calories_today": caloriesTotal.map(String.init) ?? "nil",
                 "historical_targets": "\(historicalTargets.count)",
                 "snapshot_writes": "\(writes.count)",
+                "intraday_tick": intradayTickLogSummary,
             ]
         )
 
@@ -299,6 +320,107 @@ actor MetricSyncCoordinator {
                 userId: profile.id,
                 properties: analyticsProps.merging(["failure_stage": "public_daily_activity"], uniquingKeysWith: { _, new in new })
             )
+        }
+    }
+
+    /// Slice 4: upload cumulative today steps for the intraday chart pipeline (throttled).
+    private func appendIntradayStepTickIfEligible(
+        profile: Profile,
+        stepsTotal: Int?,
+        trigger: MetricSyncTrigger
+    ) async -> String {
+        guard let steps = stepsTotal else {
+            return "no_steps"
+        }
+
+        let tzIdForDay = profile.timezone ?? TimeZone.current.identifier
+        let calendarDateStr = HomeRepository.formatProfileCalendarDate(Date(), profileTimeZoneIdentifier: tzIdForDay)
+        let now = Date()
+        let decision = IntradayStepTickUploadPolicy.decision(
+            now: now,
+            stepsTotal: steps,
+            profileId: profile.id,
+            calendarDateStr: calendarDateStr
+        )
+
+        let baseMeta: [String: String] = [
+            "trigger": trigger.rawValue,
+            "pipeline": "MetricSyncCoordinator.appendIntradayStepTickIfEligible",
+            "calendar_date": calendarDateStr,
+            "steps": "\(steps)",
+        ]
+
+        switch decision {
+        case .skipNoSteps:
+            return "skip_invalid_steps"
+        case .skipUnchanged:
+            AppLogger.log(
+                category: "healthkit_sync",
+                level: .info,
+                message: "intraday step tick skipped (unchanged vs last upload)",
+                userId: profile.id,
+                metadata: baseMeta
+            )
+            return "skip_unchanged"
+        case let .skipDebounce(remainingSeconds):
+            AppLogger.log(
+                category: "healthkit_sync",
+                level: .info,
+                message: "intraday step tick skipped (debounce)",
+                userId: profile.id,
+                metadata: baseMeta.merging([
+                    "remaining_debounce_s": String(format: "%.1f", remainingSeconds),
+                ], uniquingKeysWith: { _, new in new })
+            )
+            return "skip_debounce"
+        case let .skipInsufficientIncrease(delta, lastUploaded):
+            AppLogger.log(
+                category: "healthkit_sync",
+                level: .info,
+                message: "intraday step tick skipped (delta < 100)",
+                userId: profile.id,
+                metadata: baseMeta.merging([
+                    "delta": "\(delta)",
+                    "last_uploaded_steps": "\(lastUploaded)",
+                ], uniquingKeysWith: { _, new in new })
+            )
+            return "skip_delta"
+        case .upload:
+            do {
+                let tickId = try await intradayStepTicksRepository.appendTick(
+                    calendarDate: now,
+                    profileTimeZoneIdentifier: profile.timezone,
+                    cumulativeSteps: steps,
+                    recordedAt: now
+                )
+                IntradayStepTickUploadPolicy.markUploaded(
+                    profileId: profile.id,
+                    calendarDateStr: calendarDateStr,
+                    steps: steps,
+                    at: now
+                )
+                AppLogger.log(
+                    category: "healthkit_sync",
+                    level: .info,
+                    message: "intraday step tick appended",
+                    userId: profile.id,
+                    metadata: baseMeta.merging([
+                        "tick_id": tickId.uuidString,
+                    ], uniquingKeysWith: { _, new in new })
+                )
+                return "appended"
+            } catch {
+                AppLogger.log(
+                    category: "healthkit_sync",
+                    level: .warning,
+                    message: "intraday step tick append failed",
+                    userId: profile.id,
+                    metadata: baseMeta.merging([
+                        "error": error.localizedDescription,
+                    ], uniquingKeysWith: { _, new in new })
+                )
+                return "append_failed"
+            }
         }
     }
 

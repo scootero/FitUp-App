@@ -2,7 +2,8 @@
 //  LeaderboardRepository.swift
 //  FitUp
 //
-//  Slice 11 — Weekly leaderboard reads (global + friends: accepted `friendships` peers).
+//  Slice 11 — Weekly leaderboard reads (global + friends) via
+//  `weekly_steps_leaderboard_from_daily_totals` (`user_daily_step_totals`).
 //
 
 import Combine
@@ -57,6 +58,11 @@ final class LeaderboardRepository {
         return String(format: "%04d-%02d-%02d", y, m, d)
     }
 
+    /// Parses `yyyy-MM-dd` used for `p_week_start` / cache keys (UTC Monday).
+    static func dateFromWeekStartISOString(_ value: String) -> Date? {
+        isoDayFormatter.date(from: value)
+    }
+
     // MARK: - Public
 
     func fetchWeeklyStepsLeaderboard(
@@ -71,7 +77,7 @@ final class LeaderboardRepository {
             p_scope: scope.rawValue
         )
         let response: PostgrestResponse<[WeeklyStepsLeaderboardRPCRow]> = try await c
-            .rpc("weekly_steps_leaderboard", params: params)
+            .rpc("weekly_steps_leaderboard_from_daily_totals", params: params)
             .execute()
         return response.value.map { row in
             let safeName = row.display_name.trimmingCharacters(in: .whitespacesAndNewlines)

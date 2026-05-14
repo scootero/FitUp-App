@@ -88,6 +88,14 @@ Name (example): **`user_intraday_step_ticks`**
 
 **Human:** Run scripts in Supabase SQL Editor in the order the agent specifies.
 
+**Slice 1 artifacts (repo):**
+
+| Order | File | Action |
+|-------|------|--------|
+| 1 | `supabase/manual_sql/intraday_step_ticks_slice1_create_table_rls.sql` | **Must run** — creates `user_intraday_step_ticks`, indexes, RLS, grants. |
+| 2 | `supabase/manual_sql/intraday_step_ticks_slice1_retention_ttl_7d.sql` | **Optional** — periodic 7-day TTL `DELETE` (UTC `calendar_date` cutoff; adjust later if needed). |
+| 3 | `supabase/manual_sql/verify_user_intraday_step_ticks.sql` | **Optional** — read-only verification. |
+
 ---
 
 ### Slice 2 — RPCs: insert + prune + fetch (security definer as needed)
@@ -100,6 +108,21 @@ Name (example): **`user_intraday_step_ticks`**
 
 **Human:** Run new SQL files after review.
 
+**Slice 2 artifacts (repo):**
+
+| Order | File | Action |
+|-------|------|--------|
+| 1 | `supabase/manual_sql/intraday_step_ticks_slice2_rpcs.sql` | **Must run** — `intraday_step_ticks_prune_one_victim` (internal, no client grant), `append_user_intraday_step_tick`, `prune_user_intraday_step_tick_day`, `fetch_opponent_intraday_step_ticks` + `GRANT EXECUTE` to `authenticated`. |
+| 2 | `supabase/manual_sql/verify_intraday_step_ticks_rpcs.sql` | **Optional** — read-only verification. |
+
+**RPC summary:**
+
+| RPC | Purpose |
+|-----|---------|
+| `append_user_intraday_step_tick(p_calendar_date, p_timezone_identifier, p_cumulative_steps, p_recorded_at default now())` | Insert one tick for `auth.uid()`’s profile; prune that day to ≤30 rows. Returns new `uuid`. |
+| `prune_user_intraday_step_tick_day(p_calendar_date)` | Prune only (repair/backfill); returns number of rows removed. |
+| `fetch_opponent_intraday_step_ticks(p_opponent_profile_id, p_calendar_date, p_since default null)` | Returns opponent’s ticks if **active** match with both `accepted_at` set; optional `p_since` for incremental fetch. |
+
 ---
 
 ### Slice 3 — Swift: `MetricSnapshotRepository`-style client for ticks
@@ -109,6 +132,20 @@ Name (example): **`user_intraday_step_ticks`**
 > Implement **Slice 3** from `FitUp/docs/intraday-step-ticks-implementation-slices.md`: add a small repository (e.g. `UserIntradayStepTicksRepository`) calling Supabase RPCs for insert + optional fetch helpers. Unit-test or document request/response shapes. No UI yet.
 
 **Depends on:** Slice 2 RPCs deployed manually (or stubs with `#if DEBUG` only if you must compile before SQL exists—avoid if possible).
+
+**Slice 3 artifacts (repo):**
+
+| Item | Location |
+|------|-----------|
+| Repository + models | `FitUp/FitUp/FitUp/Repositories/UserIntradayStepTicksRepository.swift` |
+
+**Public API:**
+
+- `appendTick(calendarDate:profileTimeZoneIdentifier:cumulativeSteps:recordedAt:)` → `UUID` (RPC `append_user_intraday_step_tick`)
+- `pruneDay(calendarDate:profileTimeZoneIdentifier:)` → `Int` rows removed (RPC `prune_user_intraday_step_tick_day`)
+- `fetchOpponentTicks(opponentProfileId:calendarDate:opponentTimezoneIdentifier:sinceRecordedAt:)` → `[OpponentIntradayStepTick]` (RPC `fetch_opponent_intraday_step_ticks`)
+
+Calendar strings use `HomeRepository.formatProfileCalendarDate` with the same `yyyy-MM-dd` convention as the rest of Home.
 
 **Parallel:** Can start **after** Slice 1 is merged to repo **if** RPC signatures are frozen in the SQL file first (define RPC names in Slice 1/2 before Swift lands).
 
@@ -122,7 +159,16 @@ Name (example): **`user_intraday_step_ticks`**
 
 **Depends on:** Slice 3 repository.
 
-**Parallel:** **Not** with Slice 5/6 until insert path exists; **can** overlap with Slice 2 **only if** RPC contract is already in the manual SQL file.
+**Slice 4 artifacts (repo):**
+
+| Item | Location |
+|------|-----------|
+| Throttle policy (UserDefaults) | `FitUp/FitUp/FitUp/Services/IntradayStepTickUploadPolicy.swift` |
+| HK sync integration | `FitUp/FitUp/FitUp/Services/MetricSyncCoordinator.swift` — after successful `fetchTodayStepCount`, calls `UserIntradayStepTicksRepository.appendTick` when policy allows; `metric sync finished` metadata key `intraday_tick` (`appended`, `skip_*`, `append_failed`, `no_steps`). |
+
+**Rules:** 300s minimum between **successful** uploads per profile+calendar day; first upload of that day has no ±100 requirement; later uploads require **≥100** net increase vs last uploaded cumulative while steps are **increasing**; HK **decreases** (corrections) can upload after debounce without the +100 rule; exact duplicate cumulative vs last upload → skip.
+
+**Parallel:** Slice **5**/**6** need a **read** path (Slice **3** RPCs) for meaningful Home testing; **writes** (Slice **4**) make opponent series realistic in dev/prod but are not strictly required to **compile** Slice 5. Do not start Slice 5 assuming production opponent ticks exist until Slice 4 is deployed or you seed data manually. **Can** overlap with Slice 2 **only if** RPC names and params are frozen in the manual SQL file.
 
 ---
 
@@ -134,7 +180,18 @@ Name (example): **`user_intraday_step_ticks`**
 
 **Depends on:** Slice 3 (fetch RPC), Slice 4 optional for end-to-end testing (opponent data must exist).
 
-**Parallel:** Slice 6 can be developed in parallel **only if** it consumes stable view-model hooks (see Slice 6).
+**Slice 5 artifacts (Home hero sparkline pipeline):**
+
+| Item | Location |
+|------|-----------|
+| Parallel fetch + ~4.5s budget + normalize to `[0…1]` | `FitUp/FitUp/FitUp/Services/HomeHeroSparklineLoader.swift` — `HomeHeroSparklineLoadResult` (`userSeries` / `opponentSeries` / `opponentLatestTickRecordedAt`); `HealthKitService.fetchIntradayCumulativeSeries` (steps) and `UserIntradayStepTicksRepository.fetchOpponentTicks` in sibling `Task`s; sleep then `cancel()`; `try? await` each `value` for partial results; `sinceRecordedAt` passed **`nil`** (full-day series required for interpolation; incremental `since` needs a merge/cache story later). |
+| Published series + scheduling | `FitUp/FitUp/FitUp/ViewModels/HomeViewModel.swift` — `heroSparklineUserSeries` / `heroSparklineOpponentSeries`, `heroSparklineFetchTask`, `scheduleHeroSparklineRefresh()`; called from `applyHeroHealthKitPatch` and from `executeHeroHealthKitPatch` on HK **failure** so opponent ticks still load; clears on user switch, `stop()`, and home **local day** rollover; cancels in-flight fetch when rescheduling; ignores results if featured step match **id** changed. |
+| Pass-through to energy hero | `FitUp/FitUp/FitUp/Views/Home/HomeView.swift` — `sparklineUserValues` / `sparklineOpponentValues` on `HomeEnergyBeamHeroCard`. |
+| Mock fallback when side is `nil` | `FitUp/FitUp/FitUp/Views/Home/Sections/HomeEnergyBeamHeroCard.swift` — optional series parameters default to mock curves. |
+
+**Featured opponent:** unchanged — still `HomeActiveMatch.featuredStepMatch(from: activeStepMatches)` / `featuredHomeStepMatch` in `HomeViewModel`.
+
+**Parallel:** Slice **6** can start in parallel once these **stable anchors** exist (they do in the artifacts above): `@MainActor` `HomeViewModel`, hero HK patch entrypoints (`executeHeroHealthKitPatch` / `applyHeroHealthKitPatch`), and sparkline scheduling (`scheduleHeroSparklineRefresh`). Slice 6 adds **new** `@Published` freshness fields and UI; it should not change featured selection or the sparkline fetch contract without a new slice note.
 
 ---
 
@@ -145,6 +202,15 @@ Name (example): **`user_intraday_step_ticks`**
 > Implement **Slice 6** from `FitUp/docs/intraday-step-ticks-implementation-slices.md`: expose **last successful HK read time** and **opponent’s latest tick time** (or server message) to the hero / beam UI in a subtle, on-brand way (both sides). Wire from Slice 5 view model state.
 
 **Depends on:** Slice 5 (or stub times until Slice 5 lands).
+
+**Slice 6 artifacts (freshness UI):**
+
+| Item | Location |
+|------|-----------|
+| Published timestamps | `FitUp/FitUp/FitUp/ViewModels/HomeViewModel.swift` — `heroViewerHealthKitStepsReadAt` (set when steps HK patch succeeds), `heroOpponentIntradayLatestTickAt` (from `HomeHeroSparklineLoadResult.opponentLatestTickRecordedAt`); cleared on user switch, day rollover, and sparkline schedule teardown paths aligned with Slice 5. |
+| Opponent latest tick from fetch | `FitUp/FitUp/FitUp/Services/HomeHeroSparklineLoader.swift` — `HomeHeroSparklineLoadResult.opponentLatestTickRecordedAt` (`max(recordedAt)` over returned ticks). |
+| Hero UI row | `FitUp/FitUp/FitUp/Views/Home/Sections/EnergyBeam/EnergyBeamHeroCore.swift` — `EnergyBeamIntradayFreshnessRow` under `DayBattleSparklinePreview`; `EnergyBeamHeroGlassCardView` optional `viewerIntradayHealthKitSyncedAt` / `opponentIntradayLatestTickAt`. |
+| Wiring | `FitUp/FitUp/FitUp/Views/Home/Sections/HomeEnergyBeamHeroCard.swift`, `FitUp/FitUp/FitUp/Views/Home/HomeView.swift`. DEBUG prototype sample times: `FitUp/FitUp/FitUp/DevPrototypes/EnergyBeamHeroPrototypeView.swift`. |
 
 **Parallel:** **Yes** — different files from Slice 4; can start once Slice 5 **interfaces** are known (protocol or placeholder VM).
 
@@ -158,6 +224,17 @@ Name (example): **`user_intraday_step_ticks`**
 
 **Depends on:** Slice 5 (featured id + data readiness). **Can** be feature-flagged.
 
+**Slice 7 artifacts:**
+
+| Item | Location |
+|------|-----------|
+| Feature toggle (default on) | `HomeFeaturedOpponentHandoffFeature` in `FitUp/FitUp/FitUp/Views/Home/Sections/HomeFeaturedOpponentHandoffOverlay.swift` — UserDefaults key `fitup.hero_opponent_handoff_enabled`. |
+| Overlay + message + wipe | `FitUp/FitUp/FitUp/Views/Home/Sections/HomeFeaturedOpponentHandoffOverlay.swift` |
+| State + last opponent persistence | `FitUp/FitUp/FitUp/ViewModels/HomeViewModel.swift` — `HeroOpponentHandoffOverlayModel`, `heroOpponentHandoff`, `evaluateHeroOpponentHandoffIfNeeded` (after reload), `completeHeroOpponentHandoff`, `FeaturedOpponentHandoffStore` (UserDefaults per user). |
+| Home wiring | `FitUp/FitUp/FitUp/Views/Home/HomeView.swift` — energy hero path shows overlay when `heroOpponentHandoff != nil`. |
+
+**Behavior:** After each successful Home reload, if the **featured steps** opponent profile id differs from the last saved id for this user, the energy hero is replaced temporarily by the overlay; on finish, the saved id updates and `scheduleHeroSparklineRefresh()` runs. **Reduce Motion** shortens message and wipe. `stop()` / account switch clear in-flight handoff.
+
 **Parallel:** **Art/design-heavy** — can be built against mock state while Slice 5 is in flight if you define a `HeroOpponentTransitionState` enum early.
 
 ---
@@ -169,6 +246,16 @@ Name (example): **`user_intraday_step_ticks`**
 > Implement **Slice 8** from `FitUp/docs/intraday-step-ticks-implementation-slices.md`: Add one RPC or query pattern: given `auth.uid()`, return **latest `cumulative_steps` + `recorded_at` per opponent user_id** for all **active** matches for **viewer’s local calendar today** (or document match TZ if product requires). Use on Home refresh to cheaply compare totals / freshness without pulling full series for every opponent first.
 
 **Depends on:** Slice 1–2. **Can** land before Slice 5 if Home only needs “latest value” first; full series fetch remains Slice 5 for chart.
+
+**Slice 8 artifacts:**
+
+| Order | Item | Location |
+|-------|------|-----------|
+| 1 (human run) | RPC `fetch_latest_opponent_intraday_ticks_for_active_matches(p_calendar_date date)` | `supabase/manual_sql/intraday_step_ticks_slice8_batch_latest_rpcs.sql` |
+| 2 | Swift client + model | `FitUp/FitUp/FitUp/Repositories/UserIntradayStepTicksRepository.swift` — `OpponentLatestIntradayStepTickSummary`, `fetchLatestOpponentTicksForActiveMatches` |
+| 3 | Home refresh hook | `FitUp/FitUp/FitUp/ViewModels/HomeViewModel.swift` — `refreshFeaturedOpponentLatestTickFromBatch` after `persistFreshHeroSnapshot` on reload; merges with existing ``heroOpponentIntradayLatestTickAt`` via `max` so Slice 5/6 sparkline timestamps are not regressed. |
+
+**Calendar key:** Caller passes **viewer profile local** `yyyy-MM-dd` (same helper as other tick calls). Opponent rows must use that same `calendar_date` key in `user_intraday_step_ticks` to appear (aligned with current Home opponent fetch MVP).
 
 **Parallel:** **Yes** with Slice 3–4 if RPC is specified in SQL first.
 

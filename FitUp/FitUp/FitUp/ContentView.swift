@@ -106,6 +106,7 @@ private struct RootShellView: View {
                 launchContext: launchContext
             ) {
                 challengeLaunchContext = nil
+                sessionStore.requestHomeSnapshotRefresh()
             }
             .environmentObject(sessionStore)
             .trackProductScreen("challenge_flow", userId: sessionStore.currentProfile?.id)

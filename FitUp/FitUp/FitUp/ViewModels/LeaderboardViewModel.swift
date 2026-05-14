@@ -42,6 +42,7 @@ final class LeaderboardViewModel: ObservableObject {
     @Published var isCurrentUserListRowVisible = true
 
     private let repository = LeaderboardRepository()
+    private let snapshotCache = LeaderboardSnapshotCacheStore()
     private var cachedProfile: Profile?
 
     var shouldShowPinnedUserBar: Bool {
@@ -62,15 +63,15 @@ final class LeaderboardViewModel: ObservableObject {
             return
         }
 
-        isLoading = true
-        errorMessage = nil
         defer { isLoading = false }
 
         let weekStart = LeaderboardRepository.weekStartUTC()
+        let weekStartIso = LeaderboardRepository.weekStartISOString(from: weekStart)
         weekRangeLabel = Self.formatWeekRangeLabel(weekStart: weekStart)
+        errorMessage = nil
 
-        do {
-            if tab == .friends {
+        if tab == .friends {
+            do {
                 let friendIds = try await repository.fetchAcceptedFriendProfileIds(currentProfileId: profile.id)
                 friendsHasNoFriends = friendIds.isEmpty
                 if friendIds.isEmpty {
@@ -78,39 +79,72 @@ final class LeaderboardViewModel: ObservableObject {
                     listRows = []
                     return
                 }
-
-                let entries = try await repository.fetchWeeklyStepsLeaderboard(
-                    weekStart: weekStart,
-                    scope: .friends
-                )
-                let shaped = mapToDisplayRows(
-                    entries: entries,
-                    currentUserId: profile.id
-                )
-                splitPodiumAndList(shaped)
-            } else {
+            } catch {
                 friendsHasNoFriends = false
-                let entries = try await repository.fetchWeeklyStepsLeaderboard(
-                    weekStart: weekStart,
-                    scope: .global
+                errorMessage = "Could not load leaderboard."
+                AppLogger.log(
+                    category: "leaderboard",
+                    level: .warning,
+                    message: "leaderboard friends prefetch failed",
+                    userId: profile.id,
+                    metadata: ["error": error.localizedDescription]
                 )
-                let shaped = mapToDisplayRows(
-                    entries: entries,
-                    currentUserId: profile.id
-                )
-                splitPodiumAndList(shaped)
+                podiumRows = []
+                listRows = []
+                return
             }
-        } catch {
-            errorMessage = "Could not load leaderboard."
-            AppLogger.log(
-                category: "leaderboard",
-                level: .warning,
-                message: "leaderboard load failed",
-                userId: profile.id,
-                metadata: ["error": error.localizedDescription]
+        } else {
+            friendsHasNoFriends = false
+        }
+
+        let tabRaw = tab.rawValue
+        let cachedEntries = snapshotCache.load(
+            profileId: profile.id,
+            weekStartIso: weekStartIso,
+            tabRaw: tabRaw
+        )
+        if let cachedEntries {
+            let shaped = mapToDisplayRows(
+                entries: cachedEntries,
+                currentUserId: profile.id
             )
-            podiumRows = []
-            listRows = []
+            splitPodiumAndList(shaped)
+            isLoading = false
+        } else {
+            isLoading = true
+        }
+
+        let scope: LeaderboardRepository.LeaderboardScope = tab == .friends ? .friends : .global
+
+        do {
+            let entries = try await repository.fetchWeeklyStepsLeaderboard(
+                weekStart: weekStart,
+                scope: scope
+            )
+            let shaped = mapToDisplayRows(
+                entries: entries,
+                currentUserId: profile.id
+            )
+            splitPodiumAndList(shaped)
+            snapshotCache.save(
+                entries: entries,
+                profileId: profile.id,
+                weekStartIso: weekStartIso,
+                tabRaw: tabRaw
+            )
+        } catch {
+            if cachedEntries == nil {
+                errorMessage = "Could not load leaderboard."
+                AppLogger.log(
+                    category: "leaderboard",
+                    level: .warning,
+                    message: "leaderboard load failed",
+                    userId: profile.id,
+                    metadata: ["error": error.localizedDescription]
+                )
+                podiumRows = []
+                listRows = []
+            }
         }
     }
 
