@@ -144,7 +144,7 @@ struct ChallengeFlowView: View {
                 )
             }
             if isCheckingGate {
-                ProgressView("Checking match slot...")
+                ProgressView("Checking battle slot...")
                     .font(FitUpFont.body(13, weight: .medium))
                     .foregroundStyle(FitUpColors.Text.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -171,22 +171,30 @@ struct ChallengeFlowView: View {
             }
             .buttonStyle(.plain)
 
-            Text("New Challenge")
+            Text("New Battle")
                 .font(FitUpFont.display(18, weight: .black))
                 .foregroundStyle(FitUpColors.Text.primary)
 
             Spacer(minLength: 0)
-            Text("⚔️")
-                .font(.system(size: 18))
+
+            Button {
+                onClose()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close and return to home")
         }
     }
 
     private var blockedState: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Match slot full")
+            Text("Battle slot full")
                 .font(FitUpFont.display(20, weight: .black))
                 .foregroundStyle(FitUpColors.Text.primary)
-            Text("Free tier supports one open slot across searching, pending, and active matches.")
+            Text("Free tier supports one open slot across searching, pending, and active battles.")
                 .font(FitUpFont.body(13, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
             Button("View Plans") {
@@ -429,7 +437,7 @@ struct ChallengeFlowView: View {
                 sentOpponentName = "a matched opponent"
             } else {
                 guard let selectedOpponent else {
-                    errorMessage = "Choose an opponent or Quick Match."
+                    errorMessage = "Choose an opponent or Quick Battle."
                     return
                 }
                 let scoring = selectedMetric == .steps ? scoringModePreference : nil
@@ -450,7 +458,7 @@ struct ChallengeFlowView: View {
             }
             isSent = true
         } catch {
-            errorMessage = "Could not send challenge right now."
+            errorMessage = "Could not send battle right now."
             AppLogger.log(
                 category: "matchmaking",
                 level: .warning,

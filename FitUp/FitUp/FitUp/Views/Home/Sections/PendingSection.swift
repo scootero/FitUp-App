@@ -176,7 +176,7 @@ private struct PendingMatchRow: View {
         switch mode {
         case .actionRequired:
             if match.matchType == "direct_challenge" {
-                return "\(match.opponent.displayName) challenged you"
+                return "\(match.opponent.displayName) invited you to battle"
             }
             return "Opponent found: \(match.opponent.displayName)"
         case .waitingOnOpponent:

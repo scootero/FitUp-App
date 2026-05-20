@@ -45,6 +45,8 @@ struct HomeEnergyBeamHeroCard: View {
     let opponentIntradayLatestTickAt: Date?
     /// DEBUG Home beam lab: when non-nil, procedural beam uses this margin; copy and momentum use real `displayMargin`.
     let beamCollisionMarginOverride: Int?
+    /// Opens the new battle flow when the hero has no active step battle.
+    var onStartBattle: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -69,7 +71,8 @@ struct HomeEnergyBeamHeroCard: View {
         sparklineOpponentValues: [CGFloat]? = nil,
         viewerIntradayHealthKitSyncedAt: Date? = nil,
         opponentIntradayLatestTickAt: Date? = nil,
-        beamCollisionMarginOverride: Int? = nil
+        beamCollisionMarginOverride: Int? = nil,
+        onStartBattle: (() -> Void)? = nil
     ) {
         self.match = match
         self.profile = profile
@@ -78,6 +81,7 @@ struct HomeEnergyBeamHeroCard: View {
         self.viewerIntradayHealthKitSyncedAt = viewerIntradayHealthKitSyncedAt
         self.opponentIntradayLatestTickAt = opponentIntradayLatestTickAt
         self.beamCollisionMarginOverride = beamCollisionMarginOverride
+        self.onStartBattle = onStartBattle
         let initial: Double
         if let match {
             let live = match.comparableMargin
@@ -162,11 +166,20 @@ struct HomeEnergyBeamHeroCard: View {
                 .foregroundStyle(Color.white.opacity(0.38))
                 .tracking(2.4)
 
-            Text("Start or accept a battle to see today’s matchup here.")
+            Text("Start or accept a battle to see today’s battle here.")
                 .font(FitUpFont.body(14, weight: .semibold))
                 .foregroundStyle(FitUpColors.Text.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 12)
+
+            if let onStartBattle {
+                Button("New Battle") {
+                    onStartBattle()
+                }
+                .buttonStyle(.plain)
+                .solidButton(color: FitUpColors.Neon.cyan)
+                .padding(.top, 4)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)

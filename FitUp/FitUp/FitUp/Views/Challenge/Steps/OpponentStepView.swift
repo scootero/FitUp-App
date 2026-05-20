@@ -16,7 +16,7 @@ struct OpponentStepView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Who do you want to challenge?")
+            Text("Who do you want to battle?")
                 .font(FitUpFont.body(14, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
 
@@ -107,7 +107,7 @@ struct OpponentStepView: View {
                     }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Quick Match")
+                    Text("Quick Battle")
                         .font(FitUpFont.display(13, weight: .bold))
                         .foregroundStyle(FitUpColors.Text.primary)
                     Text("Find best available opponent")

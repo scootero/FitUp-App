@@ -100,7 +100,8 @@ struct HomeView: View {
                                     sparklineOpponentValues: viewModel.heroSparklineOpponentSeries,
                                     viewerIntradayHealthKitSyncedAt: viewModel.heroViewerHealthKitStepsReadAt,
                                     opponentIntradayLatestTickAt: viewModel.heroOpponentIntradayLatestTickAt,
-                                    beamCollisionMarginOverride: nil
+                                    beamCollisionMarginOverride: nil,
+                                    onStartBattle: { onOpenChallenge(nil) }
                                 )
                                 .padding(.top, 10)
                             }
@@ -780,10 +781,10 @@ struct HomeView: View {
             Text("No battles yet")
                 .font(FitUpFont.display(24, weight: .black))
             .fitUpGlobalTitleStyle(weight: .black, tracking: 0.25)
-            Text("Start a match to compete today.")
+            Text("Start a battle to compete today.")
                 .font(FitUpFont.body(14, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
-            Button("Find Your First Match") {
+            Button("New Battle") {
                 onOpenChallenge(nil)
             }
             .solidButton(color: FitUpColors.Neon.cyan)
@@ -1071,7 +1072,7 @@ private struct ChallengeDeclinedToast: View {
     var body: some View {
         Button(action: onDismiss) {
             VStack(spacing: 6) {
-                Text("CHALLENGE DECLINED")
+                Text("BATTLE DECLINED")
                     .font(FitUpFont.mono(13, weight: .heavy))
                     .foregroundStyle(FitUpColors.Neon.pink)
                     .shadow(color: FitUpColors.Neon.pink.opacity(0.45), radius: 8)
@@ -1105,7 +1106,7 @@ private struct ChallengeDeclinedToast: View {
             .opacity(appeared ? 1 : 0)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Challenge declined, tap to dismiss")
+        .accessibilityLabel("Battle declined, tap to dismiss")
         .onAppear {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                 appeared = true

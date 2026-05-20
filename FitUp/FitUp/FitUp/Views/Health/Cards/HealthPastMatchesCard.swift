@@ -37,7 +37,7 @@ struct HealthPastMatchesCard: View {
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Text("PAST MATCHES")
+                    Text("PAST BATTLES")
                         .font(FitUpFont.body(11, weight: .heavy))
                         .fitUpGlobalTitleStyle(weight: .heavy, tracking: 2)
 
@@ -58,20 +58,20 @@ struct HealthPastMatchesCard: View {
                 .homeLiquidGlassCard(.base)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Past matches")
+            .accessibilityLabel("Past battles")
             .accessibilityValue(
                 isLoading
                     ? "Loading"
-                    : (matches.isEmpty ? "No completed matches" : "\(matches.count) completed")
+                    : (matches.isEmpty ? "No completed battles" : "\(matches.count) completed")
             )
-            .accessibilityHint(isExpanded ? "Double tap to collapse" : "Double tap to expand past matches")
+            .accessibilityHint(isExpanded ? "Double tap to collapse" : "Double tap to expand past battles")
 
             if isExpanded {
                 if isLoading {
                     HStack(spacing: 10) {
                         ProgressView()
                             .tint(FitUpColors.Neon.cyan)
-                        Text("Loading completed matches...")
+                        Text("Loading completed battles...")
                             .font(FitUpFont.body(13, weight: .medium))
                             .foregroundStyle(FitUpColors.Text.secondary)
                     }
@@ -79,7 +79,7 @@ struct HealthPastMatchesCard: View {
                     .padding(.vertical, 14)
                     .homeLiquidGlassCard(.base)
                 } else if matches.isEmpty {
-                    Text("No completed matches yet.")
+                    Text("No completed battles yet.")
                         .font(FitUpFont.body(13, weight: .medium))
                         .foregroundStyle(FitUpColors.Text.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)

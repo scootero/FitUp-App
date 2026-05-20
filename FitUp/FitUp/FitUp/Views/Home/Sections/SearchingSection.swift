@@ -26,7 +26,7 @@ struct SearchingSection: View {
                                 .font(FitUpFont.body(13, weight: .bold))
                                 .foregroundStyle(FitUpColors.Text.primary)
                             HStack(spacing: 4) {
-                                Text("Matchmaking active ·")
+                                Text("Battle search active ·")
                                 Text("\(sportLabel(for: request.metricType)) · \(MatchDurationCopy.competitionLengthBadge(days: request.durationDays)) ·")
                                 SearchingElapsedLabel(createdAt: request.createdAt)
                             }

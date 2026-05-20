@@ -212,16 +212,16 @@ final class HomeViewModel: ObservableObject {
             let leadSuffix = hasBalanced
                 ? " · Closest lead (Battle Score): +\(closestLead.formatted())"
                 : " · Closest: +\(closestLead.formatted()) steps"
-            return "Ahead in \(wins) / \(total) matches\(leadSuffix)"
+            return "Ahead in \(wins) / \(total) battles\(leadSuffix)"
         }
 
         if wins == 0, losses > 0 {
-            return "Trailing in \(losses) / \(total) matches"
+            return "Trailing in \(losses) / \(total) battles"
         }
         if ties == total {
-            return "All \(total) matches tied right now"
+            return "All \(total) battles tied right now"
         }
-        return "Ahead in \(wins) / \(total) matches"
+        return "Ahead in \(wins) / \(total) battles"
     }
 
     var statusStripState: StatusStripState {

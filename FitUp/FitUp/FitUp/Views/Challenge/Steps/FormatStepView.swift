@@ -17,7 +17,7 @@ struct FormatStepView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Choose match format")
+            Text("Choose battle format")
                 .font(FitUpFont.body(14, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
 

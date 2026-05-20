@@ -25,10 +25,10 @@ struct PastMatchesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Past Matches")
+            SectionHeader(title: "Past Battles")
 
             if matches.isEmpty {
-                Text("No completed matches yet.")
+                Text("No completed battles yet.")
                     .font(FitUpFont.body(13, weight: .medium))
                     .foregroundStyle(FitUpColors.Text.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)

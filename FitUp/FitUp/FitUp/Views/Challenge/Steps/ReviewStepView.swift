@@ -40,7 +40,7 @@ struct ReviewStepView: View {
                     } else {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: 16, weight: .bold))
-                        Text("Send Challenge!")
+                        Text("Send Battle!")
                             .font(FitUpFont.body(16, weight: .heavy))
                     }
                 }
@@ -140,7 +140,7 @@ struct ReviewStepView: View {
                         .font(FitUpFont.body(11, weight: .medium))
                         .foregroundStyle(FitUpColors.Text.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("If no close match is found, the search may widen to find a match faster.")
+                    Text("If no close opponent is found, the search may widen to find a battle faster.")
                         .font(FitUpFont.body(11, weight: .medium))
                         .foregroundStyle(FitUpColors.Text.tertiary)
                         .fixedSize(horizontal: false, vertical: true)

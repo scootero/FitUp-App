@@ -38,7 +38,7 @@ struct DiscoverSection: View {
                     Button {
                         onChallenge(user)
                     } label: {
-                        Label("Challenge", systemImage: "bolt.fill")
+                        Label("Battle", systemImage: "bolt.fill")
                             .font(FitUpFont.body(12, weight: .bold))
                     }
                     .buttonStyle(.plain)

@@ -20,7 +20,7 @@ struct ChallengeSentView: View {
             Text("⚡")
                 .font(.system(size: 58))
 
-            Text("Challenge Sent!")
+            Text("Battle Sent!")
                 .font(FitUpFont.display(22, weight: .black))
                 .foregroundStyle(FitUpColors.Neon.cyan)
 

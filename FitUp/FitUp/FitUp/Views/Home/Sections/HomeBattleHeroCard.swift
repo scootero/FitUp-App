@@ -204,7 +204,7 @@ struct HomeBattleHeroCard: View {
     }
 
     private var heroCtaLine: String {
-        guard hasAnyActiveMatch else { return "Start a match to compete today" }
+        guard hasAnyActiveMatch else { return "Start a battle to compete today" }
         if let m = focusOpponentMatch, m.isBalancedStepsBattle {
             let myBS = m.myBattleScore
             let theirBS = m.theirBattleScore
@@ -418,7 +418,7 @@ struct HomeBattleHeroCard: View {
                             .font(FitUpFont.body(13, weight: .semibold))
                             .foregroundStyle(FitUpColors.Text.secondary)
                             .multilineTextAlignment(.center)
-                        Text("Start a match to compete today")
+                        Text("Start a battle to compete today")
                             .font(FitUpFont.body(12, weight: .medium))
                             .foregroundStyle(FitUpColors.Text.tertiary)
                             .multilineTextAlignment(.center)
