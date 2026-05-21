@@ -30,11 +30,9 @@ struct HomeView: View {
     @State private var isPastMatchesExpanded = false
     @State private var inviteWaitingPulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-#if DEBUG
     @State private var beamLabUseBeamPreviewOffset = false
     @State private var beamLabSliderOffset: Double = 0
-#endif
+    @State private var beamLabAppOpenPreviewToken = UUID()
 
     var body: some View {
         ZStack {
@@ -86,7 +84,9 @@ struct HomeView: View {
                                         sparklineOpponentValues: viewModel.heroSparklineOpponentSeries,
                                         viewerIntradayHealthKitSyncedAt: viewModel.heroViewerHealthKitStepsReadAt,
                                         opponentIntradayLatestTickAt: viewModel.heroOpponentIntradayLatestTickAt,
-                                        beamCollisionMarginOverride: beamCollisionOverrideForDebug(match: primaryMatch)
+                                        debugBeamLabEnabled: beamLabUseBeamPreviewOffset,
+                                        debugBeamCollisionDelta: beamLabSliderOffset,
+                                        debugAppOpenPreviewToken: beamLabAppOpenPreviewToken
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -100,7 +100,6 @@ struct HomeView: View {
                                     sparklineOpponentValues: viewModel.heroSparklineOpponentSeries,
                                     viewerIntradayHealthKitSyncedAt: viewModel.heroViewerHealthKitStepsReadAt,
                                     opponentIntradayLatestTickAt: viewModel.heroOpponentIntradayLatestTickAt,
-                                    beamCollisionMarginOverride: nil,
                                     onStartBattle: { onOpenChallenge(nil) }
                                 )
                                 .padding(.top, 10)
@@ -601,16 +600,6 @@ struct HomeView: View {
         return "\(sign)\(abs(value).formatted())"
     }
 
-    private func beamCollisionOverrideForDebug(match: HomeActiveMatch?) -> Int? {
-        #if DEBUG
-        guard useEnergyBeamHomeHero, beamLabUseBeamPreviewOffset, let m = match else { return nil }
-        let delta = Int(beamLabSliderOffset.rounded())
-        return min(10_000, max(-10_000, m.comparableMargin + delta))
-        #else
-        return nil
-        #endif
-    }
-
     @ViewBuilder
     private var homeEnergyBeamDebugLabStrip: some View {
         #if DEBUG
@@ -619,6 +608,26 @@ struct HomeView: View {
                 .font(FitUpFont.body(10, weight: .heavy))
                 .foregroundStyle(Color.white.opacity(0.4))
                 .tracking(1)
+
+            Button {
+                beamLabAppOpenPreviewToken = UUID()
+            } label: {
+                Text("Preview app open animation")
+                    .font(FitUpFont.body(11, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(FitUpColors.Neon.cyan.opacity(0.15))
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(FitUpColors.Neon.cyan.opacity(0.45), lineWidth: 1)
+                            )
+                    )
+                    .foregroundStyle(Color.white.opacity(0.92))
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.featuredHomeStepMatch == nil)
 
             Toggle("Use Beam Preview Offset", isOn: $beamLabUseBeamPreviewOffset)
                 .font(FitUpFont.body(12, weight: .semibold))
@@ -666,7 +675,7 @@ struct HomeView: View {
             .buttonStyle(.plain)
             .disabled(viewModel.heroOpponentHandoff != nil || viewModel.featuredHomeStepMatch == nil)
 
-            Text("Adjusts beam collision only; scores and copy stay live.")
+            Text("Beam preview offset animates collision only (4s min). Scores/copy stay live. App-open preview replays intro + score catch-up.")
                 .font(FitUpFont.body(10, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.tertiary)
         }

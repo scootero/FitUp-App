@@ -17,7 +17,7 @@ private enum EnergyBeamHeroPrototypeKnobs {
     // MARK: Beam driver (collision + “how hard margin pushes the impact sideways”)
 
     /// Fed into `EnergyBeamHeroGlassCardView(referenceBattleValue:)`, which flows into `normalizedBeamOffset` in the core. **Higher** = the same battle margin moves the collision **less** (beam feels stiffer / stays nearer center). **Lower** = same margin swings the collision farther left/right. Defaults to `EnergyBeamHeroLayout.defaultBeamReferenceValue`; replace with a raw `Int` here to try values without editing core. CPU: effectively unchanged.
-    static let beamReferenceBattleValue: Int =  EnergyBeamHeroLayout.defaultBeamReferenceValue
+    static let beamReferenceBattleValue: Int = EnergyBeamHeroLayout.defaultBeamReferenceValue
 
     /// Opening slider / state value for battle margin (same units as Home: battle-score points for balanced preview). Directly drives starting **collision X** via the core’s `tanh` mapping. CPU: unchanged.
     static let initialBattleMargin: Double = 200
@@ -68,9 +68,6 @@ private enum EnergyBeamHeroPrototypeKnobs {
 
     /// When `true`, the sparkline shows a small DEBUG timeline label from the core. CPU: negligible (one extra Text).
     static let showMockTimelineDebugLabel: Bool = true
-
-    /// When `true`, the procedural beam uses `EnergyBeamVisualTuning.beginningIntro` (ghost / narrow preset). When `false`, matches Home (`endingProduction`).
-    static let useIntroBeamVisualTuning: Bool = false
 
     // MARK: “Simulate Health Update” random ranges
 
@@ -148,9 +145,18 @@ struct EnergyBeamHeroPrototypeView: View {
     @State private var chartWiggleUser: CGFloat = EnergyBeamHeroPrototypeKnobs.initialSparklineWiggleUser
     @State private var chartWiggleOpp: CGFloat = EnergyBeamHeroPrototypeKnobs.initialSparklineWiggleOpponent
 
-    private var battleMarginInt: Int { Int(margin.rounded(.towardZero)) }
+    @State private var beamIntroStartedAt: Date?
+    @State private var holdIntroGhost = true
+    @State private var displayMargin: Double = 0
+    @State private var displayUserBattleScore: Double = 0
+    @State private var displayOpponentBattleScore: Double = 0
+    @State private var battleCountAnimation: EnergyBeamHeroBattleCountAnimation?
+    @State private var sequenceTask: Task<Void, Never>?
+
+    private var battleMarginInt: Int { Int(displayMargin.rounded(.towardZero)) }
     private var opponentBattleScore: Int { EnergyBeamHeroPrototypeKnobs.mockMidpointBattleScore - battleMarginInt / 2 }
     private var userBattleScore: Int { opponentBattleScore + battleMarginInt }
+    private var liveMargin: Double { margin }
 
     private var resultEyebrow: String {
         if battleMarginInt == 0 { return "TIED" }
@@ -176,32 +182,77 @@ struct EnergyBeamHeroPrototypeView: View {
         return n
     }
 
+    private func isIntroActive(at date: Date) -> Bool {
+        if holdIntroGhost, beamIntroStartedAt == nil { return true }
+        guard let beamIntroStartedAt else { return false }
+        return EnergyBeamHeroLayout.beamIntroProgress(at: date, startedAt: beamIntroStartedAt, holdGhostBeforeStart: false) < 1
+    }
+
+    private func effectiveSnapshot(at date: Date) -> EnergyBeamHeroAnimatedSnapshot {
+        if let battleCountAnimation {
+            return battleCountAnimation.snapshot(at: date)
+        }
+        return .init(
+            margin: displayMargin,
+            userBattleScore: displayUserBattleScore,
+            opponentBattleScore: displayOpponentBattleScore,
+            beamCollisionMargin: displayMargin
+        )
+    }
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: EnergyBeamHeroPrototypeKnobs.rootStackSpacing) {
-                EnergyBeamHeroGlassCardView(
-                    margin: margin,
-                    referenceBattleValue: EnergyBeamHeroPrototypeKnobs.beamReferenceBattleValue,
-                    userName: EnergyBeamHeroPrototypeKnobs.previewUserName,
-                    opponentName: EnergyBeamHeroPrototypeKnobs.previewOpponentName,
-                    userSteps: userSteps,
-                    opponentSteps: opponentSteps,
-                    userBattleScore: userBattleScore,
-                    opponentBattleScore: opponentBattleScore,
-                    battleScoreColumnTitle: EnergyBeamHeroPrototypeKnobs.previewBattleScoreColumnTitle,
-                    resultEyebrow: resultEyebrow,
-                    resultEyebrowColor: resultEyebrowColor,
-                    resultHeroNumberText: resultHeroNumberText,
-                    unitLabel: EnergyBeamHeroPrototypeKnobs.previewUnitLabel,
-                    sparklineUserValues: EnergyBeamHeroMockSeries.cumulativeUser(wiggle: chartWiggleUser),
-                    sparklineOpponentValues: EnergyBeamHeroMockSeries.cumulativeOpponent(wiggle: chartWiggleOpp),
-                    dayElapsedFraction: EnergyBeamHeroPrototypeKnobs.mockDayElapsedFraction,
-                    dayProgressCaption: EnergyBeamHeroPrototypeKnobs.mockDayProgressCaption,
-                    showMockTimelineDebugLabel: EnergyBeamHeroPrototypeKnobs.showMockTimelineDebugLabel,
-                    viewerIntradayHealthKitSyncedAt: Date().addingTimeInterval(-320),
-                    opponentIntradayLatestTickAt: Date().addingTimeInterval(-4_200),
-                    beamVisualTuning: EnergyBeamHeroPrototypeKnobs.useIntroBeamVisualTuning ? .beginningIntro : .endingProduction
-                )
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                    let snap = effectiveSnapshot(at: timeline.date)
+                    let introActive = isIntroActive(at: timeline.date)
+                    let marginInt = Int(snap.margin.rounded(.towardZero))
+                    let userScore = Int(snap.userBattleScore.rounded(.towardZero))
+                    let oppScore = Int(snap.opponentBattleScore.rounded(.towardZero))
+                    let motionScale = introActive
+                        ? EnergyBeamHeroLayout.introProceduralMotionScale
+                        : (battleCountAnimation != nil
+                            ? EnergyBeamHeroLayout.battleCountProceduralMotionScale
+                            : 1)
+                    let slideActive = battleCountAnimation != nil
+                    let impactScale: CGFloat = slideActive
+                        ? CGFloat(EnergyBeamHeroLayout.battleCountImpactStrengthScale)
+                        : 1
+                    let stableBeamSeed = slideActive
+                        ? Int(battleCountAnimation!.to.margin.rounded(.towardZero))
+                        : nil
+
+                    EnergyBeamHeroGlassCardView(
+                        margin: snap.margin,
+                        referenceBattleValue: EnergyBeamHeroPrototypeKnobs.beamReferenceBattleValue,
+                        userName: EnergyBeamHeroPrototypeKnobs.previewUserName,
+                        opponentName: EnergyBeamHeroPrototypeKnobs.previewOpponentName,
+                        userSteps: userSteps,
+                        opponentSteps: opponentSteps,
+                        userBattleScore: userScore,
+                        opponentBattleScore: oppScore,
+                        battleScoreColumnTitle: EnergyBeamHeroPrototypeKnobs.previewBattleScoreColumnTitle,
+                        resultEyebrow: resultEyebrow(for: marginInt),
+                        resultEyebrowColor: resultEyebrowColor(for: marginInt),
+                        resultHeroNumberText: resultHeroNumberText(for: marginInt),
+                        unitLabel: EnergyBeamHeroPrototypeKnobs.previewUnitLabel,
+                        sparklineUserValues: EnergyBeamHeroMockSeries.cumulativeUser(wiggle: chartWiggleUser),
+                        sparklineOpponentValues: EnergyBeamHeroMockSeries.cumulativeOpponent(wiggle: chartWiggleOpp),
+                        dayElapsedFraction: EnergyBeamHeroPrototypeKnobs.mockDayElapsedFraction,
+                        dayProgressCaption: EnergyBeamHeroPrototypeKnobs.mockDayProgressCaption,
+                        showMockTimelineDebugLabel: EnergyBeamHeroPrototypeKnobs.showMockTimelineDebugLabel,
+                        viewerIntradayHealthKitSyncedAt: Date().addingTimeInterval(-320),
+                        opponentIntradayLatestTickAt: Date().addingTimeInterval(-4_200),
+                        beamVisualTuning: .endingProduction,
+                        beamIntroStartedAt: beamIntroStartedAt,
+                        beamIntroHoldGhost: holdIntroGhost,
+                        pinCollisionToCenterDuringIntro: introActive,
+                        proceduralMotionScale: motionScale,
+                        impactStrengthScale: impactScale,
+                        proceduralDrawSeed: stableBeamSeed,
+                        suppressImpactBursts: slideActive
+                    )
+                }
 
                 previewControlsSection
                     .padding(.horizontal, EnergyBeamHeroPrototypeKnobs.controlsOuterHorizontalPadding)
@@ -213,6 +264,36 @@ struct EnergyBeamHeroPrototypeView: View {
             .frame(maxWidth: .infinity)
         }
         .background(FitUpColors.Bg.base.ignoresSafeArea())
+        .onAppear {
+            syncDisplayFromMargin()
+        }
+    }
+
+    private func resultEyebrow(for margin: Int) -> String {
+        if margin == 0 { return "TIED" }
+        if margin > 0 { return "AHEAD BY" }
+        return "BEHIND BY"
+    }
+
+    private func resultEyebrowColor(for margin: Int) -> Color {
+        if margin == 0 { return FitUpColors.Text.secondary }
+        if margin > 0 { return FitUpColors.Neon.cyan }
+        return FitUpColors.Neon.orange.opacity(0.95)
+    }
+
+    private func resultHeroNumberText(for margin: Int) -> String {
+        if margin == 0 { return "0" }
+        let nf = EnergyBeamNumberFormatting.score
+        let n = nf.string(from: NSNumber(value: abs(margin))) ?? "\(abs(margin))"
+        return margin > 0 ? "+\(n)" : n
+    }
+
+    private func syncDisplayFromMargin() {
+        let m = Int(margin.rounded(.towardZero))
+        let opp = EnergyBeamHeroPrototypeKnobs.mockMidpointBattleScore - m / 2
+        displayMargin = margin
+        displayUserBattleScore = Double(opp + m)
+        displayOpponentBattleScore = Double(opp)
     }
 
     private var previewControlsSection: some View {
@@ -222,16 +303,45 @@ struct EnergyBeamHeroPrototypeView: View {
                 .foregroundStyle(Color.white.opacity(0.35))
                 .tracking(1.8)
 
+            Text("Tune motion in EnergyBeamHeroCore: introProceduralMotionScale, lanePhaseSpeed*, wDrawIdleMultiplier, idleGlowSine*Frequency")
+                .font(FitUpFont.body(10, weight: .medium))
+                .foregroundStyle(FitUpColors.Text.tertiary)
+
+            Button {
+                playAppOpenSequence()
+            } label: {
+                Text("Preview app open (intro → slide)")
+                    .font(FitUpFont.body(14, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(FitUpColors.Neon.cyan.opacity(0.18))
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(FitUpColors.Neon.cyan.opacity(0.45), lineWidth: 1)
+                            )
+                    )
+                    .foregroundStyle(FitUpColors.Text.primary)
+            }
+            .buttonStyle(.plain)
+
             VStack(alignment: .leading, spacing: EnergyBeamHeroPrototypeKnobs.controlsInnerStackSpacing) {
                 HStack {
-                    Text("Battle margin (\(battleMarginInt))")
+                    Text("Battle margin (\(Int(margin.rounded(.towardZero))))")
                         .font(FitUpFont.body(13, weight: .semibold))
                         .foregroundStyle(FitUpColors.Text.secondary)
                     Spacer()
                 }
 
                 Slider(
-                    value: $margin.animation(EnergyBeamHeroLayout.marginTransitionAnimation(duration: EnergyBeamPreviewTiming.marginDrivenAnimationSeconds)),
+                    value: Binding(
+                        get: { margin },
+                        set: { newValue in
+                            margin = newValue
+                            animateMarginToLive(from: displayMargin, to: newValue)
+                        }
+                    ),
                     in: EnergyBeamHeroPrototypeKnobs.marginSliderMinimum ... EnergyBeamHeroPrototypeKnobs.marginSliderMaximum,
                     step: EnergyBeamHeroPrototypeKnobs.marginSliderStep
                 )
@@ -282,11 +392,90 @@ struct EnergyBeamHeroPrototypeView: View {
         .foregroundStyle(Color.white)
     }
 
+    private func playAppOpenSequence() {
+        sequenceTask?.cancel()
+        battleCountAnimation = nil
+        let target = liveMargin
+        let opp = Double(EnergyBeamHeroPrototypeKnobs.mockMidpointBattleScore) - target / 2
+        let from = EnergyBeamHeroAnimatedSnapshot(
+            margin: target - 150,
+            userBattleScore: opp + target - 150,
+            opponentBattleScore: opp,
+            beamCollisionMargin: target - 150
+        )
+        let to = EnergyBeamHeroAnimatedSnapshot(
+            margin: target,
+            userBattleScore: opp + target,
+            opponentBattleScore: opp,
+            beamCollisionMargin: target
+        )
+        holdIntroGhost = false
+        beamIntroStartedAt = Date()
+        displayMargin = 0
+        displayUserBattleScore = from.userBattleScore
+        displayOpponentBattleScore = from.opponentBattleScore
+
+        sequenceTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(EnergyBeamHeroLayout.beamIntroAnimationSeconds + 0.05))
+            guard !Task.isCancelled else { return }
+            let duration = EnergyBeamHeroLayout.heroBattleTransitionDuration(
+                startMargin: 0,
+                targetMargin: to.margin,
+                startUserBattleScore: from.userBattleScore,
+                targetUserBattleScore: to.userBattleScore,
+                startOpponentBattleScore: from.opponentBattleScore,
+                targetOpponentBattleScore: to.opponentBattleScore
+            )
+            battleCountAnimation = .init(startedAt: Date(), duration: duration, from: .init(
+                margin: 0,
+                userBattleScore: from.userBattleScore,
+                opponentBattleScore: from.opponentBattleScore,
+                beamCollisionMargin: 0
+            ), to: to)
+            try? await Task.sleep(for: .seconds(duration + 0.08))
+            guard !Task.isCancelled else { return }
+            displayMargin = to.margin
+            displayUserBattleScore = to.userBattleScore
+            displayOpponentBattleScore = to.opponentBattleScore
+            battleCountAnimation = nil
+        }
+    }
+
+    private func animateMarginToLive(from start: Double, to target: Double) {
+        sequenceTask?.cancel()
+        battleCountAnimation = nil
+        beamIntroStartedAt = nil
+        holdIntroGhost = false
+        let m = Int(target.rounded(.towardZero))
+        let opp = EnergyBeamHeroPrototypeKnobs.mockMidpointBattleScore - m / 2
+        let to = EnergyBeamHeroAnimatedSnapshot(
+            margin: target,
+            userBattleScore: Double(opp + m),
+            opponentBattleScore: Double(opp),
+            beamCollisionMargin: target
+        )
+        let fromSnapshot = EnergyBeamHeroAnimatedSnapshot(
+            margin: displayMargin,
+            userBattleScore: displayUserBattleScore,
+            opponentBattleScore: displayOpponentBattleScore,
+            beamCollisionMargin: displayMargin
+        )
+        let duration = EnergyBeamHeroLayout.marginTransitionDuration(start: start, target: target)
+        battleCountAnimation = .init(startedAt: Date(), duration: duration, from: fromSnapshot, to: to)
+        sequenceTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(duration + 0.08))
+            guard !Task.isCancelled else { return }
+            displayMargin = to.margin
+            displayUserBattleScore = to.userBattleScore
+            displayOpponentBattleScore = to.opponentBattleScore
+            battleCountAnimation = nil
+        }
+    }
+
     private func snapMargin(_ m: Int) {
         let next = Double(m)
-        withAnimation(EnergyBeamPreviewTiming.marginAnimation(from: margin, to: next)) {
-            margin = next
-        }
+        animateMarginToLive(from: margin, to: next)
+        margin = next
     }
 
     private func simulateHealthBump() {
@@ -296,13 +485,12 @@ struct EnergyBeamHeroPrototypeView: View {
             max(next, EnergyBeamHeroPrototypeKnobs.marginSliderMinimum),
             EnergyBeamHeroPrototypeKnobs.marginSliderMaximum
         )
-        withAnimation(EnergyBeamPreviewTiming.marginAnimation(from: start, to: next)) {
-            userSteps += Int.random(in: EnergyBeamHeroPrototypeKnobs.simulateUserStepsIncreaseRange)
-            opponentSteps += Int.random(in: EnergyBeamHeroPrototypeKnobs.simulateOpponentStepsIncreaseRange)
-            chartWiggleUser += CGFloat(Double.random(in: EnergyBeamHeroPrototypeKnobs.simulateSparklineWiggleUserRange))
-            chartWiggleOpp += CGFloat(Double.random(in: EnergyBeamHeroPrototypeKnobs.simulateSparklineWiggleOpponentRange))
-            margin = next
-        }
+        margin = next
+        userSteps += Int.random(in: EnergyBeamHeroPrototypeKnobs.simulateUserStepsIncreaseRange)
+        opponentSteps += Int.random(in: EnergyBeamHeroPrototypeKnobs.simulateOpponentStepsIncreaseRange)
+        chartWiggleUser += CGFloat(Double.random(in: EnergyBeamHeroPrototypeKnobs.simulateSparklineWiggleUserRange))
+        chartWiggleOpp += CGFloat(Double.random(in: EnergyBeamHeroPrototypeKnobs.simulateSparklineWiggleOpponentRange))
+        animateMarginToLive(from: start, to: next)
     }
 
     private func controlButton(title: String, action: @escaping () -> Void) -> some View {

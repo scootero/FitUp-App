@@ -7,22 +7,42 @@
 
 import SwiftUI
 
-/// Local-only persistence for the last hero comparable margin the user saw (per active match).
-private enum EnergyBeamHeroLastDisplayedMarginStore {
-    private static let keyPrefix = "fitup.energyBeamHero.lastDisplayedComparableMargin."
+/// Local-only persistence for the last hero battle snapshot the user saw (per active match).
+private enum EnergyBeamHeroLastDisplayedSnapshotStore {
+    private static let marginKeyPrefix = "fitup.energyBeamHero.lastDisplayedComparableMargin."
+    private static let userBattleScoreKeyPrefix = "fitup.energyBeamHero.lastDisplayedUserBattleScore."
+    private static let opponentBattleScoreKeyPrefix = "fitup.energyBeamHero.lastDisplayedOpponentBattleScore."
 
-    private static func key(for matchId: UUID) -> String {
-        keyPrefix + matchId.uuidString
+    struct Snapshot: Equatable {
+        let margin: Int
+        let userBattleScore: Int?
+        let opponentBattleScore: Int?
     }
 
-    static func load(for matchId: UUID) -> Int? {
-        let k = key(for: matchId)
-        guard UserDefaults.standard.object(forKey: k) != nil else { return nil }
-        return UserDefaults.standard.integer(forKey: k)
+    private static func marginKey(for matchId: UUID) -> String { marginKeyPrefix + matchId.uuidString }
+    private static func userBattleScoreKey(for matchId: UUID) -> String { userBattleScoreKeyPrefix + matchId.uuidString }
+    private static func opponentBattleScoreKey(for matchId: UUID) -> String { opponentBattleScoreKeyPrefix + matchId.uuidString }
+
+    static func load(for matchId: UUID) -> Snapshot? {
+        let marginKey = marginKey(for: matchId)
+        guard UserDefaults.standard.object(forKey: marginKey) != nil else { return nil }
+        let userKey = userBattleScoreKey(for: matchId)
+        let oppKey = opponentBattleScoreKey(for: matchId)
+        return Snapshot(
+            margin: UserDefaults.standard.integer(forKey: marginKey),
+            userBattleScore: UserDefaults.standard.object(forKey: userKey) == nil
+                ? nil
+                : UserDefaults.standard.integer(forKey: userKey),
+            opponentBattleScore: UserDefaults.standard.object(forKey: oppKey) == nil
+                ? nil
+                : UserDefaults.standard.integer(forKey: oppKey)
+        )
     }
 
-    static func save(margin: Int, for matchId: UUID) {
-        UserDefaults.standard.set(margin, forKey: key(for: matchId))
+    static func save(margin: Int, userBattleScore: Int, opponentBattleScore: Int, for matchId: UUID) {
+        UserDefaults.standard.set(margin, forKey: marginKey(for: matchId))
+        UserDefaults.standard.set(userBattleScore, forKey: userBattleScoreKey(for: matchId))
+        UserDefaults.standard.set(opponentBattleScore, forKey: opponentBattleScoreKey(for: matchId))
     }
 }
 
@@ -43,17 +63,63 @@ struct HomeEnergyBeamHeroCard: View {
     let viewerIntradayHealthKitSyncedAt: Date?
     /// Latest opponent tick `recorded_at` from sparkline fetch (`HomeViewModel.heroOpponentIntradayLatestTickAt`).
     let opponentIntradayLatestTickAt: Date?
-    /// DEBUG Home beam lab: when non-nil, procedural beam uses this margin; copy and momentum use real `displayMargin`.
-    let beamCollisionMarginOverride: Int?
+    /// DEBUG beam lab: when true, beam collision animates via `debugBeamCollisionDelta`; headline/scores stay on live path.
+    var debugBeamLabEnabled: Bool = false
+    /// DEBUG beam lab: added to live comparable margin for animated beam collision preview.
+    var debugBeamCollisionDelta: Double = 0
+    /// DEBUG: bump to replay app-open intro + score catch-up from artificially stale values.
+    var debugAppOpenPreviewToken: UUID = UUID()
     /// Opens the new battle flow when the hero has no active step battle.
     var onStartBattle: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var displayMargin: Double
+    @State private var displayUserBattleScore: Double
+    @State private var displayOpponentBattleScore: Double
+    @State private var displayBeamCollisionMargin: Double
+    @State private var beamIntroStartedAt: Date?
+    @State private var holdIntroGhostBeforeFirstPlay = true
+    @State private var battleCountAnimation: EnergyBeamHeroBattleCountAnimation?
+    @State private var battleCountFinishTask: Task<Void, Never>?
+    @State private var introFinishTask: Task<Void, Never>?
+    @State private var didRunInitialOpenAnimation = false
 
-    /// Drives headline/momentum during eased transitions (aligned with prototype).
-    private var displayedMarginInt: Int { Int(displayMargin.rounded(.towardZero)) }
+    private func restingSnapshot() -> EnergyBeamHeroAnimatedSnapshot {
+        .init(
+            margin: displayMargin,
+            userBattleScore: displayUserBattleScore,
+            opponentBattleScore: displayOpponentBattleScore,
+            beamCollisionMargin: displayBeamCollisionMargin
+        )
+    }
+
+    private func isBeamIntroActive(at date: Date) -> Bool {
+        guard !reduceMotion else { return false }
+        if holdIntroGhostBeforeFirstPlay, beamIntroStartedAt == nil { return true }
+        guard let beamIntroStartedAt else { return false }
+        return EnergyBeamHeroLayout.beamIntroProgress(
+            at: date,
+            startedAt: beamIntroStartedAt,
+            holdGhostBeforeStart: false
+        ) < 1
+    }
+
+    private func effectiveSnapshot(at date: Date) -> EnergyBeamHeroAnimatedSnapshot {
+        if let battleCountAnimation {
+            return battleCountAnimation.snapshot(at: date)
+        }
+        let resting = restingSnapshot()
+        if isBeamIntroActive(at: date), !debugBeamLabEnabled {
+            return .init(
+                margin: 0,
+                userBattleScore: resting.userBattleScore,
+                opponentBattleScore: resting.opponentBattleScore,
+                beamCollisionMargin: 0
+            )
+        }
+        return resting
+    }
 
     /// Hero column label when `displayName` is missing or whitespace (does not change navigation title in `HomeView`).
     private static func resolvedOpponentDisplayName(for opponent: HomeOpponent) -> String {
@@ -71,7 +137,9 @@ struct HomeEnergyBeamHeroCard: View {
         sparklineOpponentValues: [CGFloat]? = nil,
         viewerIntradayHealthKitSyncedAt: Date? = nil,
         opponentIntradayLatestTickAt: Date? = nil,
-        beamCollisionMarginOverride: Int? = nil,
+        debugBeamLabEnabled: Bool = false,
+        debugBeamCollisionDelta: Double = 0,
+        debugAppOpenPreviewToken: UUID = UUID(),
         onStartBattle: (() -> Void)? = nil
     ) {
         self.match = match
@@ -80,71 +148,152 @@ struct HomeEnergyBeamHeroCard: View {
         self.sparklineOpponentValues = sparklineOpponentValues
         self.viewerIntradayHealthKitSyncedAt = viewerIntradayHealthKitSyncedAt
         self.opponentIntradayLatestTickAt = opponentIntradayLatestTickAt
-        self.beamCollisionMarginOverride = beamCollisionMarginOverride
+        self.debugBeamLabEnabled = debugBeamLabEnabled
+        self.debugBeamCollisionDelta = debugBeamCollisionDelta
+        self.debugAppOpenPreviewToken = debugAppOpenPreviewToken
         self.onStartBattle = onStartBattle
-        let initial: Double
+        let initialMargin: Double
+        let initialUserBattleScore: Double
+        let initialOpponentBattleScore: Double
         if let match {
             let live = match.comparableMargin
-            if let stored = EnergyBeamHeroLastDisplayedMarginStore.load(for: match.id) {
-                initial = Double(stored)
+            if let stored = EnergyBeamHeroLastDisplayedSnapshotStore.load(for: match.id) {
+                initialMargin = Double(stored.margin)
+                initialUserBattleScore = Double(stored.userBattleScore ?? match.myBattleScore)
+                initialOpponentBattleScore = Double(stored.opponentBattleScore ?? match.theirBattleScore)
             } else {
-                initial = Double(live)
+                initialMargin = Double(live)
+                initialUserBattleScore = Double(match.myBattleScore)
+                initialOpponentBattleScore = Double(match.theirBattleScore)
             }
         } else {
-            initial = 0
+            initialMargin = 0
+            initialUserBattleScore = 0
+            initialOpponentBattleScore = 0
         }
-        _displayMargin = State(initialValue: initial)
+        _displayMargin = State(initialValue: initialMargin)
+        _displayUserBattleScore = State(initialValue: initialUserBattleScore)
+        _displayOpponentBattleScore = State(initialValue: initialOpponentBattleScore)
+        _displayBeamCollisionMargin = State(initialValue: initialMargin)
+        _beamIntroStartedAt = State(initialValue: nil)
+        _holdIntroGhostBeforeFirstPlay = State(initialValue: true)
+    }
+
+    private var debugBeamCollisionTarget: Double? {
+        guard debugBeamLabEnabled, let match else { return nil }
+        let target = Double(match.comparableMargin) + debugBeamCollisionDelta
+        return min(10_000, max(-10_000, target))
     }
 
     var body: some View {
         Group {
             if let match {
-                EnergyBeamHeroGlassCardView(
-                    margin: displayMargin,
-                    referenceBattleValue: EnergyBeamHeroLayout.defaultBeamReferenceValue,
-                    userName: profile?.displayName ?? "You",
-                    opponentName: Self.resolvedOpponentDisplayName(for: match.opponent),
-                    userSteps: match.myToday,
-                    opponentSteps: match.theirToday,
-                    userBattleScore: match.myBattleScore,
-                    opponentBattleScore: match.theirBattleScore,
-                    battleScoreColumnTitle: "Battle Score",
-                    resultEyebrow: Self.resultEyebrow(for: displayedMarginInt),
-                    resultEyebrowColor: Self.resultEyebrowColor(for: displayedMarginInt),
-                    resultHeroNumberText: Self.resultHeroNumberText(for: displayedMarginInt),
-                    unitLabel: Self.unitLabel(for: match),
-                    sparklineUserValues: sparklineUserValues ?? EnergyBeamHeroMockSeries.cumulativeUser(wiggle: 0),
-                    sparklineOpponentValues: sparklineOpponentValues ?? Self.neutralOpponentSparkline,
-                    dayElapsedFraction: Self.dayProgressState(for: profile?.timezone).fraction,
-                    dayProgressCaption: Self.dayProgressState(for: profile?.timezone).caption,
-                    showMockTimelineDebugLabel: mockTimelineDebugFlag,
-                    viewerIntradayHealthKitSyncedAt: viewerIntradayHealthKitSyncedAt,
-                    opponentIntradayLatestTickAt: opponentIntradayLatestTickAt,
-                    collisionMarginOverride: beamCollisionMarginOverride,
-                    showTopBrandHeader: false
-                )
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                    let snapshot = effectiveSnapshot(at: timeline.date)
+                    let introActive = isBeamIntroActive(at: timeline.date)
+                    let marginInt = Int(snapshot.margin.rounded(.towardZero))
+                    let userScoreInt = Int(snapshot.userBattleScore.rounded(.towardZero))
+                    let opponentScoreInt = Int(snapshot.opponentBattleScore.rounded(.towardZero))
+                    let beamCollision = debugBeamLabEnabled ? snapshot.beamCollisionMargin : snapshot.margin
+                    let motionScale = introActive
+                        ? EnergyBeamHeroLayout.introProceduralMotionScale
+                        : (battleCountAnimation != nil
+                            ? EnergyBeamHeroLayout.battleCountProceduralMotionScale
+                            : 1)
+                    let impactScale: CGFloat = battleCountAnimation != nil
+                        ? CGFloat(EnergyBeamHeroLayout.battleCountImpactStrengthScale)
+                        : 1
+                    let slideActive = battleCountAnimation != nil
+                    let stableBeamSeed = slideActive
+                        ? Int(battleCountAnimation!.to.margin.rounded(.towardZero))
+                        : nil
+
+                    EnergyBeamHeroGlassCardView(
+                        margin: snapshot.margin,
+                        referenceBattleValue: EnergyBeamHeroLayout.defaultBeamReferenceValue,
+                        userName: profile?.displayName ?? "You",
+                        opponentName: Self.resolvedOpponentDisplayName(for: match.opponent),
+                        userSteps: match.myToday,
+                        opponentSteps: match.theirToday,
+                        userBattleScore: userScoreInt,
+                        opponentBattleScore: opponentScoreInt,
+                        battleScoreColumnTitle: "Battle Score",
+                        resultEyebrow: Self.resultEyebrow(for: marginInt),
+                        resultEyebrowColor: Self.resultEyebrowColor(for: marginInt),
+                        resultHeroNumberText: Self.resultHeroNumberText(for: marginInt),
+                        unitLabel: Self.unitLabel(for: match),
+                        sparklineUserValues: sparklineUserValues ?? EnergyBeamHeroMockSeries.cumulativeUser(wiggle: 0),
+                        sparklineOpponentValues: sparklineOpponentValues ?? Self.neutralOpponentSparkline,
+                        dayElapsedFraction: Self.dayProgressState(for: profile?.timezone).fraction,
+                        dayProgressCaption: Self.dayProgressState(for: profile?.timezone).caption,
+                        showMockTimelineDebugLabel: mockTimelineDebugFlag,
+                        viewerIntradayHealthKitSyncedAt: viewerIntradayHealthKitSyncedAt,
+                        opponentIntradayLatestTickAt: opponentIntradayLatestTickAt,
+                        beamCollisionMarginPreciseOverride: debugBeamLabEnabled ? beamCollision : nil,
+                        showTopBrandHeader: false,
+                        beamVisualTuning: .endingProduction,
+                        beamIntroStartedAt: reduceMotion ? nil : beamIntroStartedAt,
+                        beamIntroHoldGhost: reduceMotion ? false : holdIntroGhostBeforeFirstPlay,
+                        pinCollisionToCenterDuringIntro: introActive && !debugBeamLabEnabled,
+                        proceduralMotionScale: motionScale,
+                        impactStrengthScale: impactScale,
+                        proceduralDrawSeed: stableBeamSeed,
+                        suppressImpactBursts: slideActive
+                    )
+                }
+                .transaction { $0.disablesAnimations = false }
                 .onAppear {
-                    reconcileToTarget(match, animated: !reduceMotion)
+                    guard !didRunInitialOpenAnimation else { return }
+                    didRunInitialOpenAnimation = true
+                    playSessionOpenAnimations(for: match)
                 }
                 .onDisappear {
-                    persistDisplayedMargin(for: match)
+                    introFinishTask?.cancel()
+                    battleCountFinishTask?.cancel()
+                    persistDisplayedSnapshot(for: match)
                 }
-                .onChange(of: scenePhase) { _, phase in
+                .onChange(of: scenePhase) { oldPhase, phase in
                     if phase == .inactive || phase == .background {
-                        persistDisplayedMargin(for: match)
+                        persistDisplayedSnapshot(for: match)
+                    } else if phase == .active, oldPhase == .background || oldPhase == .inactive {
+                        playSessionOpenAnimations(for: match)
                     }
                 }
                 .onChange(of: match) { oldMatch, newMatch in
                     if oldMatch.id != newMatch.id {
-                        let live = newMatch.comparableMargin
-                        if let stored = EnergyBeamHeroLastDisplayedMarginStore.load(for: newMatch.id) {
-                            displayMargin = Double(stored)
+                        if let stored = EnergyBeamHeroLastDisplayedSnapshotStore.load(for: newMatch.id) {
+                            displayMargin = Double(stored.margin)
+                            displayUserBattleScore = Double(stored.userBattleScore ?? newMatch.myBattleScore)
+                            displayOpponentBattleScore = Double(stored.opponentBattleScore ?? newMatch.theirBattleScore)
+                            displayBeamCollisionMargin = Double(stored.margin)
                         } else {
-                            displayMargin = Double(live)
+                            displayMargin = Double(newMatch.comparableMargin)
+                            displayUserBattleScore = Double(newMatch.myBattleScore)
+                            displayOpponentBattleScore = Double(newMatch.theirBattleScore)
+                            displayBeamCollisionMargin = Double(newMatch.comparableMargin)
                         }
+                        beamIntroStartedAt = nil
+                        holdIntroGhostBeforeFirstPlay = true
                     }
-                    reconcileToTarget(newMatch, animated: !reduceMotion)
+                    reconcileLiveBattleData(for: newMatch, animated: !reduceMotion, includeBeamIntro: false)
                 }
+                .onChange(of: debugBeamCollisionDelta) { _, _ in
+                    reconcileDebugBeamCollision(animated: !reduceMotion)
+                }
+                .onChange(of: debugBeamLabEnabled) { _, enabled in
+                    if enabled {
+                        reconcileDebugBeamCollision(animated: !reduceMotion)
+                    } else {
+                        battleCountFinishTask?.cancel()
+                        battleCountAnimation = nil
+                        displayBeamCollisionMargin = displayMargin
+                    }
+                }
+                #if DEBUG
+                .onChange(of: debugAppOpenPreviewToken) { _, _ in
+                    previewDebugAppOpen(for: match)
+                }
+                #endif
             } else {
                 emptyHeroCard
             }
@@ -198,33 +347,195 @@ struct HomeEnergyBeamHeroCard: View {
         .shadow(color: .black.opacity(0.45), radius: 14, y: 8)
     }
 
-    private func persistDisplayedMargin(for match: HomeActiveMatch) {
-        let value = Int(displayMargin.rounded(.towardZero))
-        EnergyBeamHeroLastDisplayedMarginStore.save(margin: value, for: match.id)
+    private func persistDisplayedSnapshot(for match: HomeActiveMatch) {
+        let snap = battleCountAnimation?.to ?? restingSnapshot()
+        EnergyBeamHeroLastDisplayedSnapshotStore.save(
+            margin: Int(snap.margin.rounded(.towardZero)),
+            userBattleScore: Int(snap.userBattleScore.rounded(.towardZero)),
+            opponentBattleScore: Int(snap.opponentBattleScore.rounded(.towardZero)),
+            for: match.id
+        )
     }
 
-    private func reconcileToTarget(_ match: HomeActiveMatch, animated: Bool) {
-        let target = Double(match.comparableMargin)
+    private func commitRestingSnapshot(_ snapshot: EnergyBeamHeroAnimatedSnapshot) {
+        displayMargin = snapshot.margin
+        displayUserBattleScore = snapshot.userBattleScore
+        displayOpponentBattleScore = snapshot.opponentBattleScore
+        displayBeamCollisionMargin = snapshot.beamCollisionMargin
+    }
+
+    private func startBattleCountAnimation(
+        from fromSnapshot: EnergyBeamHeroAnimatedSnapshot? = nil,
+        to target: EnergyBeamHeroAnimatedSnapshot,
+        duration: TimeInterval
+    ) {
+        battleCountFinishTask?.cancel()
+        let from = fromSnapshot ?? battleCountAnimation?.to ?? restingSnapshot()
+        let startedAt = Date()
+        battleCountAnimation = .init(startedAt: startedAt, duration: duration, from: from, to: target)
+        battleCountFinishTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(duration + 0.06))
+            guard !Task.isCancelled, battleCountAnimation?.startedAt == startedAt else { return }
+            commitRestingSnapshot(target)
+            battleCountAnimation = nil
+        }
+    }
+
+    private func startBeamIntro() {
+        holdIntroGhostBeforeFirstPlay = false
+        beamIntroStartedAt = Date()
+    }
+
+    private func snapToTargets(for match: HomeActiveMatch) {
+        battleCountFinishTask?.cancel()
+        introFinishTask?.cancel()
+        battleCountAnimation = nil
+        holdIntroGhostBeforeFirstPlay = false
+        beamIntroStartedAt = nil
+        let target = targetSnapshot(for: match)
+        commitRestingSnapshot(target)
+    }
+
+    private func centeredBattleSnapshot(from base: EnergyBeamHeroAnimatedSnapshot) -> EnergyBeamHeroAnimatedSnapshot {
+        .init(
+            margin: 0,
+            userBattleScore: base.userBattleScore,
+            opponentBattleScore: base.opponentBattleScore,
+            beamCollisionMargin: 0
+        )
+    }
+
+    private func schedulePostIntroBattleCount(from: EnergyBeamHeroAnimatedSnapshot, to target: EnergyBeamHeroAnimatedSnapshot) {
+        introFinishTask?.cancel()
+        introFinishTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(EnergyBeamHeroLayout.beamIntroAnimationSeconds + 0.05))
+            guard !Task.isCancelled else { return }
+            let duration = EnergyBeamHeroLayout.heroBattleTransitionDuration(
+                startMargin: 0,
+                targetMargin: target.margin,
+                startUserBattleScore: from.userBattleScore,
+                targetUserBattleScore: target.userBattleScore,
+                startOpponentBattleScore: from.opponentBattleScore,
+                targetOpponentBattleScore: target.opponentBattleScore
+            )
+            startBattleCountAnimation(
+                from: centeredBattleSnapshot(from: from),
+                to: target,
+                duration: duration
+            )
+        }
+    }
+
+    private func targetSnapshot(for match: HomeActiveMatch) -> EnergyBeamHeroAnimatedSnapshot {
+        let margin = Double(match.comparableMargin)
+        let beamCollision = debugBeamCollisionTarget.map { Double($0) } ?? margin
+        return .init(
+            margin: margin,
+            userBattleScore: Double(match.myBattleScore),
+            opponentBattleScore: Double(match.theirBattleScore),
+            beamCollisionMargin: beamCollision
+        )
+    }
+
+    /// App open / return to foreground: beam birth + margin/score catch-up in parallel.
+    private func playSessionOpenAnimations(for match: HomeActiveMatch) {
+        reconcileLiveBattleData(for: match, animated: !reduceMotion, includeBeamIntro: true)
+    }
+
+    #if DEBUG
+    /// DEBUG: replay cold-open from stale margin/scores so counting + beam intro are visible on demand.
+    private func previewDebugAppOpen(for match: HomeActiveMatch) {
+        guard !reduceMotion else {
+            reconcileLiveBattleData(for: match, animated: false, includeBeamIntro: true)
+            return
+        }
+
+        let previewOffset = 150.0
+        let live = targetSnapshot(for: match)
+        battleCountFinishTask?.cancel()
+        battleCountAnimation = nil
+        commitRestingSnapshot(
+            .init(
+                margin: live.margin - previewOffset,
+                userBattleScore: live.userBattleScore - previewOffset,
+                opponentBattleScore: live.opponentBattleScore,
+                beamCollisionMargin: (debugBeamLabEnabled ? live.beamCollisionMargin : live.margin) - previewOffset
+            )
+        )
+        reconcileLiveBattleData(for: match, animated: true, includeBeamIntro: true)
+    }
+    #endif
+
+    private func syncBeamCollisionToDisplayMargin(animated: Bool) {
+        guard debugBeamLabEnabled else { return }
+        var target = restingSnapshot()
+        target.beamCollisionMargin = target.margin
+        guard animated, !reduceMotion else {
+            displayBeamCollisionMargin = target.beamCollisionMargin
+            return
+        }
+        let duration = EnergyBeamHeroLayout.marginTransitionDuration(
+            start: displayBeamCollisionMargin,
+            target: target.beamCollisionMargin
+        )
+        startBattleCountAnimation(to: target, duration: duration)
+    }
+
+    private func reconcileDebugBeamCollision(animated: Bool) {
+        guard debugBeamLabEnabled, let collisionTarget = debugBeamCollisionTarget else {
+            syncBeamCollisionToDisplayMargin(animated: animated)
+            return
+        }
+        var target = battleCountAnimation?.to ?? restingSnapshot()
+        target.beamCollisionMargin = Double(collisionTarget)
+        guard animated, !reduceMotion else {
+            displayBeamCollisionMargin = target.beamCollisionMargin
+            return
+        }
+        let duration = EnergyBeamHeroLayout.marginTransitionDuration(
+            start: displayBeamCollisionMargin,
+            target: target.beamCollisionMargin
+        )
+        startBattleCountAnimation(to: target, duration: duration)
+    }
+
+    private func reconcileLiveBattleData(for match: HomeActiveMatch, animated: Bool, includeBeamIntro: Bool) {
+        let target = targetSnapshot(for: match)
+
         guard animated else {
-            displayMargin = target
-            return
-        }
-        let start = displayMargin
-        guard start != target else { return }
-
-        let deltaI = abs(Int(target.rounded(.towardZero)) - Int(start.rounded(.towardZero)))
-        if deltaI <= EnergyBeamHeroLayout.marginTransitionTinyIntDelta {
-            withAnimation(
-                EnergyBeamHeroLayout.marginTransitionAnimation(duration: EnergyBeamHeroLayout.marginTransitionTinySeconds)
-            ) {
-                displayMargin = target
-            }
+            snapToTargets(for: match)
             return
         }
 
-        let duration = EnergyBeamHeroLayout.marginTransitionDuration(start: start, target: target)
-        withAnimation(EnergyBeamHeroLayout.marginTransitionAnimation(duration: duration)) {
-            displayMargin = target
+        let from = battleCountAnimation?.to ?? restingSnapshot()
+
+        if includeBeamIntro {
+            startBeamIntro()
+            commitRestingSnapshot(centeredBattleSnapshot(from: from))
+            schedulePostIntroBattleCount(from: from, to: target)
+            return
+        }
+
+        let duration = EnergyBeamHeroLayout.heroBattleTransitionDuration(
+            startMargin: from.margin,
+            targetMargin: target.margin,
+            startUserBattleScore: from.userBattleScore,
+            targetUserBattleScore: target.userBattleScore,
+            startOpponentBattleScore: from.opponentBattleScore,
+            targetOpponentBattleScore: target.opponentBattleScore
+        )
+        let needsDataAnimation =
+            from.margin != target.margin
+            || from.userBattleScore != target.userBattleScore
+            || from.opponentBattleScore != target.opponentBattleScore
+            || from.beamCollisionMargin != target.beamCollisionMargin
+
+        if needsDataAnimation {
+            startBattleCountAnimation(to: target, duration: duration)
+        } else if debugBeamLabEnabled {
+            reconcileDebugBeamCollision(animated: true)
+        } else {
+            commitRestingSnapshot(target)
         }
     }
 

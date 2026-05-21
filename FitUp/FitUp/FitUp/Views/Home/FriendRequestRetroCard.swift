@@ -69,28 +69,18 @@ struct FriendRequestRetroCard: View {
             .disabled(isLoading)
         }
         .padding(16)
-        .background(
+        .homeLiquidGlassCard(.pending)
+        .overlay {
             RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
-                .fill(
+                .strokeBorder(
                     LinearGradient(
-                        colors: [FitUpColors.Neon.cyanDim.opacity(0.35), Color.black.opacity(0.35)],
+                        colors: [FitUpColors.Neon.cyan.opacity(0.55), FitUpColors.Neon.pink.opacity(0.25)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
-                    )
+                    ),
+                    lineWidth: 1
                 )
-                .overlay {
-                    RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [FitUpColors.Neon.cyan.opacity(0.85), FitUpColors.Neon.pink.opacity(0.4)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1.2
-                        )
-                }
-        )
-        .shadow(color: FitUpColors.Neon.cyan.opacity(0.2), radius: 16, y: 4)
+        }
     }
 }
 
@@ -100,7 +90,7 @@ private struct NeonCyanOutlineButtonStyle: ButtonStyle {
             .foregroundStyle(FitUpColors.Neon.cyan)
             .background {
                 RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                    .fill(FitUpColors.Neon.cyanDim.opacity(configuration.isPressed ? 0.45 : 0.28))
+                    .fill(FitUpColors.Neon.cyanDim.opacity(configuration.isPressed ? 0.55 : 0.38))
             }
     }
 }

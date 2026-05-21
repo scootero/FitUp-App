@@ -163,9 +163,9 @@ struct EnergyBeamVisualTuning: Equatable, Sendable {
         impactBoostPeakExponent: 50.15,
         impactBoostShimmerAmplitude: 0.14,
         impactBoostShimmerFrequency: 48,
-        useProportionalHorizontalPads: false,
-        horizontalBandLeftEdgeFraction: 0.28,
-        horizontalBandRightEdgeFraction: 0.72,
+        useProportionalHorizontalPads: true,
+        horizontalBandLeftEdgeFraction: 0,
+        horizontalBandRightEdgeFraction: 1,
         leftPadLeadingOffset: -20,
         rightPadTrailingExtra: 10,
         impactVisualScale: 1,
@@ -203,81 +203,85 @@ struct EnergyBeamVisualTuning: Equatable, Sendable {
         coreSpineKnotCount: 4
     )
 
-    /// **Intro / ghost preset** — dimmer, narrower horizontal band, weaker impact read, fewer strokes (cheaper). Tween *toward* `endingProduction` for app-open.
+    /// **Intro / ghost preset** — near-invisible seed; TimelineView tweens toward `endingProduction` on app open.
     static let beginningIntro: EnergyBeamVisualTuning = .init(
         label: "beginningIntro",
-        timelineInterval: 1.0 / 12.0,
-        lanesPerSide: 2,
-        sparkCount: 4,
+        timelineInterval: 1.0 / 16.0,
+        lanesPerSide: 1,
+        sparkCount: 0,
         tendrilSegmentMin: 2,
-        tendrilSegmentMax: 3,
-        forkProbabilityThreshold: 0.92,
-        flowStreakCount: 1,
-        flowPacketCount: 2,
+        tendrilSegmentMax: 2,
+        forkProbabilityThreshold: 0.98,
+        flowStreakCount: 0,
+        flowPacketCount: 1,
         reflectFragmentCount: 0,
-        beamOuterHeight: 56,
+        beamOuterHeight: 44,
         referenceFloor: 6000,
         referenceScaleMultiplier: 0.28,
         referenceScaleMinimum: 1800,
-        marginMaxHorizontalFraction: 0.12,
-        collisionClampMinFraction: 0.44,
-        collisionClampMaxFraction: 0.56,
-        wDrawIdleMultiplier: 0.1,
-        wDrawImpactExtra: 0.08,
-        impactBoostWindowSeconds: 0.35,
-        impactBoostPeakExponent: 40,
-        impactBoostShimmerAmplitude: 0.08,
-        impactBoostShimmerFrequency: 36,
+        marginMaxHorizontalFraction: 0.04,
+        collisionClampMinFraction: 0.47,
+        collisionClampMaxFraction: 0.53,
+        wDrawIdleMultiplier: 0.04,
+        wDrawImpactExtra: 0.02,
+        impactBoostWindowSeconds: 0.25,
+        impactBoostPeakExponent: 10,
+        impactBoostShimmerAmplitude: 0.04,
+        impactBoostShimmerFrequency: 6,
         useProportionalHorizontalPads: true,
-        horizontalBandLeftEdgeFraction: 0.32,
-        horizontalBandRightEdgeFraction: 0.68,
+        horizontalBandLeftEdgeFraction: 0.40,
+        horizontalBandRightEdgeFraction: 0.60,
         leftPadLeadingOffset: -20,
         rightPadTrailingExtra: 10,
-        impactVisualScale: 0.18,
-        masterStrokeOpacity: 0.42,
-        globalBrightImpactCoefficient: 0.35,
+        impactVisualScale: 0.04,
+        masterStrokeOpacity: 0.07,
+        globalBrightImpactCoefficient: 0.12,
         flareMulBase: 0.001,
-        flareMulImpactCoefficient: 1.1,
-        burstScaleBase: 1.05,
-        burstScaleImpactCoefficient: 0.55,
-        flowMulBase: 1.05,
-        flowMulImpactCoefficient: 0.03,
-        idleGlowBase: 0.42,
+        flareMulImpactCoefficient: 0.35,
+        burstScaleBase: 0.85,
+        burstScaleImpactCoefficient: 0.2,
+        flowMulBase: 0.85,
+        flowMulImpactCoefficient: 0.01,
+        idleGlowBase: 0.18,
         idleGlowSeedStride: 0.17,
         idleGlowSineAFrequency: 4.2,
-        idleGlowSineAAmplitude: 0.14,
+        idleGlowSineAAmplitude: 0.06,
         idleGlowSineBFrequency: 9.5,
-        idleGlowSineBAmplitude: 0.07,
+        idleGlowSineBAmplitude: 0.03,
         idleGlowSineCFrequency: 2.1,
-        idleGlowSineCAmplitude: 0.05,
-        idleGlowSteppedMultiplier: 0.07,
+        idleGlowSineCAmplitude: 0.02,
+        idleGlowSteppedMultiplier: 0.04,
         idleGlowSteppedWallFrequency: 11,
-        lanePhaseSpeedMin: 0.32,
-        lanePhaseSpeedSpan: 0.55,
+        lanePhaseSpeedMin: 0.18,
+        lanePhaseSpeedSpan: 0.25,
         lanePhaseLaneWeight: 1.83,
         lanePhaseSeedWeight: 0.01,
-        amplitudeCalmBase: 0.45,
-        amplitudeCalmSpan: 0.55,
-        amplitudeBurstBase: 2.9,
-        amplitudeBurstWobble: 0.22,
-        amplitudeChaosBase: 0.45,
-        amplitudeChaosSpan: 0.55,
-        helixRunnerCount: 3,
-        offAxisRunnerCount: 3,
-        coreSpineResampleSteps: 24,
-        coreSpineKnotCount: 2
+        amplitudeCalmBase: 0.22,
+        amplitudeCalmSpan: 0.28,
+        amplitudeBurstBase: 1.2,
+        amplitudeBurstWobble: 0.12,
+        amplitudeChaosBase: 0.22,
+        amplitudeChaosSpan: 0.28,
+        helixRunnerCount: 1,
+        offAxisRunnerCount: 1,
+        coreSpineResampleSteps: 16,
+        coreSpineKnotCount: 1
     )
 }
 
 extension EnergyBeamVisualTuning {
-    /// Linear blend of every numeric field (`t` 0 = `from`, 1 = `to`). `useProportionalHorizontalPads` follows `t >= 0.5`. `label` is diagnostic only.
+    /// Linear blend of every numeric field (`t` 0 = `from`, 1 = `to`). When pad modes match, they stay on; otherwise flips at `t >= 0.5`. `label` is diagnostic only.
     static func interpolated(from a: EnergyBeamVisualTuning, to b: EnergyBeamVisualTuning, t: CGFloat) -> EnergyBeamVisualTuning {
         let u = Double(min(1, max(0, t)))
         func L(_ x: CGFloat, _ y: CGFloat) -> CGFloat { x + (y - x) * CGFloat(u) }
         func D(_ x: Double, _ y: Double) -> Double { x + (y - x) * u }
         func I(_ x: Int, _ y: Int) -> Int { Int((Double(x) + Double(y - x) * u).rounded()) }
         func TI(_ x: TimeInterval, _ y: TimeInterval) -> TimeInterval { x + (y - x) * u }
-        let prop = t >= 0.5 ? b.useProportionalHorizontalPads : a.useProportionalHorizontalPads
+        let prop: Bool = if a.useProportionalHorizontalPads == b.useProportionalHorizontalPads {
+            a.useProportionalHorizontalPads
+        } else {
+            t >= 0.5 ? b.useProportionalHorizontalPads : a.useProportionalHorizontalPads
+        }
         let smin = I(a.tendrilSegmentMin, b.tendrilSegmentMin)
         var smax = I(a.tendrilSegmentMax, b.tendrilSegmentMax)
         if smax < smin { smax = smin }
@@ -345,6 +349,93 @@ extension EnergyBeamVisualTuning {
             coreSpineKnotCount: max(1, I(a.coreSpineKnotCount, b.coreSpineKnotCount))
         )
     }
+
+    /// Visual birth lerps `visualT`; procedural motion stays at `to` (production) × `motionScale` so particles do not race mid-intro.
+    static func interpolatedVisualBirth(
+        from a: EnergyBeamVisualTuning,
+        to b: EnergyBeamVisualTuning,
+        visualT: CGFloat,
+        motionScale: Double
+    ) -> EnergyBeamVisualTuning {
+        let u = Double(min(1, max(0, visualT)))
+        let m = max(0, motionScale)
+        func L(_ x: CGFloat, _ y: CGFloat) -> CGFloat { x + (y - x) * CGFloat(u) }
+        func D(_ x: Double, _ y: Double) -> Double { x + (y - x) * u }
+        func I(_ x: Int, _ y: Int) -> Int { Int((Double(x) + Double(y - x) * u).rounded()) }
+        func TI(_ x: TimeInterval, _ y: TimeInterval) -> TimeInterval { x + (y - x) * u }
+        func MS(_ x: Double) -> Double { x * m }
+        let prop: Bool = if a.useProportionalHorizontalPads == b.useProportionalHorizontalPads {
+            a.useProportionalHorizontalPads
+        } else {
+            visualT >= 0.5 ? b.useProportionalHorizontalPads : a.useProportionalHorizontalPads
+        }
+        let smin = I(a.tendrilSegmentMin, b.tendrilSegmentMin)
+        var smax = I(a.tendrilSegmentMax, b.tendrilSegmentMax)
+        if smax < smin { smax = smin }
+        return .init(
+            label: "birth(\(String(format: "%.2f", u)),m=\(String(format: "%.2f", m)))",
+            timelineInterval: TI(a.timelineInterval, b.timelineInterval),
+            lanesPerSide: max(1, I(a.lanesPerSide, b.lanesPerSide)),
+            sparkCount: max(0, I(a.sparkCount, b.sparkCount)),
+            tendrilSegmentMin: smin,
+            tendrilSegmentMax: smax,
+            forkProbabilityThreshold: L(a.forkProbabilityThreshold, b.forkProbabilityThreshold),
+            flowStreakCount: max(0, I(a.flowStreakCount, b.flowStreakCount)),
+            flowPacketCount: max(0, I(a.flowPacketCount, b.flowPacketCount)),
+            reflectFragmentCount: max(0, I(a.reflectFragmentCount, b.reflectFragmentCount)),
+            beamOuterHeight: max(1, L(a.beamOuterHeight, b.beamOuterHeight)),
+            referenceFloor: D(a.referenceFloor, b.referenceFloor),
+            referenceScaleMultiplier: D(a.referenceScaleMultiplier, b.referenceScaleMultiplier),
+            referenceScaleMinimum: D(a.referenceScaleMinimum, b.referenceScaleMinimum),
+            marginMaxHorizontalFraction: L(a.marginMaxHorizontalFraction, b.marginMaxHorizontalFraction),
+            collisionClampMinFraction: L(a.collisionClampMinFraction, b.collisionClampMinFraction),
+            collisionClampMaxFraction: L(a.collisionClampMaxFraction, b.collisionClampMaxFraction),
+            wDrawIdleMultiplier: MS(b.wDrawIdleMultiplier),
+            wDrawImpactExtra: MS(b.wDrawImpactExtra),
+            impactBoostWindowSeconds: L(a.impactBoostWindowSeconds, b.impactBoostWindowSeconds),
+            impactBoostPeakExponent: D(a.impactBoostPeakExponent, b.impactBoostPeakExponent),
+            impactBoostShimmerAmplitude: L(a.impactBoostShimmerAmplitude, b.impactBoostShimmerAmplitude),
+            impactBoostShimmerFrequency: MS(b.impactBoostShimmerFrequency),
+            useProportionalHorizontalPads: prop,
+            horizontalBandLeftEdgeFraction: L(a.horizontalBandLeftEdgeFraction, b.horizontalBandLeftEdgeFraction),
+            horizontalBandRightEdgeFraction: L(a.horizontalBandRightEdgeFraction, b.horizontalBandRightEdgeFraction),
+            leftPadLeadingOffset: L(a.leftPadLeadingOffset, b.leftPadLeadingOffset),
+            rightPadTrailingExtra: L(a.rightPadTrailingExtra, b.rightPadTrailingExtra),
+            impactVisualScale: L(a.impactVisualScale, b.impactVisualScale),
+            masterStrokeOpacity: L(a.masterStrokeOpacity, b.masterStrokeOpacity),
+            globalBrightImpactCoefficient: L(a.globalBrightImpactCoefficient, b.globalBrightImpactCoefficient),
+            flareMulBase: L(a.flareMulBase, b.flareMulBase),
+            flareMulImpactCoefficient: L(a.flareMulImpactCoefficient, b.flareMulImpactCoefficient),
+            burstScaleBase: L(a.burstScaleBase, b.burstScaleBase),
+            burstScaleImpactCoefficient: L(a.burstScaleImpactCoefficient, b.burstScaleImpactCoefficient),
+            flowMulBase: L(a.flowMulBase, b.flowMulBase) * CGFloat(m),
+            flowMulImpactCoefficient: L(a.flowMulImpactCoefficient, b.flowMulImpactCoefficient) * CGFloat(m),
+            idleGlowBase: L(a.idleGlowBase, b.idleGlowBase),
+            idleGlowSeedStride: D(a.idleGlowSeedStride, b.idleGlowSeedStride),
+            idleGlowSineAFrequency: MS(b.idleGlowSineAFrequency),
+            idleGlowSineAAmplitude: L(a.idleGlowSineAAmplitude, b.idleGlowSineAAmplitude),
+            idleGlowSineBFrequency: MS(b.idleGlowSineBFrequency),
+            idleGlowSineBAmplitude: L(a.idleGlowSineBAmplitude, b.idleGlowSineBAmplitude),
+            idleGlowSineCFrequency: MS(b.idleGlowSineCFrequency),
+            idleGlowSineCAmplitude: L(a.idleGlowSineCAmplitude, b.idleGlowSineCAmplitude),
+            idleGlowSteppedMultiplier: L(a.idleGlowSteppedMultiplier, b.idleGlowSteppedMultiplier),
+            idleGlowSteppedWallFrequency: MS(b.idleGlowSteppedWallFrequency),
+            lanePhaseSpeedMin: MS(b.lanePhaseSpeedMin),
+            lanePhaseSpeedSpan: MS(b.lanePhaseSpeedSpan),
+            lanePhaseLaneWeight: D(a.lanePhaseLaneWeight, b.lanePhaseLaneWeight),
+            lanePhaseSeedWeight: D(a.lanePhaseSeedWeight, b.lanePhaseSeedWeight),
+            amplitudeCalmBase: L(a.amplitudeCalmBase, b.amplitudeCalmBase) * CGFloat(m),
+            amplitudeCalmSpan: L(a.amplitudeCalmSpan, b.amplitudeCalmSpan) * CGFloat(m),
+            amplitudeBurstBase: L(a.amplitudeBurstBase, b.amplitudeBurstBase) * CGFloat(m),
+            amplitudeBurstWobble: L(a.amplitudeBurstWobble, b.amplitudeBurstWobble) * CGFloat(m),
+            amplitudeChaosBase: L(a.amplitudeChaosBase, b.amplitudeChaosBase) * CGFloat(m),
+            amplitudeChaosSpan: L(a.amplitudeChaosSpan, b.amplitudeChaosSpan) * CGFloat(m),
+            helixRunnerCount: max(1, I(a.helixRunnerCount, b.helixRunnerCount)),
+            offAxisRunnerCount: max(1, I(a.offAxisRunnerCount, b.offAxisRunnerCount)),
+            coreSpineResampleSteps: max(4, I(a.coreSpineResampleSteps, b.coreSpineResampleSteps)),
+            coreSpineKnotCount: max(1, I(a.coreSpineKnotCount, b.coreSpineKnotCount))
+        )
+    }
 }
 
 /// Active tuning for static `ProceduralBeamRenderer` helpers (set around `drawBeam`; restored after). UI-thread Canvas only.
@@ -361,30 +452,147 @@ enum EnergyBeamHeroLayout {
     // MARK: - Hero margin transition (Home + DEBUG previews)
 
     /// Midpoint duration for sliders / presets when not using delta-scaled timing.
-    static let marginDrivenAnimationSeconds: Double = 3.75
+    static let marginDrivenAnimationSeconds: Double = 1.0
 
-    static let marginTransitionMinSeconds: Double = 2.5
-    static let marginTransitionMaxSeconds: Double = 5.0
-    /// Integer delta at or below this uses a very short transition (or caller may snap).
-    static let marginTransitionTinyIntDelta: Int = 3
-    static let marginTransitionTinySeconds: Double = 0.28
+    /// Minimum duration for margin / score counting and beam collision slide (Home tuning preview).
+    static let marginTransitionMinSeconds: Double = 1.0
+    static let marginTransitionMaxSeconds: Double = 2.0
     /// Above this magnitude of `target - start` (in margin points), duration reaches `marginTransitionMaxSeconds`.
     private static let marginTransitionDeltaSpan: Double = 7500
 
+    // MARK: - Beam visual intro (app open / foreground)
+
+    /// Duration for `beginningIntro` → `endingProduction` visual birth on session open.
+    static let beamIntroAnimationSeconds: Double = 1.0
+
+    /// Particle / lane drift speed during intro (`endingProduction` motion × this). **Lower** = calmer intro.
+    static let introProceduralMotionScale: Double = 0.01
+
+    /// Particle drift while margin/score slide runs (`endingProduction` × this). Lower = calmer slide.
+    static let battleCountProceduralMotionScale: Double = 0.32
+
+    /// Impact flashes during slide (0 = off). Integer margin ticks used to retrigger bursts — keep at 0 for fluid slides.
+    static let battleCountImpactStrengthScale: Double = 0
+
+    /// Ease for margin/score lerp during slide (linear = harsh integer cadence feel on the beam).
+    static let battleCountSlideUsesEaseInOut: Bool = true
+
+    /// Slow center wobble during intro (`sin(wall × freq) × width × fraction`).
+    static let introCenterWobbleFrequency: Double = 0.65
+    static let introCenterWobbleWidthFraction: CGFloat = 0.016
+
     /// Duration for animating from `start` to `target` comparable margin (steps or battle-score points).
     static func marginTransitionDuration(start: Double, target: Double) -> Double {
-        let deltaI = abs(Int(target.rounded(.towardZero)) - Int(start.rounded(.towardZero)))
-        if deltaI <= marginTransitionTinyIntDelta {
-            return marginTransitionTinySeconds
-        }
         let dMag = abs(target - start)
         let span = min(1, dMag / marginTransitionDeltaSpan)
-        return marginTransitionMinSeconds + span * (marginTransitionMaxSeconds - marginTransitionMinSeconds)
+        let scaled = marginTransitionMinSeconds + span * (marginTransitionMaxSeconds - marginTransitionMinSeconds)
+        return max(marginTransitionMinSeconds, scaled)
     }
 
-    /// Slow start / fast middle / slow finish — shared by beam collision slide and hero number.
+    /// Longest of margin / user / opponent score deltas — keeps counting + beam slide in sync.
+    static func heroBattleTransitionDuration(
+        startMargin: Double,
+        targetMargin: Double,
+        startUserBattleScore: Double,
+        targetUserBattleScore: Double,
+        startOpponentBattleScore: Double,
+        targetOpponentBattleScore: Double
+    ) -> Double {
+        max(
+            marginTransitionDuration(start: startMargin, target: targetMargin),
+            marginTransitionDuration(start: startUserBattleScore, target: targetUserBattleScore),
+            marginTransitionDuration(start: startOpponentBattleScore, target: targetOpponentBattleScore)
+        )
+    }
+
+    /// Linear cadence so hero margin integers tick at a steady rate during updates.
+    static func marginCountingAnimation(duration: Double) -> Animation {
+        .linear(duration: duration)
+    }
+
+    /// Eased intro for procedural beam materializing on app open.
+    static func beamIntroAnimation(duration: Double) -> Animation {
+        .easeInOut(duration: duration)
+    }
+
+    /// Slow start / fast middle / slow finish — legacy preset / debug sliders.
     static func marginTransitionAnimation(duration: Double) -> Animation {
         .timingCurve(0.42, 0, 0.58, 1, duration: duration)
+    }
+
+    /// Opts out of Home's global `disablesAnimations` so hero `withAnimation` blocks actually run.
+    static func withEnabledAnimation(_ animation: Animation? = .default, _ body: () -> Void) {
+        var t = Transaction()
+        t.disablesAnimations = false
+        withTransaction(t) {
+            withAnimation(animation, body)
+        }
+    }
+
+    static func withEnabledTransaction(disablesAnimations: Bool, _ body: () -> Void) {
+        var t = Transaction()
+        t.disablesAnimations = disablesAnimations
+        withTransaction(t, body)
+    }
+
+    // MARK: - Timeline-driven progress (Canvas-safe; avoids SwiftUI @State animation gaps)
+
+    static func easeInOut01(_ u: Double) -> Double {
+        if u <= 0 { return 0 }
+        if u >= 1 { return 1 }
+        return u < 0.5 ? 2 * u * u : 1 - pow(-2 * u + 2, 2) / 2
+    }
+
+    static func linearProgress(elapsed: TimeInterval, duration: TimeInterval) -> Double {
+        guard duration > 0 else { return 1 }
+        return min(1, max(0, elapsed / duration))
+    }
+
+    /// `0` = intro ghost, `1` = production. Uses wall clock so TimelineView redraws every tick.
+    static func beamIntroProgress(at date: Date, startedAt: Date?, holdGhostBeforeStart: Bool) -> CGFloat {
+        if holdGhostBeforeStart, startedAt == nil { return 0 }
+        guard let startedAt else { return 1 }
+        let elapsed = date.timeIntervalSince(startedAt)
+        let u = linearProgress(elapsed: elapsed, duration: beamIntroAnimationSeconds)
+        return CGFloat(easeInOut01(u))
+    }
+}
+
+/// Resting + animated hero battle numbers (margin + column battle scores + beam collision).
+struct EnergyBeamHeroAnimatedSnapshot: Equatable {
+    var margin: Double
+    var userBattleScore: Double
+    var opponentBattleScore: Double
+    var beamCollisionMargin: Double
+
+    static func lerp(from a: Self, to b: Self, t: Double) -> Self {
+        let u = min(1, max(0, t))
+        func L(_ x: Double, _ y: Double) -> Double { x + (y - x) * u }
+        return .init(
+            margin: L(a.margin, b.margin),
+            userBattleScore: L(a.userBattleScore, b.userBattleScore),
+            opponentBattleScore: L(a.opponentBattleScore, b.opponentBattleScore),
+            beamCollisionMargin: L(a.beamCollisionMargin, b.beamCollisionMargin)
+        )
+    }
+}
+
+struct EnergyBeamHeroBattleCountAnimation: Equatable {
+    let startedAt: Date
+    let duration: TimeInterval
+    let from: EnergyBeamHeroAnimatedSnapshot
+    let to: EnergyBeamHeroAnimatedSnapshot
+
+    func snapshot(at date: Date) -> EnergyBeamHeroAnimatedSnapshot {
+        let linearU = EnergyBeamHeroLayout.linearProgress(
+            elapsed: date.timeIntervalSince(startedAt),
+            duration: duration
+        )
+        if linearU >= 1 { return to }
+        let u = EnergyBeamHeroLayout.battleCountSlideUsesEaseInOut
+            ? EnergyBeamHeroLayout.easeInOut01(linearU)
+            : linearU
+        return .lerp(from: from, to: to, t: u)
     }
 }
 
@@ -422,6 +630,155 @@ private func normalizedBeamOffset(margin: Double, referenceValue: Int, tuning: E
 /// `Int` overload; forwards to the `Double` version (same behavior).
 private func normalizedBeamOffset(margin: Int, referenceValue: Int, tuning: EnergyBeamVisualTuning) -> CGFloat {
     normalizedBeamOffset(margin: Double(margin), referenceValue: referenceValue, tuning: tuning)
+}
+
+private func clampBeam(_ v: CGFloat, min lo: CGFloat, max hi: CGFloat) -> CGFloat {
+    Swift.min(Swift.max(v, lo), hi)
+}
+
+// MARK: - Collision X + margin copy (beam + sliding headline)
+
+enum EnergyBeamHeroCollisionLayout {
+    static func centerX(
+        width: CGFloat,
+        marginPrecise: Double,
+        referenceBattleValue: Int,
+        tuning: EnergyBeamVisualTuning,
+        pinToCenterDuringIntro: Bool,
+        wall: TimeInterval
+    ) -> CGFloat {
+        if pinToCenterDuringIntro {
+            let wobble = sin(wall * EnergyBeamHeroLayout.introCenterWobbleFrequency)
+                * width * EnergyBeamHeroLayout.introCenterWobbleWidthFraction
+            return clampBeam(
+                width * 0.5 + wobble,
+                min: width * tuning.collisionClampMinFraction,
+                max: width * tuning.collisionClampMaxFraction
+            )
+        }
+        let cx = width * 0.5 + normalizedBeamOffset(
+            margin: marginPrecise,
+            referenceValue: referenceBattleValue,
+            tuning: tuning
+        ) * width
+        return clampBeam(cx, min: width * tuning.collisionClampMinFraction, max: width * tuning.collisionClampMaxFraction)
+    }
+
+    static func eyebrow(margin: Int) -> String {
+        if margin == 0 { return "TIED" }
+        if margin > 0 { return "AHEAD BY" }
+        return "BEHIND BY"
+    }
+
+    static func eyebrowColor(margin: Int) -> Color {
+        if margin == 0 { return FitUpColors.Text.secondary }
+        if margin > 0 { return FitUpColors.Neon.cyan }
+        return FitUpColors.Neon.orange.opacity(0.95)
+    }
+
+    static func heroNumberText(margin: Int) -> String {
+        if margin == 0 { return "0" }
+        let nf = EnergyBeamNumberFormatting.score
+        let n = nf.string(from: NSNumber(value: abs(margin))) ?? "\(abs(margin))"
+        if margin > 0 { return "+\(n)" }
+        return "-\(n)"
+    }
+}
+
+/// Margin block below the beam: eyebrow + unit stay centered; only the hero number tracks collision X.
+private struct EnergyBeamCollisionAlignedMarginHeadline: View {
+    let collisionX: CGFloat
+    let trackWidth: CGFloat
+    let margin: Int
+    let unitLabel: String
+
+    private var accent: Color { EnergyBeamHeroCollisionLayout.eyebrowColor(margin: margin) }
+    private let blockHeight: CGFloat = 72
+    private let lineGapHalf: CGFloat = 46
+    private let numberRowY: CGFloat = 32
+    private let eyebrowY: CGFloat = 14
+    private let unitY: CGFloat = 54
+    private let verticalMarkerTopY: CGFloat = 2
+    private let verticalMarkerBottomY: CGFloat = 44
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+
+            ZStack {
+                verticalCollisionMarker
+                    .position(
+                        x: collisionX,
+                        y: (verticalMarkerTopY + verticalMarkerBottomY) * 0.5
+                    )
+
+                HStack(spacing: 0) {
+                    horizontalGuideLine(fadeFromLeading: true)
+                        .frame(width: max(0, collisionX - lineGapHalf))
+                    Color.clear.frame(width: lineGapHalf * 2)
+                    horizontalGuideLine(fadeFromLeading: false)
+                        .frame(width: max(0, w - collisionX - lineGapHalf))
+                }
+                .frame(width: w, height: 1)
+                .position(x: w * 0.5, y: numberRowY)
+
+                Text(EnergyBeamHeroCollisionLayout.eyebrow(margin: margin))
+                    .font(FitUpFont.body(13, weight: .heavy))
+                    .foregroundStyle(accent)
+                    .tracking(2.6)
+                    .frame(maxWidth: .infinity)
+                    .position(x: w * 0.5, y: eyebrowY)
+
+                Text(EnergyBeamHeroCollisionLayout.heroNumberText(margin: margin))
+                    .font(FitUpFont.display(41, weight: .heavy))
+                    .foregroundStyle(Color.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.48)
+                    .allowsTightening(true)
+                    .contentTransition(.numericText())
+                    .position(x: collisionX, y: numberRowY)
+
+                Text(unitLabel)
+                    .font(FitUpFont.body(12, weight: .semibold))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .tracking(3.2)
+                    .frame(maxWidth: .infinity)
+                    .position(x: w * 0.5, y: unitY)
+            }
+        }
+        .frame(height: blockHeight)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Faded vertical rail under the beam collision — strongest at the top (beam center line).
+    private var verticalCollisionMarker: some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        accent.opacity(0.38),
+                        accent.opacity(0.14),
+                        accent.opacity(0.03),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .frame(width: 1, height: verticalMarkerBottomY - verticalMarkerTopY)
+    }
+
+    private func horizontalGuideLine(fadeFromLeading: Bool) -> some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: fadeFromLeading
+                        ? [accent.opacity(0.02), accent.opacity(0.28)]
+                        : [accent.opacity(0.28), accent.opacity(0.02)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+    }
 }
 
 // MARK: - Mini logo
@@ -513,6 +870,7 @@ private struct PlayerColumnPreview: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.55)
                 .allowsTightening(true)
+                .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity, alignment: role == .user ? .leading : .trailing)
     }
@@ -562,9 +920,8 @@ private enum BeamTeamColors {
     static let oppEmber = Color(red: 1, green: 0.22, blue: 0.05)
 }
 
-/// DEBUG-only beam: `GeometryReader` supplies width; `collisionX` follows `marginPrecise` (animated by caller `withAnimation`).
-/// `TimelineView` supplies `wall` time for procedural motion; **that** motion stays fast—only `margin` changes slide the impact slowly.
-/// `marginRounded` reseeds deterministic noise and triggers `impactBoost` flashes via `onChange`.
+/// `TimelineView` supplies `wall` time for procedural motion; intro tuning is recomputed every tick from `beamIntroStartedAt`.
+/// `marginPrecise` collision X interpolates when the caller drives a timeline-based or animated margin.
 private struct ProceduralEnergyBeamView: View {
     /// Same as parent `margin`; collision X interpolates when this animates (caller `withAnimation` / transaction).
     let marginPrecise: Double
@@ -572,68 +929,180 @@ private struct ProceduralEnergyBeamView: View {
     let referenceBattleValue: Int
     /// Same as parent `battleMarginInt`; changes discretely during a fractional margin animation.
     let marginRounded: Int
-    /// All procedural beam look + cost knobs (`endingProduction` = shipped; `beginningIntro` = ghost preset for tweens).
+    /// Target look when intro completes (`endingProduction` in app).
     var beamVisualTuning: EnergyBeamVisualTuning = .endingProduction
+    /// When set, intro progress = elapsed / `beamIntroAnimationSeconds` (TimelineView-driven).
+    var beamIntroStartedAt: Date? = nil
+    /// When true and `beamIntroStartedAt` is nil, draw at intro ghost (`t = 0`).
+    var beamIntroHoldGhost: Bool = false
+    /// Pin collision to card center with slow wobble while intro runs.
+    var pinCollisionToCenterDuringIntro: Bool = false
+    /// Scales lane drift / shimmer frequencies (intro ≈ 0.22, production = 1).
+    var proceduralMotionScale: Double = 1
+    /// Scales impact burst strength when margin integers tick (score catch-up).
+    var impactStrengthScale: CGFloat = 1
+    /// When set, Canvas noise uses this instead of `marginRounded` so the beam does not re-roll every integer during a slide.
+    var proceduralDrawSeed: Int? = nil
+    /// When true, integer margin changes do not retrigger impact pulses (fluid score catch-up).
+    var suppressImpactBursts: Bool = false
 
     /// Wall-clock time of last integer margin change; drives short `impact` pulse in `drawBeam`.
     @State private var lastImpactAtWall: TimeInterval = -1000
 
+    private var drawSeed: Int { proceduralDrawSeed ?? marginRounded }
+
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
-            let h = geo.size.height
-            let midY = h * 0.5
-            // Computed outside TimelineView so layout can follow animated `marginPrecise` every frame.
-            let collisionX = computeCollisionX(width: w)
-
-            ZStack {
-                TimelineView(.animation(minimumInterval: beamVisualTuning.timelineInterval)) { timeline in
-                    let wall = timeline.date.timeIntervalSinceReferenceDate
-                    let impact = impactBoost(atWallTime: wall)
-                    Canvas { context, size in
-                        ProceduralBeamRenderer.drawBeam(
-                            context: &context,
-                            size: size,
-                            collisionX: collisionX,
-                            midY: midY,
-                            wall: wall,
-                            wDraw: wall * (beamVisualTuning.wDrawIdleMultiplier + Double(impact) * beamVisualTuning.wDrawImpactExtra),
-                            rawImpact: impact,
-                            seed: marginRounded,
-                            tuning: beamVisualTuning
-                        )
-                    }
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                let introT = EnergyBeamHeroLayout.beamIntroProgress(
+                    at: timeline.date,
+                    startedAt: beamIntroStartedAt,
+                    holdGhostBeforeStart: beamIntroHoldGhost
+                )
+                let introActive = introT < 1 && (beamIntroStartedAt != nil || beamIntroHoldGhost)
+                let motionScale = introActive
+                    ? EnergyBeamHeroLayout.introProceduralMotionScale
+                    : max(0, proceduralMotionScale)
+                let activeTuning: EnergyBeamVisualTuning = introActive
+                    ? .interpolatedVisualBirth(
+                        from: .beginningIntro,
+                        to: beamVisualTuning,
+                        visualT: introT,
+                        motionScale: motionScale
+                    )
+                    : scaledProductionTuning(motionScale: motionScale, impactScale: impactStrengthScale)
+                let stripHeight = activeTuning.beamOuterHeight
+                let midY = stripHeight * 0.5
+                let wall = timeline.date.timeIntervalSinceReferenceDate
+                let collisionX = resolveCollisionX(
+                    width: w,
+                    tuning: activeTuning,
+                    introActive: introActive,
+                    wall: wall
+                )
+                let impact = impactBoost(atWallTime: wall, tuning: activeTuning) * impactStrengthScale
+                Canvas { context, size in
+                    ProceduralBeamRenderer.drawBeam(
+                        context: &context,
+                        size: size,
+                        collisionX: collisionX,
+                        midY: midY,
+                        wall: wall,
+                        wDraw: wall * (activeTuning.wDrawIdleMultiplier + Double(impact) * activeTuning.wDrawImpactExtra),
+                        rawImpact: impact,
+                        seed: drawSeed,
+                        tuning: activeTuning
+                    )
                 }
+                .frame(width: w, height: stripHeight)
+                .frame(maxHeight: .infinity, alignment: .center)
             }
         }
         .frame(height: beamVisualTuning.beamOuterHeight)
-        // Collision slide is animated by the caller (`withAnimation`); do not add a second conflicting `.animation` here.
         .onChange(of: marginRounded) { _, _ in
+            guard !suppressImpactBursts else { return }
             lastImpactAtWall = Date().timeIntervalSinceReferenceDate
         }
     }
 
-    /// Converts current `marginPrecise` + width into collision center X (clamped to card edges).
-    private func computeCollisionX(width w: CGFloat) -> CGFloat {
-        let cx = w * 0.5 + normalizedBeamOffset(margin: marginPrecise, referenceValue: referenceBattleValue, tuning: beamVisualTuning) * w
-        return clampBeam(cx, min: w * beamVisualTuning.collisionClampMinFraction, max: w * beamVisualTuning.collisionClampMaxFraction)
+    private func scaledProductionTuning(motionScale: Double, impactScale: CGFloat) -> EnergyBeamVisualTuning {
+        guard motionScale < 0.999 || impactScale < 0.999 else { return beamVisualTuning }
+        let m = max(0, motionScale)
+        let t = beamVisualTuning
+        let i = Double(impactScale)
+        return .init(
+            label: "scaled(m=\(String(format: "%.2f", m)))",
+            timelineInterval: t.timelineInterval,
+            lanesPerSide: t.lanesPerSide,
+            sparkCount: t.sparkCount,
+            tendrilSegmentMin: t.tendrilSegmentMin,
+            tendrilSegmentMax: t.tendrilSegmentMax,
+            forkProbabilityThreshold: t.forkProbabilityThreshold,
+            flowStreakCount: t.flowStreakCount,
+            flowPacketCount: t.flowPacketCount,
+            reflectFragmentCount: t.reflectFragmentCount,
+            beamOuterHeight: t.beamOuterHeight,
+            referenceFloor: t.referenceFloor,
+            referenceScaleMultiplier: t.referenceScaleMultiplier,
+            referenceScaleMinimum: t.referenceScaleMinimum,
+            marginMaxHorizontalFraction: t.marginMaxHorizontalFraction,
+            collisionClampMinFraction: t.collisionClampMinFraction,
+            collisionClampMaxFraction: t.collisionClampMaxFraction,
+            wDrawIdleMultiplier: t.wDrawIdleMultiplier * m,
+            wDrawImpactExtra: t.wDrawImpactExtra * m,
+            impactBoostWindowSeconds: t.impactBoostWindowSeconds,
+            impactBoostPeakExponent: t.impactBoostPeakExponent,
+            impactBoostShimmerAmplitude: t.impactBoostShimmerAmplitude * i,
+            impactBoostShimmerFrequency: t.impactBoostShimmerFrequency * m,
+            useProportionalHorizontalPads: t.useProportionalHorizontalPads,
+            horizontalBandLeftEdgeFraction: t.horizontalBandLeftEdgeFraction,
+            horizontalBandRightEdgeFraction: t.horizontalBandRightEdgeFraction,
+            leftPadLeadingOffset: t.leftPadLeadingOffset,
+            rightPadTrailingExtra: t.rightPadTrailingExtra,
+            impactVisualScale: t.impactVisualScale * CGFloat(i),
+            masterStrokeOpacity: t.masterStrokeOpacity,
+            globalBrightImpactCoefficient: t.globalBrightImpactCoefficient,
+            flareMulBase: t.flareMulBase,
+            flareMulImpactCoefficient: t.flareMulImpactCoefficient,
+            burstScaleBase: t.burstScaleBase,
+            burstScaleImpactCoefficient: t.burstScaleImpactCoefficient,
+            flowMulBase: t.flowMulBase * CGFloat(m),
+            flowMulImpactCoefficient: t.flowMulImpactCoefficient * CGFloat(m),
+            idleGlowBase: t.idleGlowBase,
+            idleGlowSeedStride: t.idleGlowSeedStride,
+            idleGlowSineAFrequency: t.idleGlowSineAFrequency * m,
+            idleGlowSineAAmplitude: t.idleGlowSineAAmplitude,
+            idleGlowSineBFrequency: t.idleGlowSineBFrequency * m,
+            idleGlowSineBAmplitude: t.idleGlowSineBAmplitude,
+            idleGlowSineCFrequency: t.idleGlowSineCFrequency * m,
+            idleGlowSineCAmplitude: t.idleGlowSineCAmplitude,
+            idleGlowSteppedMultiplier: t.idleGlowSteppedMultiplier,
+            idleGlowSteppedWallFrequency: t.idleGlowSteppedWallFrequency * m,
+            lanePhaseSpeedMin: t.lanePhaseSpeedMin * m,
+            lanePhaseSpeedSpan: t.lanePhaseSpeedSpan * m,
+            lanePhaseLaneWeight: t.lanePhaseLaneWeight,
+            lanePhaseSeedWeight: t.lanePhaseSeedWeight,
+            amplitudeCalmBase: t.amplitudeCalmBase * CGFloat(m),
+            amplitudeCalmSpan: t.amplitudeCalmSpan * CGFloat(m),
+            amplitudeBurstBase: t.amplitudeBurstBase * CGFloat(m),
+            amplitudeBurstWobble: t.amplitudeBurstWobble * CGFloat(m),
+            amplitudeChaosBase: t.amplitudeChaosBase * CGFloat(m),
+            amplitudeChaosSpan: t.amplitudeChaosSpan * CGFloat(m),
+            helixRunnerCount: t.helixRunnerCount,
+            offAxisRunnerCount: t.offAxisRunnerCount,
+            coreSpineResampleSteps: t.coreSpineResampleSteps,
+            coreSpineKnotCount: t.coreSpineKnotCount
+        )
+    }
+
+    private func resolveCollisionX(
+        width w: CGFloat,
+        tuning: EnergyBeamVisualTuning,
+        introActive: Bool,
+        wall: TimeInterval
+    ) -> CGFloat {
+        EnergyBeamHeroCollisionLayout.centerX(
+            width: w,
+            marginPrecise: marginPrecise,
+            referenceBattleValue: referenceBattleValue,
+            tuning: tuning,
+            pinToCenterDuringIntro: introActive && pinCollisionToCenterDuringIntro,
+            wall: wall
+        )
     }
 
     /// Short intensity pulse after `marginRounded` flips; scales chaos in `drawBeam` (0…~1).
-    private func impactBoost(atWallTime wall: TimeInterval) -> CGFloat {
+    private func impactBoost(atWallTime wall: TimeInterval, tuning: EnergyBeamVisualTuning) -> CGFloat {
         let elapsed = CGFloat(wall - lastImpactAtWall)
-        let window = beamVisualTuning.impactBoostWindowSeconds
+        let window = tuning.impactBoostWindowSeconds
         guard elapsed >= 0, elapsed < window else { return 0 }
         let t = 1 - (elapsed / window)
-        let peak = pow(max(0, t), beamVisualTuning.impactBoostPeakExponent)
-        let shimmer = 1 + beamVisualTuning.impactBoostShimmerAmplitude * sin(Double(elapsed) * beamVisualTuning.impactBoostShimmerFrequency)
+        let peak = pow(max(0, t), tuning.impactBoostPeakExponent)
+        let shimmer = 1 + tuning.impactBoostShimmerAmplitude * sin(Double(elapsed) * tuning.impactBoostShimmerFrequency)
         return CGFloat(peak * shimmer)
     }
 
-    /// Keeps collision X inside horizontal padding so the beam never clips the card edge.
-    private func clampBeam(_ v: CGFloat, min lo: CGFloat, max hi: CGFloat) -> CGFloat {
-        Swift.min(Swift.max(v, lo), hi)
-    }
 }
 
 // MARK: - Deterministic jitter + Canvas renderer
@@ -2102,19 +2571,32 @@ struct EnergyBeamHeroGlassCardView: View {
     var opponentIntradayLatestTickAt: Date? = nil
     /// When non-nil, only the procedural beam uses this collision margin; momentum and headline inputs stay tied to `margin` / caller-passed copy.
     var collisionMarginOverride: Int? = nil
+    /// Fractional beam collision override (smooth animation); takes precedence over `collisionMarginOverride` when set.
+    var beamCollisionMarginPreciseOverride: Double? = nil
     /// Mini wordmark + “TODAY’S BATTLE” strip at top of card. Home hides this for a tighter hero; prototypes keep it.
     var showTopBrandHeader: Bool = true
-    /// Procedural beam look + cost; use `endingProduction` in app, `beginningIntro` for ghost intro, or `interpolated(from:to:t:)` while animating open.
+    /// Procedural beam look + cost; intro tween runs inside `ProceduralEnergyBeamView` when `beamIntroStartedAt` is set.
     var beamVisualTuning: EnergyBeamVisualTuning = .endingProduction
+    var beamIntroStartedAt: Date? = nil
+    var beamIntroHoldGhost: Bool = false
+    var pinCollisionToCenterDuringIntro: Bool = false
+    var proceduralMotionScale: Double = 1
+    var impactStrengthScale: CGFloat = 1
+    var proceduralDrawSeed: Int? = nil
+    var suppressImpactBursts: Bool = false
 
     private var narrativeMarginInt: Int { Int(margin.rounded(.towardZero)) }
     private var beamCollisionMarginPrecise: Double {
+        if let precise = beamCollisionMarginPreciseOverride { return precise }
         if let override = collisionMarginOverride { return Double(override) }
         return margin
     }
 
     private var beamCollisionMarginRounded: Int {
-        collisionMarginOverride ?? narrativeMarginInt
+        if beamCollisionMarginPreciseOverride != nil || collisionMarginOverride != nil {
+            return Int(beamCollisionMarginPrecise.rounded(.towardZero))
+        }
+        return narrativeMarginInt
     }
 
     private var momentum: MomentumState { MomentumState.inferred(fromMargin: narrativeMarginInt) }
@@ -2132,18 +2614,9 @@ struct EnergyBeamHeroGlassCardView: View {
                 .padding(.top, showTopBrandHeader ? 0 : 10)
                 .padding(.bottom, 14)
 
-            ProceduralEnergyBeamView(
-                marginPrecise: beamCollisionMarginPrecise,
-                referenceBattleValue: referenceBattleValue,
-                marginRounded: beamCollisionMarginRounded,
-                beamVisualTuning: beamVisualTuning
-            )
-            .padding(.horizontal, 18)
-            .padding(.bottom, 12)
-
-            mainResultSection
+            beamBattleZone
                 .padding(.horizontal, 18)
-                .padding(.bottom, 14)
+                .padding(.bottom, 12)
 
             momentumChip
                 .padding(.bottom, 16)
@@ -2205,10 +2678,9 @@ struct EnergyBeamHeroGlassCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: FitUpColors.Neon.cyan.opacity(0.12), radius: 28, y: 10)
         .shadow(color: .black.opacity(0.65), radius: 18, y: 10)
-        // Margin-driven motion is animated by the caller (`withAnimation` on Home / prototype) so beam + number share one curve.
         .animation(
             EnergyBeamHeroLayout.marginTransitionAnimation(duration: EnergyBeamHeroLayout.marginDrivenAnimationSeconds),
-            value: collisionMarginOverride
+            value: beamCollisionMarginPrecise
         )
     }
 
@@ -2248,29 +2720,64 @@ struct EnergyBeamHeroGlassCardView: View {
         }
     }
 
-    private var mainResultSection: some View {
-        VStack(spacing: 8) {
-            Text(resultEyebrow)
-                .font(FitUpFont.body(11, weight: .heavy))
-                .foregroundStyle(resultEyebrowColor)
-                .tracking(2.4)
+    private var beamMarginDisplayInt: Int { Int(beamCollisionMarginPrecise.rounded(.towardZero)) }
 
-            Text(resultHeroNumberText)
-                .font(FitUpFont.display(41, weight: .heavy))
-                .foregroundStyle(Color.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.48)
-                .allowsTightening(true)
+    /// Headline + guide rails + procedural beam share one collision X each frame.
+    private var beamBattleZone: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+            let wall = timeline.date.timeIntervalSinceReferenceDate
+            let introT = EnergyBeamHeroLayout.beamIntroProgress(
+                at: timeline.date,
+                startedAt: beamIntroStartedAt,
+                holdGhostBeforeStart: beamIntroHoldGhost
+            )
+            let introActive = introT < 1 && (beamIntroStartedAt != nil || beamIntroHoldGhost)
+            let layoutTuning = introActive
+                ? .interpolatedVisualBirth(
+                    from: .beginningIntro,
+                    to: beamVisualTuning,
+                    visualT: introT,
+                    motionScale: EnergyBeamHeroLayout.introProceduralMotionScale
+                )
+                : beamVisualTuning
 
-            Text(unitLabel)
-                .font(FitUpFont.body(12, weight: .semibold))
-                .foregroundStyle(FitUpColors.Text.secondary)
-                .tracking(3.2)
+            GeometryReader { geo in
+                let w = geo.size.width
+                let collisionX = EnergyBeamHeroCollisionLayout.centerX(
+                    width: w,
+                    marginPrecise: beamCollisionMarginPrecise,
+                    referenceBattleValue: referenceBattleValue,
+                    tuning: layoutTuning,
+                    pinToCenterDuringIntro: introActive && pinCollisionToCenterDuringIntro,
+                    wall: wall
+                )
+
+                VStack(spacing: 4) {
+                    ProceduralEnergyBeamView(
+                        marginPrecise: beamCollisionMarginPrecise,
+                        referenceBattleValue: referenceBattleValue,
+                        marginRounded: beamCollisionMarginRounded,
+                        beamVisualTuning: beamVisualTuning,
+                        beamIntroStartedAt: beamIntroStartedAt,
+                        beamIntroHoldGhost: beamIntroHoldGhost,
+                        pinCollisionToCenterDuringIntro: pinCollisionToCenterDuringIntro,
+                        proceduralMotionScale: proceduralMotionScale,
+                        impactStrengthScale: impactStrengthScale,
+                        proceduralDrawSeed: proceduralDrawSeed,
+                        suppressImpactBursts: suppressImpactBursts
+                    )
+                    .frame(height: layoutTuning.beamOuterHeight)
+
+                    EnergyBeamCollisionAlignedMarginHeadline(
+                        collisionX: collisionX,
+                        trackWidth: w,
+                        margin: beamMarginDisplayInt,
+                        unitLabel: unitLabel
+                    )
+                }
+            }
+            .frame(height: layoutTuning.beamOuterHeight + 72)
         }
-        .multilineTextAlignment(.center)
-        .minimumScaleFactor(0.82)
-        .allowsTightening(true)
-        .transition(.opacity.combined(with: .scale(scale: 0.98)))
     }
 
     private var momentumChip: some View {
