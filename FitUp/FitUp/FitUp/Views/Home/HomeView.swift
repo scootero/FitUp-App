@@ -13,7 +13,7 @@ private let showHomeEnergyBeamDebugLab = true
 /// Stable token when the lab is off so the hero card does not see a new UUID every render.
 private let homeEnergyBeamDebugLabDisabledPreviewToken = UUID()
 /// Approximates loaded energy beam hero height (card + beam + chart + day bar) for skeleton parity.
-private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 400
+private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 410
 /// Horizontal inset for the energy beam hero only (slightly tighter than the rest of Home).
 private let homeHeroHorizontalPadding: CGFloat = 15
 

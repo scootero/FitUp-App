@@ -18,11 +18,7 @@ struct StatsMockShellView: View {
     let battleStatsScopeLabel: String
     let rangeMargins: [DailyBattleMargin]
     let isRangeMarginsLoading: Bool
-    let dailyMargins: [DailyBattleMargin]
-    let dailyMarginDayCount: Int
-    let dailyMarginsSavedAt: Date?
-    let isDailyMarginsRefreshing: Bool
-    let onSelectDailyMarginDayCount: (Int) -> Void
+    let statsSnapshotSavedAt: Date?
     let battleStats: HealthBattleStats
     let weekSteps: [Int]
     let activeMatchEdges: [HomeActiveMatch]
@@ -85,14 +81,6 @@ struct StatsMockShellView: View {
         }
         .onChange(of: rangeMargins) { _, _ in
             logStatsMarginSeriesDebug()
-        }
-        .onChange(of: dailyMargins.map(\.id)) { _, _ in
-            guard marginMode == .daily else { return }
-            startMarginChartAnimation()
-        }
-        .onChange(of: dailyMargins.map(\.margin)) { _, _ in
-            guard marginMode == .daily else { return }
-            startMarginChartAnimation()
         }
     }
 
@@ -1465,11 +1453,11 @@ struct StatsMockShellView: View {
     }
 
     private func dailyFreshnessText(now: Date) -> String? {
-        if isDailyMarginsRefreshing {
+        if isRangeMarginsLoading {
             return "Updating..."
         }
-        guard let dailyMarginsSavedAt else { return nil }
-        let delta = max(0, Int(now.timeIntervalSince(dailyMarginsSavedAt)))
+        guard let statsSnapshotSavedAt else { return nil }
+        let delta = max(0, Int(now.timeIntervalSince(statsSnapshotSavedAt)))
         if delta < 60 { return "Updated just now" }
         let minutes = delta / 60
         if minutes < 60 { return "Updated \(minutes)m ago" }
@@ -1832,11 +1820,7 @@ struct StatsMetricExplainerOverlay: View {
             battleStatsScopeLabel: "lifetime",
             rangeMargins: [],
             isRangeMarginsLoading: false,
-            dailyMargins: [],
-            dailyMarginDayCount: 7,
-            dailyMarginsSavedAt: nil,
-            isDailyMarginsRefreshing: false,
-            onSelectDailyMarginDayCount: { _ in },
+            statsSnapshotSavedAt: nil,
             battleStats: .empty,
             weekSteps: Array(repeating: 0, count: 7),
             activeMatchEdges: [],

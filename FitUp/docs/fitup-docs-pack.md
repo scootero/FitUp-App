@@ -431,7 +431,7 @@ State transitions are owned by the backend (Postgres triggers + Edge Functions).
 | `match_participants` | Which users are in which match, acceptance state |
 | `match_days` | One row per day per match — status, winner, void flag |
 | `match_day_participants` | One row per user per day — live total, finalized value |
-| `metric_snapshots` | Raw HealthKit audit log — every sync event |
+| `metric_snapshots` | Raw HealthKit audit log — one row per value change per match/day (same value refreshes `synced_at`) |
 | `leaderboard_entries` | Weekly rankings — points, wins, losses, streak |
 | `all_time_bests` | Personal records per user |
 | `notification_events` | Audit log of every sent/attempted notification |
@@ -556,7 +556,7 @@ CREATE TABLE leaderboard_entries (
 
 | Data | Where | Rule |
 |---|---|---|
-| Raw HealthKit samples | `metric_snapshots` | Always written, never deleted |
+| Raw HealthKit samples | `metric_snapshots` | Written via `record_metric_snapshot` RPC: new row when value changes, same value updates `synced_at` only; never deleted |
 | Live daily total | `match_day_participants.metric_total` | Updated continuously during the day |
 | Locked daily total | `match_day_participants.finalized_value` | Set once at 10am cutoff, never changed |
 | Day winner | `match_days.winner_user_id` | Set once at finalization |
@@ -576,7 +576,7 @@ CREATE TABLE leaderboard_entries (
 - **Provisional and finalized are visually distinct** — different pip styles in JSX
 - **`finalized_value` written once, never changed**
 - **Series score always derived** — never stored, never computed in views
-- **Raw data always accepted** — `metric_snapshots` written regardless of finalization state
+- **Raw data always accepted** — `metric_snapshots` recorded regardless of finalization state (insert on value change, update `synced_at` when unchanged)
 
 ### Day status
 
@@ -1034,7 +1034,7 @@ When a push for a new pending match arrives, **`NotificationService`** can queue
 
 ### # Client — HealthKit → Postgres (no `sync-metric-snapshot` Edge Function)
 
-The iOS app uses **`MetricSyncCoordinator`** + **`MetricSnapshotRepository`** + **`MatchDayRepository`** + **`HealthKitService`** to write **`metric_snapshots`**, update **`match_day_participants.metric_total`**, and upsert **`user_health_baselines`** using the Supabase Swift client with the user’s JWT. There is **no** `sync-metric-snapshot` function in `supabase/functions/` in this repo; do not document one as deployed unless you add it.
+The iOS app uses **`MetricSyncCoordinator`** + **`MetricSnapshotRepository`** + **`MatchDayRepository`** + **`HealthKitService`** to write **`metric_snapshots`** (via Postgres RPC **`record_metric_snapshot`** — see `supabase/manual_sql/metric_snapshots_record_rpc.sql`), update **`match_day_participants.metric_total`**, and upsert **`user_health_baselines`** using the Supabase Swift client with the user’s JWT. There is **no** `sync-metric-snapshot` Edge Function in `supabase/functions/` in this repo.
 
 ### # Postgres functions and triggers (non-exhaustive — see migration)
 

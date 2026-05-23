@@ -3,11 +3,22 @@
 //  FitUp
 //
 //  Slice 7 writes for metric snapshots and rolling baselines.
+//  SQL: `supabase/manual_sql/metric_snapshots_record_rpc.sql`
 //
 
 import Combine
 import Foundation
 import Supabase
+
+struct MetricSnapshotRecordResult: Sendable {
+    let snapshotId: UUID
+    let wasUpdated: Bool
+}
+
+enum MetricSnapshotRepositoryError: Error {
+    case supabaseNotConfigured
+    case unexpectedRecordResponse
+}
 
 final class MetricSnapshotRepository {
     // "Calorie equivalent" is not explicitly defined in docs.
@@ -24,38 +35,34 @@ final class MetricSnapshotRepository {
         }
     }
 
-    func insertSnapshots(
-        matchIds: [UUID],
+    func recordSnapshot(
+        matchId: UUID,
         userId: UUID,
         metricType: HealthMetricType,
         value: Int,
         sourceDate: String,
         metadata: [String: String]? = nil
-    ) async throws {
-        guard !matchIds.isEmpty else { return }
-
+    ) async throws -> MetricSnapshotRecordResult {
         let flagged = shouldFlag(metricType: metricType, value: value)
         let syncedAt = Self.isoFormatter.string(from: Date())
-        let rows = matchIds.map { matchId in
-            MetricSnapshotInsert(
-                matchId: matchId,
-                userId: userId,
-                metricType: metricType.rawValue,
-                value: value,
-                sourceDate: sourceDate,
-                syncedAt: syncedAt,
-                flagged: flagged,
-                metadata: metadata
-            )
-        }
 
-        try await client
-            .from("metric_snapshots")
-            .insert(rows)
+        let params = RecordMetricSnapshotRPCParams(
+            p_match_id: matchId,
+            p_metric_type: metricType.rawValue,
+            p_value: value,
+            p_source_date: sourceDate,
+            p_flagged: flagged,
+            p_metadata: metadata,
+            p_synced_at: syncedAt
+        )
+
+        let response = try await client
+            .rpc("record_metric_snapshot", params: params)
             .execute()
 
-        guard flagged else { return }
-        for matchId in matchIds {
+        let decoded = try Self.decodeRecordResponse(from: response.data)
+
+        guard flagged == false else {
             AppLogger.log(
                 category: "healthkit_sync",
                 level: .warning,
@@ -65,9 +72,39 @@ final class MetricSnapshotRepository {
                     "match_id": matchId.uuidString,
                     "metric_type": metricType.rawValue,
                     "value": String(value),
+                    "snapshot_id": decoded.snapshotId.uuidString,
                 ]
             )
+            return decoded
         }
+
+        return decoded
+    }
+
+    /// Records one snapshot per match via `record_metric_snapshot` RPC (insert or update synced_at).
+    func insertSnapshots(
+        matchIds: [UUID],
+        userId: UUID,
+        metricType: HealthMetricType,
+        value: Int,
+        sourceDate: String,
+        metadata: [String: String]? = nil
+    ) async throws -> [MetricSnapshotRecordResult] {
+        guard !matchIds.isEmpty else { return [] }
+
+        var results: [MetricSnapshotRecordResult] = []
+        for matchId in matchIds {
+            let result = try await recordSnapshot(
+                matchId: matchId,
+                userId: userId,
+                metricType: metricType,
+                value: value,
+                sourceDate: sourceDate,
+                metadata: metadata
+            )
+            results.append(result)
+        }
+        return results
     }
 
     func upsertRollingBaselines(
@@ -132,6 +169,23 @@ final class MetricSnapshotRepository {
         return (d7, d30, d90, updated)
     }
 
+    private static func decodeRecordResponse(from data: Data) throws -> MetricSnapshotRecordResult {
+        struct Payload: Decodable {
+            let snapshot_id: UUID
+            let was_updated: Bool
+        }
+
+        if let payload = try? JSONDecoder().decode(Payload.self, from: data) {
+            return MetricSnapshotRecordResult(snapshotId: payload.snapshot_id, wasUpdated: payload.was_updated)
+        }
+
+        if let scalar = try? JSONDecoder().decode(UUID.self, from: data) {
+            return MetricSnapshotRecordResult(snapshotId: scalar, wasUpdated: false)
+        }
+
+        throw MetricSnapshotRepositoryError.unexpectedRecordResponse
+    }
+
     private func double(from value: Any?) -> Double? {
         if let doubleValue = value as? Double { return doubleValue }
         if let intValue = value as? Int { return Double(intValue) }
@@ -165,25 +219,36 @@ final class MetricSnapshotRepository {
     }()
 }
 
-private struct MetricSnapshotInsert: Encodable {
-    let matchId: UUID
-    let userId: UUID
-    let metricType: String
-    let value: Int
-    let sourceDate: String
-    let syncedAt: String
-    let flagged: Bool
-    let metadata: [String: String]?
+private struct RecordMetricSnapshotRPCParams: Sendable {
+    let p_match_id: UUID
+    let p_metric_type: String
+    let p_value: Int
+    let p_source_date: String
+    let p_flagged: Bool
+    let p_metadata: [String: String]?
+    let p_synced_at: String
+}
+
+extension RecordMetricSnapshotRPCParams: Encodable {
+    nonisolated func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(p_match_id, forKey: .p_match_id)
+        try container.encode(p_metric_type, forKey: .p_metric_type)
+        try container.encode(p_value, forKey: .p_value)
+        try container.encode(p_source_date, forKey: .p_source_date)
+        try container.encode(p_flagged, forKey: .p_flagged)
+        try container.encodeIfPresent(p_metadata, forKey: .p_metadata)
+        try container.encode(p_synced_at, forKey: .p_synced_at)
+    }
 
     enum CodingKeys: String, CodingKey {
-        case matchId = "match_id"
-        case userId = "user_id"
-        case metricType = "metric_type"
-        case value
-        case sourceDate = "source_date"
-        case syncedAt = "synced_at"
-        case flagged
-        case metadata
+        case p_match_id
+        case p_metric_type
+        case p_value
+        case p_source_date
+        case p_flagged
+        case p_metadata
+        case p_synced_at
     }
 }
 

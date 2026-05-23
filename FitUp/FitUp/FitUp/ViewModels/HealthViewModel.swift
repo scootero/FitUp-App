@@ -97,14 +97,6 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var showHealthAccessBanner = false
     @Published var statsTab: StatsTab = .steps
 
-    @Published private(set) var battleReadinessScore = 0
-    @Published private(set) var battleReadinessLabel = ""
-    @Published private(set) var battleReadinessSubtitle = ""
-
-    @Published private(set) var restingHRDisplay = "—"
-    @Published private(set) var stepsTodayDisplay = "—"
-    @Published private(set) var caloriesTodayDisplay = "—"
-
     @Published private(set) var goals = ReadinessGoals.loadFromUserDefaults()
 
     @Published private(set) var weekSteps: [Int] = Array(repeating: 0, count: 7)
@@ -113,10 +105,6 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var weekComparisonSteps: HealthWeekComparison?
     @Published private(set) var weekComparisonCalories: HealthWeekComparison?
     @Published private(set) var battleStats = HealthBattleStats.empty
-    @Published private(set) var dailyBattleMargins: [DailyBattleMargin] = []
-    @Published private(set) var isBattleMarginsRefreshing = false
-    @Published private(set) var battleMarginsSavedAt: Date?
-    @Published var marginChartDayCount: Int = 7
     @Published var statsSelectedRange: StatsRangeKey = .oneDay
     @Published private(set) var statsRangeDateChipText: String = "—"
     @Published private(set) var statsRangeScopeNote: String? = nil
@@ -130,32 +118,24 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var isOneDayHourlyLoading = false
 
     @Published private(set) var activeMatchEdges: [HomeActiveMatch] = []
-    @Published private(set) var completedMatches: [ActivityCompletedMatch] = []
-    @Published private(set) var isLoadingCompletedMatches = false
-    @Published private(set) var hasLoadedCompletedMatches = false
     @Published private(set) var rivalStats: [HomeRivalStat] = []
     @Published private(set) var isRivalStatsLoading = false
     @Published private(set) var hasLoadedRivalStats = false
 
-    @Published private(set) var showSyncedBadge = false
     @Published private(set) var lastLoadFinishedAt: Date?
+    @Published private(set) var statsSnapshotSavedAt: Date?
 
-    /// Raw values for component breakdown rows (matches JSX `metric.actual / metric.goal`).
     @Published private(set) var stepsTodayValue = 0
     @Published private(set) var caloriesTodayValue = 0
-    @Published private(set) var restingHRValue: Double?
 
     private let battleStatsRepository = BattleStatsRepository()
     private let homeRepository = HomeRepository()
-    private let activityRepository = ActivityRepository()
     private let statsSnapshotCacheStore = StatsPageSnapshotCacheStore()
     private let statsSnapshotSoftTTL: TimeInterval = 60 * 5
 
     private var profileId: UUID?
     private var profileTimeZoneIdentifier: String?
-    private var completedMatchesTask: Task<Void, Never>?
     private var rivalStatsTask: Task<Void, Never>?
-    private var statsSnapshotSavedAt: Date?
 
     var selectedWeekComparison: HealthWeekComparison? {
         statsTab == .steps ? weekComparisonSteps : weekComparisonCalories
@@ -175,11 +155,6 @@ final class HealthViewModel: ObservableObject {
     func start(profile: Profile?) {
         let newProfileId = profile?.id
         if profileId != newProfileId {
-            completedMatchesTask?.cancel()
-            completedMatchesTask = nil
-            completedMatches = []
-            isLoadingCompletedMatches = false
-            hasLoadedCompletedMatches = false
             rivalStatsTask?.cancel()
             rivalStatsTask = nil
             rivalStats = []
@@ -268,7 +243,6 @@ final class HealthViewModel: ObservableObject {
                 try await HealthKitService.fetchTodayStepCount()
             }
         } catch {
-            showSyncedBadge = false
             if let hk = error as? HealthKitError, case .authorizationDenied = hk {
                 showHealthAccessBanner = true
             } else {
@@ -325,9 +299,6 @@ final class HealthViewModel: ObservableObject {
 
         stepsTodayValue = stepsToday
         caloriesTodayValue = calsToday
-        stepsTodayDisplay = formatStepsShort(stepsToday)
-        caloriesTodayDisplay = "\(calsToday)"
-        showSyncedBadge = true
 
         let coreDurationMs = Int(loadStarted.timeIntervalSinceNow * -1000)
         AppLogger.log(
@@ -344,9 +315,6 @@ final class HealthViewModel: ObservableObject {
             ]
         )
 
-        async let restingOutcome = loadOptionalHK("resting_heart_rate", userId: userId, fallback: nil as Double?) {
-            try await HealthKitService.fetchRestingHeartRate()
-        }
         async let weekStepsOutcome = loadOptionalHK("week_steps_array", userId: userId, fallback: Array(repeating: 0, count: 7)) {
             try await HealthKitService.fetchSevenDayStepsArray()
         }
@@ -354,28 +322,11 @@ final class HealthViewModel: ObservableObject {
             try await HealthKitService.fetchSevenDayCaloriesArray()
         }
 
-        let restingResult = await restingOutcome
         let wStepsResult = await weekStepsOutcome
         let wCalsResult = await weekCalsOutcome
 
-        let resting = restingResult.value
         let wSteps = wStepsResult.value
         let wCals = wCalsResult.value
-
-        let score = ReadinessCalculator.compute(
-            sleepHrsLastNight: nil,
-            restingHR: resting,
-            stepsToday: stepsToday,
-            calsToday: calsToday,
-            goals: goals
-        )
-
-        battleReadinessScore = score
-        battleReadinessLabel = ReadinessCalculator.label(for: score)
-        battleReadinessSubtitle = ReadinessCalculator.subtitle(for: score)
-
-        restingHRDisplay = resting.map { "\(Int($0.rounded()))" } ?? "—"
-        restingHRValue = resting
 
         weekSteps = wSteps
         weekCalories = wCals
@@ -387,13 +338,11 @@ final class HealthViewModel: ObservableObject {
         weekComparisonSteps = comparisonResolved.steps
         weekComparisonCalories = comparisonResolved.calories
         activeMatchEdges = await activeMatches
-        await refreshBattleMargins(source: source)
         let forceStatsRefresh = source == "pull_refresh"
         await refreshStatsRangeMargins(source: source, forceNetworkRefresh: forceStatsRefresh)
         await refreshOneDayHourlyStepsIfNeeded()
         await loadRivalStats(force: source == "pull_refresh")
         saveStatsSnapshotIfPossible()
-        await loadCompletedMatchesIfNeeded()
 
         lastLoadFinishedAt = Date()
 
@@ -402,10 +351,8 @@ final class HealthViewModel: ObservableObject {
             source: source,
             stepsToday: stepsToday,
             calsToday: calsToday,
-            restingBPM: resting,
             weekSteps: wSteps,
-            weekCalories: wCals,
-            readinessScore: score
+            weekCalories: wCals
         )
         var meta = hkSnapshot
         meta["source"] = source
@@ -415,7 +362,6 @@ final class HealthViewModel: ObservableObject {
         meta["active_matches_count"] = "\(activeMatchEdges.count)"
         meta["battle_matches_played"] = "\(battleStats.matchesPlayed)"
         meta["battle_wins"] = "\(battleStats.wins)"
-        meta["optional_resting_ok"] = "\(restingResult.ok)"
         meta["optional_week_steps_ok"] = "\(wStepsResult.ok)"
         meta["optional_week_cals_ok"] = "\(wCalsResult.ok)"
         AppLogger.log(
@@ -425,33 +371,6 @@ final class HealthViewModel: ObservableObject {
             userId: userId,
             metadata: meta
         )
-
-        if hasLoadedCompletedMatches {
-            await loadCompletedMatches(force: true)
-        }
-    }
-
-    func loadCompletedMatchesIfNeeded() async {
-        await loadCompletedMatches(force: false)
-    }
-
-    func loadCompletedMatches(force: Bool) async {
-        guard let userId = profileId else { return }
-        if isLoadingCompletedMatches { return }
-        if hasLoadedCompletedMatches, !force { return }
-        isLoadingCompletedMatches = true
-        defer { isLoadingCompletedMatches = false }
-
-        completedMatchesTask?.cancel()
-        completedMatchesTask = Task { [weak self] in
-            guard let self else { return }
-            let rows = await activityRepository.loadCompletedMatches(currentUserId: userId)
-            guard !Task.isCancelled else { return }
-            guard self.profileId == userId else { return }
-            self.completedMatches = rows
-            self.hasLoadedCompletedMatches = true
-        }
-        await completedMatchesTask?.value
     }
 
     func loadRivalStatsIfNeeded() async {
@@ -478,17 +397,10 @@ final class HealthViewModel: ObservableObject {
     }
 
     private func resetHealthDisplayToEmpty() {
-        battleReadinessScore = 0
-        battleReadinessLabel = ""
-        battleReadinessSubtitle = ""
-        restingHRDisplay = "—"
-        stepsTodayDisplay = "—"
-        caloriesTodayDisplay = "—"
         weekSteps = Array(repeating: 0, count: 7)
         weekCalories = Array(repeating: 0, count: 7)
         stepsTodayValue = 0
         caloriesTodayValue = 0
-        restingHRValue = nil
         lastLoadFinishedAt = nil
         weekComparisonSteps = nil
         weekComparisonCalories = nil
@@ -497,53 +409,13 @@ final class HealthViewModel: ObservableObject {
         rivalStats = []
         isRivalStatsLoading = false
         hasLoadedRivalStats = false
-        dailyBattleMargins = []
-        isBattleMarginsRefreshing = false
-        battleMarginsSavedAt = nil
         statsRangeMargins = []
         isStatsRangeMarginsRefreshing = false
         statsRangeScopeNote = nil
         statsEffectiveRange = .oneDay
         statsPreviousPeriodPercent = nil
         statsBattleStatsScopeLabel = "lifetime"
-    }
-
-    func setMarginChartDayCount(_ n: Int) async {
-        let clamped = n >= 10 ? 10 : 7
-        guard marginChartDayCount != clamped else { return }
-        marginChartDayCount = clamped
-        await refreshBattleMargins(source: "chart_range_change")
-    }
-
-    private func refreshBattleMargins(source: String) async {
-        guard profileId != nil else {
-            dailyBattleMargins = []
-            battleMarginsSavedAt = nil
-            isBattleMarginsRefreshing = false
-            return
-        }
-        isBattleMarginsRefreshing = true
-        defer { isBattleMarginsRefreshing = false }
-
-        let rows = await homeRepository.fetchDailyBattleMargins(
-            endDate: Date(),
-            dayCount: marginChartDayCount,
-            metricType: HomeBattleHeroCard.HeroMetric.steps.metricType,
-            profileTimeZoneIdentifier: profileTimeZoneIdentifier
-        )
-        dailyBattleMargins = rows
-        battleMarginsSavedAt = Date()
-        AppLogger.log(
-            category: "healthkit_read",
-            level: .info,
-            message: "health battle margin refreshed",
-            userId: profileId,
-            metadata: [
-                "source": source,
-                "point_count": "\(rows.count)",
-                "day_count": "\(marginChartDayCount)"
-            ]
-        )
+        statsSnapshotSavedAt = nil
     }
 
     private func refreshStatsRangeMargins(source: String, forceNetworkRefresh: Bool = false) async {
@@ -717,17 +589,13 @@ final class HealthViewModel: ObservableObject {
         source: String,
         stepsToday: Int,
         calsToday: Int,
-        restingBPM: Double?,
         weekSteps: [Int],
-        weekCalories: [Int],
-        readinessScore: Int
+        weekCalories: [Int]
     ) -> [String: String] {
         let snapshot = [
             "source=\(source)",
-            "readiness_score=\(readinessScore)",
             "today_steps=\(stepsToday)",
             "today_active_kcal=\(calsToday)",
-            "resting_hr_bpm=\(restingBPM.map { String(format: "%.1f", $0) } ?? "nil")",
             "week_steps_oldest_to_today=\(weekSteps.map(String.init).joined(separator: ","))",
             "week_cal_oldest_to_today=\(weekCalories.map(String.init).joined(separator: ","))",
         ].joined(separator: "\n")
@@ -736,13 +604,6 @@ final class HealthViewModel: ObservableObject {
             "week_steps_csv": weekSteps.map(String.init).joined(separator: ","),
             "week_cal_csv": weekCalories.map(String.init).joined(separator: ","),
         ]
-    }
-
-    private func formatStepsShort(_ n: Int) -> String {
-        if n >= 1000 {
-            return String(format: "%.1fk", Double(n) / 1000)
-        }
-        return "\(n)"
     }
 
     private func buildWeekComparisons() async -> (steps: HealthWeekComparison?, calories: HealthWeekComparison?) {

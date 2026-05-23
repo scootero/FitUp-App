@@ -78,12 +78,14 @@ actor MetricSyncCoordinator {
 
     private func handleObserverWake() async {
         lastObserverWakeAt = Date()
-        if let uid = activeProfile?.id, let wake = lastObserverWakeAt {
+        guard let profile = activeProfile else { return }
+
+        if let wake = lastObserverWakeAt {
             AppLogger.log(
                 category: "healthkit_sync",
                 level: .info,
                 message: "HealthKit observer fired (steps or active energy changed)",
-                userId: uid,
+                userId: profile.id,
                 metadata: [
                     "pipeline": "HKObserverQuery → MetricSyncCoordinator.handleObserverWake",
                     "observer_wake_at": Self.iso8601.string(from: wake),
@@ -91,6 +93,62 @@ actor MetricSyncCoordinator {
                     "hk_observer_count": "2",
                 ]
             )
+        }
+
+        let tzId = profile.timezone ?? TimeZone.current.identifier
+        let calendarDateStr = HomeRepository.formatProfileCalendarDate(Date(), profileTimeZoneIdentifier: tzId)
+        let stepsTotal = try? await HealthKitService.fetchTodayStepCount()
+        let caloriesTotal = try? await HealthKitService.fetchTodayActiveCalories()
+
+        let observerDecision = MetricSyncUploadPolicy.observerDecision(
+            now: Date(),
+            stepsTotal: stepsTotal,
+            caloriesTotal: caloriesTotal,
+            profileId: profile.id,
+            calendarDateStr: calendarDateStr
+        )
+
+        switch observerDecision {
+        case .proceed:
+            break
+        case .skipUnchanged:
+            AppLogger.log(
+                category: "healthkit_sync",
+                level: .info,
+                message: "metric sync skipped (observer unchanged)",
+                userId: profile.id,
+                metadata: [
+                    "reason": "skip_observer_unchanged",
+                    "steps_today": stepsTotal.map(String.init) ?? "nil",
+                    "active_calories_today": caloriesTotal.map(String.init) ?? "nil",
+                ]
+            )
+            return
+        case let .skipDebounce(remainingSeconds):
+            AppLogger.log(
+                category: "healthkit_sync",
+                level: .info,
+                message: "metric sync skipped (observer debounce)",
+                userId: profile.id,
+                metadata: [
+                    "reason": "skip_observer_debounce",
+                    "remaining_debounce_s": String(format: "%.1f", remainingSeconds),
+                ]
+            )
+            return
+        case let .skipInsufficientStepIncrease(delta, lastSynced):
+            AppLogger.log(
+                category: "healthkit_sync",
+                level: .info,
+                message: "metric sync skipped (observer step delta < 100)",
+                userId: profile.id,
+                metadata: [
+                    "reason": "skip_observer_delta",
+                    "delta": "\(delta)",
+                    "last_synced_steps": "\(lastSynced)",
+                ]
+            )
+            return
         }
 
         let backgroundTaskId = await MainActor.run {
@@ -165,16 +223,28 @@ actor MetricSyncCoordinator {
             )
         }
 
-        do {
-            try await userDailyStepTotalsRepository.syncRollingSevenCalendarDays(profile: profile)
-        } catch {
-            AppLogger.log(
-                category: "healthkit_sync",
-                level: .warning,
-                message: "user_daily_step_totals sync failed",
-                userId: profile.id,
-                metadata: ["error": error.localizedDescription]
-            )
+        let tzIdForDay = profile.timezone ?? TimeZone.current.identifier
+        let calendarDateStr = HomeRepository.formatProfileCalendarDate(Date(), profileTimeZoneIdentifier: tzIdForDay)
+        if MetricSyncUploadPolicy.shouldSyncRollingDailyTotals(
+            trigger: trigger,
+            profileId: profile.id,
+            calendarDateStr: calendarDateStr
+        ) {
+            do {
+                try await userDailyStepTotalsRepository.syncRollingSevenCalendarDays(profile: profile)
+                MetricSyncUploadPolicy.markRollingDailyTotalsSynced(
+                    profileId: profile.id,
+                    calendarDateStr: calendarDateStr
+                )
+            } catch {
+                AppLogger.log(
+                    category: "healthkit_sync",
+                    level: .warning,
+                    message: "user_daily_step_totals sync failed",
+                    userId: profile.id,
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
         }
 
         var writes = await matchDayRepository.syncActiveMatchTotals(
@@ -234,6 +304,8 @@ actor MetricSyncCoordinator {
             }
         }
 
+        var snapshotInserted = 0
+        var snapshotUpdated = 0
         for write in writes {
             do {
                 let metadata: [String: String] = [
@@ -243,7 +315,7 @@ actor MetricSyncCoordinator {
                     }) ? "historical_day" : "live_day",
                 ]
 
-                try await snapshotRepository.insertSnapshots(
+                let results = try await snapshotRepository.insertSnapshots(
                     matchIds: [write.matchId],
                     userId: profile.id,
                     metricType: write.metricType,
@@ -251,6 +323,26 @@ actor MetricSyncCoordinator {
                     sourceDate: write.sourceDate,
                     metadata: metadata
                 )
+                for result in results {
+                    if result.wasUpdated {
+                        snapshotUpdated += 1
+                    } else {
+                        snapshotInserted += 1
+                    }
+                    AppLogger.log(
+                        category: "healthkit_sync",
+                        level: .info,
+                        message: result.wasUpdated ? "metric snapshot updated (same value)" : "metric snapshot inserted",
+                        userId: profile.id,
+                        metadata: [
+                            "match_id": write.matchId.uuidString,
+                            "metric_type": write.metricType.rawValue,
+                            "value": "\(write.value)",
+                            "snapshot_id": result.snapshotId.uuidString,
+                            "action": result.wasUpdated ? "snapshot_upserted" : "snapshot_inserted",
+                        ]
+                    )
+                }
             } catch {
                 AppLogger.log(
                     category: "healthkit_sync",
@@ -290,6 +382,13 @@ actor MetricSyncCoordinator {
 
         lastSyncAt = Date()
         lastSyncCompletedAt = lastSyncAt
+        MetricSyncUploadPolicy.markSyncCompleted(
+            profileId: profile.id,
+            calendarDateStr: calendarDateStr,
+            stepsTotal: stepsTotal,
+            caloriesTotal: caloriesTotal,
+            at: lastSyncAt ?? Date()
+        )
         let durationMs = Int(syncStarted.timeIntervalSinceNow * -1000)
         AppLogger.log(
             category: "healthkit_sync",
@@ -304,6 +403,8 @@ actor MetricSyncCoordinator {
                 "active_calories_today": caloriesTotal.map(String.init) ?? "nil",
                 "historical_targets": "\(historicalTargets.count)",
                 "snapshot_writes": "\(writes.count)",
+                "snapshot_inserted": "\(snapshotInserted)",
+                "snapshot_updated": "\(snapshotUpdated)",
                 "intraday_tick": intradayTickLogSummary,
             ]
         )
