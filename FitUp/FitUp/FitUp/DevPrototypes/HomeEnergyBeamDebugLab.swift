@@ -2,8 +2,8 @@
 //  HomeEnergyBeamDebugLab.swift
 //  FitUp
 //
-//  Archived DEBUG harness for tuning the energy beam hero on Home (collision lab + handoff preview).
-//  Not wired into production Home — use EnergyBeamHeroPrototypeView or re-embed from a DEBUG screen.
+//  DEBUG harness for tuning the energy beam hero (collision lab + handoff preview).
+//  Not wired into production Home — use EnergyBeamHeroPrototypeView or embed from a DEBUG screen.
 //
 
 #if DEBUG

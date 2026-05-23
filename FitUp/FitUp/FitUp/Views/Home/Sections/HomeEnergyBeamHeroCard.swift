@@ -83,8 +83,6 @@ struct HomeEnergyBeamHeroCard: View {
     var debugBeamLabEnabled: Bool = false
     /// DEBUG beam lab: added to live comparable margin for animated beam collision preview.
     var debugBeamCollisionDelta: Double = 0
-    /// DEBUG: bump to replay app-open intro + score catch-up from artificially stale values.
-    var debugAppOpenPreviewToken: UUID = UUID()
     /// Slice 7: hide opponent + margin copy while handoff crossfade runs beam intro underneath blur.
     var handoffRevealActive: Bool = false
     /// Slice 7: bump to start app-open intro when handoff reveal begins (same path as DEBUG preview).
@@ -170,7 +168,6 @@ struct HomeEnergyBeamHeroCard: View {
         opponentIntradayLatestTickAt: Date? = nil,
         debugBeamLabEnabled: Bool = false,
         debugBeamCollisionDelta: Double = 0,
-        debugAppOpenPreviewToken: UUID = UUID(),
         handoffRevealActive: Bool = false,
         handoffIntroKickoff: UUID = UUID(),
         handoffOpponentRevealKickoff: UUID = UUID(),
@@ -185,7 +182,6 @@ struct HomeEnergyBeamHeroCard: View {
         self.opponentIntradayLatestTickAt = opponentIntradayLatestTickAt
         self.debugBeamLabEnabled = debugBeamLabEnabled
         self.debugBeamCollisionDelta = debugBeamCollisionDelta
-        self.debugAppOpenPreviewToken = debugAppOpenPreviewToken
         self.handoffRevealActive = handoffRevealActive
         self.handoffIntroKickoff = handoffIntroKickoff
         self.handoffOpponentRevealKickoff = handoffOpponentRevealKickoff
@@ -402,11 +398,6 @@ struct HomeEnergyBeamHeroCard: View {
                         displayBeamCollisionMargin = displayMargin
                     }
                 }
-                #if DEBUG
-                .onChange(of: debugAppOpenPreviewToken) { _, _ in
-                    previewDebugAppOpen(for: match)
-                }
-                #endif
             } else {
                 emptyHeroCard
             }
@@ -841,50 +832,6 @@ struct HomeEnergyBeamHeroCard: View {
         holdIntroGhostBeforeFirstPlay = true
         playHandoffIntroAnimation(for: match)
     }
-
-    #if DEBUG
-    /// DEBUG: replay cold-open from stale margin/scores so counting + beam intro are visible on demand.
-    private func previewDebugAppOpen(for match: HomeActiveMatch) {
-        guard !reduceMotion else {
-            reconcileLiveBattleData(
-                for: match,
-                animated: false,
-                includeBeamIntro: true,
-                trigger: "previewDebugAppOpen",
-                context: .debugPreview
-            )
-            return
-        }
-
-        let previewOffset = 150.0
-        let live = targetSnapshot(for: match)
-        battleCountFinishTask?.cancel()
-        battleCountAnimation = nil
-        commitRestingSnapshot(
-            .init(
-                margin: live.margin - previewOffset,
-                userBattleScore: live.userBattleScore - previewOffset,
-                opponentBattleScore: live.opponentBattleScore,
-                beamCollisionMargin: (debugBeamLabEnabled ? live.beamCollisionMargin : live.margin) - previewOffset
-            )
-        )
-        logHeroAnim(
-            message: "hero_debug_preview_start",
-            trigger: "previewDebugAppOpen",
-            context: .debugPreview,
-            gateAllowed: false,
-            gateReason: "debug_not_gated",
-            match: match
-        )
-        reconcileLiveBattleData(
-            for: match,
-            animated: true,
-            includeBeamIntro: true,
-            trigger: "previewDebugAppOpen",
-            context: .debugPreview
-        )
-    }
-    #endif
 
     private func syncBeamCollisionToDisplayMargin(animated: Bool) {
         guard debugBeamLabEnabled else { return }
