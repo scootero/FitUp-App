@@ -46,6 +46,22 @@ private enum EnergyBeamHeroLastDisplayedSnapshotStore {
     }
 }
 
+private struct HeroComparableValues: Equatable {
+    let margin: Int
+    let userBattleScore: Int
+    let opponentBattleScore: Int
+}
+
+private enum HeroAnimContext: String {
+    case coldLaunch = "cold_launch"
+    case tabReturn = "tab_return"
+    case foreground = "foreground"
+    case matchReload = "match_reload"
+    case handoff = "handoff"
+    case debugPreview = "debug_preview"
+    case dismount = "dismount"
+}
+
 struct HomeEnergyBeamHeroCard: View {
     /// Flat zeros when opponent series not loaded yet; length matches ``HomeHeroSparklineLoader.normalizedSparklinePointCount``.
     private static let neutralOpponentSparkline: [CGFloat] = Array(
@@ -79,6 +95,11 @@ struct HomeEnergyBeamHeroCard: View {
     var handoffKeepOpponentBlackedOut: Bool = false
     /// Opens the new battle flow when the hero has no active step battle.
     var onStartBattle: (() -> Void)? = nil
+
+    @State private var cardInstanceId = UUID()
+    @State private var didLogCardMount = false
+    private let initValueSource: String
+    private let initComparableValues: HeroComparableValues
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -171,31 +192,36 @@ struct HomeEnergyBeamHeroCard: View {
         self.handoffKeepOpponentBlackedOut = handoffKeepOpponentBlackedOut
         self.onStartBattle = onStartBattle
         let startsWithOpponentBlackedOut = handoffRevealActive || handoffKeepOpponentBlackedOut
+        let gateConsumed = HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession
         let initialMargin: Double
         let initialUserBattleScore: Double
         let initialOpponentBattleScore: Double
+        let valueSource: String
         if let match {
-            let live = match.comparableMargin
-            if let stored = EnergyBeamHeroLastDisplayedSnapshotStore.load(for: match.id) {
-                initialMargin = Double(stored.margin)
-                initialUserBattleScore = Double(stored.userBattleScore ?? match.myBattleScore)
-                initialOpponentBattleScore = Double(stored.opponentBattleScore ?? match.theirBattleScore)
-            } else {
-                initialMargin = Double(live)
-                initialUserBattleScore = Double(match.myBattleScore)
-                initialOpponentBattleScore = Double(match.theirBattleScore)
-            }
+            let resolved = Self.resolvedInitialDisplayValues(for: match, gateConsumed: gateConsumed)
+            initialMargin = resolved.margin
+            initialUserBattleScore = resolved.userBattleScore
+            initialOpponentBattleScore = resolved.opponentBattleScore
+            valueSource = resolved.source
         } else {
             initialMargin = 0
             initialUserBattleScore = 0
             initialOpponentBattleScore = 0
+            valueSource = "empty"
         }
+        initValueSource = valueSource
+        initComparableValues = HeroComparableValues(
+            margin: Int(initialMargin.rounded(.towardZero)),
+            userBattleScore: Int(initialUserBattleScore.rounded(.towardZero)),
+            opponentBattleScore: Int(initialOpponentBattleScore.rounded(.towardZero))
+        )
         _displayMargin = State(initialValue: initialMargin)
         _displayUserBattleScore = State(initialValue: initialUserBattleScore)
         _displayOpponentBattleScore = State(initialValue: initialOpponentBattleScore)
         _displayBeamCollisionMargin = State(initialValue: initialMargin)
         _beamIntroStartedAt = State(initialValue: nil)
-        _holdIntroGhostBeforeFirstPlay = State(initialValue: true)
+        let shouldHoldIntroGhost = !HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession && !startsWithOpponentBlackedOut
+        _holdIntroGhostBeforeFirstPlay = State(initialValue: shouldHoldIntroGhost)
         _opponentRevealProgress = State(initialValue: startsWithOpponentBlackedOut ? 0 : 1)
     }
 
@@ -271,13 +297,27 @@ struct HomeEnergyBeamHeroCard: View {
                     }
                 }
                 .onAppear {
+                    logCardMountIfNeeded(for: match)
                     if handoffRevealActive {
                         startHandoffRevealIntro(for: match)
                         return
                     }
                     guard !didRunInitialOpenAnimation else { return }
                     didRunInitialOpenAnimation = true
-                    playSessionOpenAnimations(for: match)
+                    let context: HeroAnimContext = HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession ? .tabReturn : .coldLaunch
+                    if HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession {
+                        snapToTargetsFromSnapshot(for: match)
+                        logHeroAnim(
+                            message: "hero_intro_skipped",
+                            trigger: "onAppear",
+                            context: context,
+                            gateAllowed: false,
+                            gateReason: "session_gate",
+                            match: match
+                        )
+                    } else {
+                        playColdOpenIntro(for: match, context: context)
+                    }
                 }
                 .onChange(of: handoffIntroKickoff) { _, _ in
                     guard handoffRevealActive else { return }
@@ -295,13 +335,31 @@ struct HomeEnergyBeamHeroCard: View {
                 .onDisappear {
                     introFinishTask?.cancel()
                     battleCountFinishTask?.cancel()
-                    persistDisplayedSnapshot(for: match)
+                    persistDisplayedSnapshot(for: match, context: .dismount)
                 }
                 .onChange(of: scenePhase) { oldPhase, phase in
                     if phase == .inactive || phase == .background {
-                        persistDisplayedSnapshot(for: match)
-                    } else if phase == .active, oldPhase == .background || oldPhase == .inactive {
-                        playSessionOpenAnimations(for: match)
+                        persistDisplayedSnapshot(for: match, context: .dismount)
+                    } else if phase == .active, oldPhase == .background {
+                        guard !isIntroSequenceInProgress(at: Date()) else {
+                            logHeroAnim(
+                                message: "hero_foreground_skipped",
+                                trigger: "scenePhase",
+                                context: .foreground,
+                                gateReason: "intro_in_progress",
+                                match: match
+                            )
+                            return
+                        }
+                        snapToTargetsFromSnapshot(for: match)
+                        logHeroAnim(
+                            message: "hero_foreground_snap",
+                            trigger: "scenePhase",
+                            context: .foreground,
+                            gateAllowed: false,
+                            gateReason: "session_gate",
+                            match: match
+                        )
                     }
                 }
                 .onChange(of: match) { oldMatch, newMatch in
@@ -309,21 +367,28 @@ struct HomeEnergyBeamHeroCard: View {
                         opponentRevealProgress = 1
                     }
                     if oldMatch.id != newMatch.id {
-                        if let stored = EnergyBeamHeroLastDisplayedSnapshotStore.load(for: newMatch.id) {
-                            displayMargin = Double(stored.margin)
-                            displayUserBattleScore = Double(stored.userBattleScore ?? newMatch.myBattleScore)
-                            displayOpponentBattleScore = Double(stored.opponentBattleScore ?? newMatch.theirBattleScore)
-                            displayBeamCollisionMargin = Double(stored.margin)
-                        } else {
-                            displayMargin = Double(newMatch.comparableMargin)
-                            displayUserBattleScore = Double(newMatch.myBattleScore)
-                            displayOpponentBattleScore = Double(newMatch.theirBattleScore)
-                            displayBeamCollisionMargin = Double(newMatch.comparableMargin)
-                        }
+                        let resolved = Self.resolvedInitialDisplayValues(
+                            for: newMatch,
+                            gateConsumed: HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession
+                        )
+                        displayMargin = resolved.margin
+                        displayUserBattleScore = resolved.userBattleScore
+                        displayOpponentBattleScore = resolved.opponentBattleScore
+                        displayBeamCollisionMargin = resolved.margin
                         beamIntroStartedAt = nil
-                        holdIntroGhostBeforeFirstPlay = true
+                        holdIntroGhostBeforeFirstPlay = !HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession
                     }
-                    reconcileLiveBattleData(for: newMatch, animated: !reduceMotion, includeBeamIntro: false)
+                    if isIntroSequenceInProgress(at: Date()) {
+                        logHeroAnim(
+                            message: "hero_intro_skipped",
+                            trigger: "onChange_match",
+                            context: .matchReload,
+                            gateReason: "intro_in_progress",
+                            match: newMatch
+                        )
+                        return
+                    }
+                    reconcileLiveDataDeltaIfNeeded(for: newMatch)
                 }
                 .onChange(of: debugBeamCollisionDelta) { _, _ in
                     reconcileDebugBeamCollision(animated: !reduceMotion)
@@ -395,7 +460,18 @@ struct HomeEnergyBeamHeroCard: View {
         .shadow(color: .black.opacity(0.45), radius: 14, y: 8)
     }
 
-    private func persistDisplayedSnapshot(for match: HomeActiveMatch) {
+    private func persistDisplayedSnapshot(for match: HomeActiveMatch, context: HeroAnimContext) {
+        let decision = persistSnapshotDecision(for: match)
+        guard decision.allowed else {
+            logHeroAnim(
+                message: "hero_snapshot_persist_skipped",
+                trigger: "persistDisplayedSnapshot",
+                context: context,
+                gateReason: decision.reason,
+                match: match
+            )
+            return
+        }
         let snap = battleCountAnimation?.to ?? restingSnapshot()
         EnergyBeamHeroLastDisplayedSnapshotStore.save(
             margin: Int(snap.margin.rounded(.towardZero)),
@@ -403,6 +479,30 @@ struct HomeEnergyBeamHeroCard: View {
             opponentBattleScore: Int(snap.opponentBattleScore.rounded(.towardZero)),
             for: match.id
         )
+        logHeroAnim(
+            message: "hero_snapshot_persisted",
+            trigger: "persistDisplayedSnapshot",
+            context: context,
+            from: snap,
+            match: match,
+            extra: ["margin": "\(Int(snap.margin.rounded(.towardZero)))"]
+        )
+    }
+
+    private func persistSnapshotDecision(for match: HomeActiveMatch) -> (allowed: Bool, reason: String) {
+        let now = Date()
+        if isIntroSequenceInProgress(at: now) {
+            return (false, "intro_in_progress")
+        }
+        if holdIntroGhostBeforeFirstPlay, beamIntroStartedAt == nil {
+            return (false, "intro_ghost_hold")
+        }
+        let snap = battleCountAnimation?.to ?? restingSnapshot()
+        let marginInt = Int(snap.margin.rounded(.towardZero))
+        if marginInt == 0, match.comparableMargin != 0 {
+            return (false, "stale_zero_margin")
+        }
+        return (true, "ok")
     }
 
     private func commitRestingSnapshot(_ snapshot: EnergyBeamHeroAnimatedSnapshot) {
@@ -415,12 +515,25 @@ struct HomeEnergyBeamHeroCard: View {
     private func startBattleCountAnimation(
         from fromSnapshot: EnergyBeamHeroAnimatedSnapshot? = nil,
         to target: EnergyBeamHeroAnimatedSnapshot,
-        duration: TimeInterval
+        duration: TimeInterval,
+        trigger: String,
+        context: HeroAnimContext
     ) {
         battleCountFinishTask?.cancel()
         let from = fromSnapshot ?? battleCountAnimation?.to ?? restingSnapshot()
         let startedAt = Date()
         battleCountAnimation = .init(startedAt: startedAt, duration: duration, from: from, to: target)
+        logHeroAnim(
+            message: "hero_battle_count_start",
+            trigger: trigger,
+            context: context,
+            gateAllowed: false,
+            gateReason: "battle_count_not_gated",
+            from: from,
+            to: target,
+            match: match,
+            extra: ["duration_s": String(format: "%.2f", duration)]
+        )
         battleCountFinishTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(duration + 0.06))
             guard !Task.isCancelled, battleCountAnimation?.startedAt == startedAt else { return }
@@ -429,9 +542,17 @@ struct HomeEnergyBeamHeroCard: View {
         }
     }
 
-    private func startBeamIntro() {
+    private func startBeamIntro(trigger: String, context: HeroAnimContext) {
         holdIntroGhostBeforeFirstPlay = false
         beamIntroStartedAt = Date()
+        logHeroAnim(
+            message: "hero_beam_intro_start",
+            trigger: trigger,
+            context: context,
+            gateAllowed: true,
+            gateReason: "beam_intro",
+            match: match
+        )
     }
 
     private func snapToTargets(for match: HomeActiveMatch) {
@@ -453,7 +574,11 @@ struct HomeEnergyBeamHeroCard: View {
         )
     }
 
-    private func schedulePostIntroBattleCount(from: EnergyBeamHeroAnimatedSnapshot, to target: EnergyBeamHeroAnimatedSnapshot) {
+    private func schedulePostIntroBattleCount(
+        from: EnergyBeamHeroAnimatedSnapshot,
+        to target: EnergyBeamHeroAnimatedSnapshot,
+        context: HeroAnimContext
+    ) {
         introFinishTask?.cancel()
         introFinishTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(EnergyBeamHeroLayout.beamIntroAnimationSeconds + 0.05))
@@ -470,7 +595,9 @@ struct HomeEnergyBeamHeroCard: View {
             startBattleCountAnimation(
                 from: centeredBattleSnapshot(from: from),
                 to: target,
-                duration: duration
+                duration: duration,
+                trigger: "schedulePostIntroBattleCount",
+                context: context
             )
         }
     }
@@ -486,9 +613,205 @@ struct HomeEnergyBeamHeroCard: View {
         )
     }
 
-    /// App open / return to foreground: beam birth + margin/score catch-up in parallel.
-    private func playSessionOpenAnimations(for match: HomeActiveMatch) {
-        reconcileLiveBattleData(for: match, animated: !reduceMotion, includeBeamIntro: true)
+    private func heroDisplayComparableValues() -> HeroComparableValues {
+        HeroComparableValues(
+            margin: Int(displayMargin.rounded(.towardZero)),
+            userBattleScore: Int(displayUserBattleScore.rounded(.towardZero)),
+            opponentBattleScore: Int(displayOpponentBattleScore.rounded(.towardZero))
+        )
+    }
+
+    private func incomingComparableValues(for match: HomeActiveMatch) -> HeroComparableValues {
+        HeroComparableValues(
+            margin: match.comparableMargin,
+            userBattleScore: match.myBattleScore,
+            opponentBattleScore: match.theirBattleScore
+        )
+    }
+
+    private func isIntroSequenceInProgress(at date: Date) -> Bool {
+        if introFinishTask != nil { return true }
+        guard !reduceMotion else { return false }
+        return isBeamIntroActive(at: date)
+    }
+
+    private func snapToTargetsFromSnapshot(for match: HomeActiveMatch) {
+        holdIntroGhostBeforeFirstPlay = false
+        snapToTargets(for: match)
+    }
+
+    private func reconcileLiveDataDeltaIfNeeded(for match: HomeActiveMatch) {
+        let incoming = incomingComparableValues(for: match)
+        let displayed = heroDisplayComparableValues()
+        guard incoming != displayed else {
+            logHeroAnim(
+                message: "hero_battle_count_skipped",
+                trigger: "reconcileLiveDataDeltaIfNeeded",
+                context: .matchReload,
+                gateReason: "unchanged_values",
+                match: match,
+                extra: [
+                    "display_margin": "\(displayed.margin)",
+                    "incoming_margin": "\(incoming.margin)",
+                ]
+            )
+            return
+        }
+        reconcileLiveBattleData(
+            for: match,
+            animated: !reduceMotion,
+            includeBeamIntro: false,
+            trigger: "reconcileLiveDataDeltaIfNeeded",
+            context: .matchReload
+        )
+    }
+
+    private func playColdOpenIntro(for match: HomeActiveMatch, context: HeroAnimContext) {
+        introFinishTask?.cancel()
+        battleCountFinishTask?.cancel()
+        battleCountAnimation = nil
+        guard HeroIntroSessionGate.tryConsumeColdOpenIntro() else {
+            snapToTargetsFromSnapshot(for: match)
+            logHeroAnim(
+                message: "hero_intro_skipped",
+                trigger: "playColdOpenIntro",
+                context: context,
+                gateAllowed: false,
+                gateReason: "session_gate_race",
+                match: match
+            )
+            return
+        }
+        reconcileLiveBattleData(
+            for: match,
+            animated: !reduceMotion,
+            includeBeamIntro: true,
+            trigger: "playColdOpenIntro",
+            context: context
+        )
+        logHeroAnim(
+            message: "hero_intro_played",
+            trigger: "playColdOpenIntro",
+            context: context,
+            gateAllowed: true,
+            gateReason: "consumed",
+            match: match
+        )
+    }
+
+    private func playHandoffIntroAnimation(for match: HomeActiveMatch) {
+        introFinishTask?.cancel()
+        battleCountFinishTask?.cancel()
+        battleCountAnimation = nil
+        logHeroAnim(
+            message: "hero_handoff_intro_start",
+            trigger: "playHandoffIntroAnimation",
+            context: .handoff,
+            gateAllowed: false,
+            gateReason: "handoff_not_gated",
+            match: match
+        )
+        reconcileLiveBattleData(
+            for: match,
+            animated: !reduceMotion,
+            includeBeamIntro: true,
+            trigger: "playHandoffIntroAnimation",
+            context: .handoff
+        )
+    }
+
+    private func logCardMountIfNeeded(for match: HomeActiveMatch) {
+        guard !didLogCardMount else { return }
+        didLogCardMount = true
+        let context: HeroAnimContext = HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession ? .tabReturn : .coldLaunch
+        logHeroAnim(
+            message: "hero_card_mount",
+            trigger: "onAppear",
+            context: context,
+            gateAllowed: !HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession,
+            gateReason: HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession ? "session_gate" : "cold_open_pending",
+            match: match,
+            extra: [
+                "init_source": initValueSource,
+                "init_margin": "\(initComparableValues.margin)",
+                "init_user": "\(initComparableValues.userBattleScore)",
+                "init_opp": "\(initComparableValues.opponentBattleScore)",
+                "hold_ghost_init": holdIntroGhostBeforeFirstPlay ? "true" : "false",
+            ]
+        )
+    }
+
+    private func logHeroAnim(
+        message: String,
+        trigger: String,
+        context: HeroAnimContext? = nil,
+        gateAllowed: Bool? = nil,
+        gateReason: String? = nil,
+        from: EnergyBeamHeroAnimatedSnapshot? = nil,
+        to: EnergyBeamHeroAnimatedSnapshot? = nil,
+        match: HomeActiveMatch? = nil,
+        extra: [String: String] = [:]
+    ) {
+        var metadata = extra
+        metadata["instance_id"] = cardInstanceId.uuidString
+        metadata["trigger"] = trigger
+        if let context {
+            metadata["context"] = context.rawValue
+        }
+        if let gateAllowed {
+            metadata["gate_allowed"] = gateAllowed ? "true" : "false"
+        }
+        if let gateReason {
+            metadata["gate_reason"] = gateReason
+        }
+        metadata["hold_ghost"] = holdIntroGhostBeforeFirstPlay ? "true" : "false"
+        metadata["intro_active"] = isBeamIntroActive(at: Date()) ? "true" : "false"
+        if let match {
+            metadata["match_id"] = match.id.uuidString
+            metadata["live_margin"] = "\(match.comparableMargin)"
+        }
+        if let from {
+            metadata["from_margin"] = "\(Int(from.margin.rounded(.towardZero)))"
+            metadata["from_user"] = "\(Int(from.userBattleScore.rounded(.towardZero)))"
+            metadata["from_opp"] = "\(Int(from.opponentBattleScore.rounded(.towardZero)))"
+        }
+        if let to {
+            metadata["to_margin"] = "\(Int(to.margin.rounded(.towardZero)))"
+            metadata["to_user"] = "\(Int(to.userBattleScore.rounded(.towardZero)))"
+            metadata["to_opp"] = "\(Int(to.opponentBattleScore.rounded(.towardZero)))"
+        }
+        AppLogger.log(
+            category: "hero_anim",
+            level: .info,
+            message: message,
+            userId: profile?.id,
+            metadata: metadata
+        )
+    }
+
+    private static func resolvedInitialDisplayValues(
+        for match: HomeActiveMatch,
+        gateConsumed: Bool
+    ) -> (margin: Double, userBattleScore: Double, opponentBattleScore: Double, source: String) {
+        let liveMargin = Double(match.comparableMargin)
+        let liveUser = Double(match.myBattleScore)
+        let liveOpp = Double(match.theirBattleScore)
+
+        if gateConsumed {
+            return (liveMargin, liveUser, liveOpp, "live_gate_consumed")
+        }
+
+        if let stored = EnergyBeamHeroLastDisplayedSnapshotStore.load(for: match.id) {
+            let margin = Double(stored.margin)
+            let user = Double(stored.userBattleScore ?? match.myBattleScore)
+            let opp = Double(stored.opponentBattleScore ?? match.theirBattleScore)
+            if margin == 0, match.comparableMargin != 0 {
+                return (liveMargin, liveUser, liveOpp, "live_stale_zero_margin")
+            }
+            return (margin, user, opp, "user_defaults")
+        }
+
+        return (liveMargin, liveUser, liveOpp, "live")
     }
 
     private func resetOpponentForHandoffReveal() {
@@ -509,27 +832,27 @@ struct HomeEnergyBeamHeroCard: View {
     private func startHandoffRevealIntro(for match: HomeActiveMatch) {
         didRunInitialOpenAnimation = true
         resetOpponentForHandoffReveal()
-        if let stored = EnergyBeamHeroLastDisplayedSnapshotStore.load(for: match.id) {
-            displayMargin = Double(stored.margin)
-            displayUserBattleScore = Double(stored.userBattleScore ?? match.myBattleScore)
-            displayOpponentBattleScore = Double(stored.opponentBattleScore ?? match.theirBattleScore)
-            displayBeamCollisionMargin = Double(stored.margin)
-        } else {
-            displayMargin = Double(match.comparableMargin)
-            displayUserBattleScore = Double(match.myBattleScore)
-            displayOpponentBattleScore = Double(match.theirBattleScore)
-            displayBeamCollisionMargin = Double(match.comparableMargin)
-        }
+        let resolved = Self.resolvedInitialDisplayValues(for: match, gateConsumed: false)
+        displayMargin = resolved.margin
+        displayUserBattleScore = resolved.userBattleScore
+        displayOpponentBattleScore = resolved.opponentBattleScore
+        displayBeamCollisionMargin = resolved.margin
         beamIntroStartedAt = nil
         holdIntroGhostBeforeFirstPlay = true
-        playSessionOpenAnimations(for: match)
+        playHandoffIntroAnimation(for: match)
     }
 
     #if DEBUG
     /// DEBUG: replay cold-open from stale margin/scores so counting + beam intro are visible on demand.
     private func previewDebugAppOpen(for match: HomeActiveMatch) {
         guard !reduceMotion else {
-            reconcileLiveBattleData(for: match, animated: false, includeBeamIntro: true)
+            reconcileLiveBattleData(
+                for: match,
+                animated: false,
+                includeBeamIntro: true,
+                trigger: "previewDebugAppOpen",
+                context: .debugPreview
+            )
             return
         }
 
@@ -545,7 +868,21 @@ struct HomeEnergyBeamHeroCard: View {
                 beamCollisionMargin: (debugBeamLabEnabled ? live.beamCollisionMargin : live.margin) - previewOffset
             )
         )
-        reconcileLiveBattleData(for: match, animated: true, includeBeamIntro: true)
+        logHeroAnim(
+            message: "hero_debug_preview_start",
+            trigger: "previewDebugAppOpen",
+            context: .debugPreview,
+            gateAllowed: false,
+            gateReason: "debug_not_gated",
+            match: match
+        )
+        reconcileLiveBattleData(
+            for: match,
+            animated: true,
+            includeBeamIntro: true,
+            trigger: "previewDebugAppOpen",
+            context: .debugPreview
+        )
     }
     #endif
 
@@ -561,7 +898,12 @@ struct HomeEnergyBeamHeroCard: View {
             start: displayBeamCollisionMargin,
             target: target.beamCollisionMargin
         )
-        startBattleCountAnimation(to: target, duration: duration)
+        startBattleCountAnimation(
+            to: target,
+            duration: duration,
+            trigger: "syncBeamCollisionToDisplayMargin",
+            context: .matchReload
+        )
     }
 
     private func reconcileDebugBeamCollision(animated: Bool) {
@@ -579,10 +921,21 @@ struct HomeEnergyBeamHeroCard: View {
             start: displayBeamCollisionMargin,
             target: target.beamCollisionMargin
         )
-        startBattleCountAnimation(to: target, duration: duration)
+        startBattleCountAnimation(
+            to: target,
+            duration: duration,
+            trigger: "reconcileDebugBeamCollision",
+            context: .matchReload
+        )
     }
 
-    private func reconcileLiveBattleData(for match: HomeActiveMatch, animated: Bool, includeBeamIntro: Bool) {
+    private func reconcileLiveBattleData(
+        for match: HomeActiveMatch,
+        animated: Bool,
+        includeBeamIntro: Bool,
+        trigger: String,
+        context: HeroAnimContext
+    ) {
         let target = targetSnapshot(for: match)
 
         guard animated else {
@@ -593,9 +946,11 @@ struct HomeEnergyBeamHeroCard: View {
         let from = battleCountAnimation?.to ?? restingSnapshot()
 
         if includeBeamIntro {
-            startBeamIntro()
+            introFinishTask?.cancel()
+            battleCountFinishTask?.cancel()
+            startBeamIntro(trigger: trigger, context: context)
             commitRestingSnapshot(centeredBattleSnapshot(from: from))
-            schedulePostIntroBattleCount(from: from, to: target)
+            schedulePostIntroBattleCount(from: from, to: target, context: context)
             return
         }
 
@@ -614,7 +969,12 @@ struct HomeEnergyBeamHeroCard: View {
             || from.beamCollisionMargin != target.beamCollisionMargin
 
         if needsDataAnimation {
-            startBattleCountAnimation(to: target, duration: duration)
+            startBattleCountAnimation(
+                to: target,
+                duration: duration,
+                trigger: trigger,
+                context: context
+            )
         } else if debugBeamLabEnabled {
             reconcileDebugBeamCollision(animated: true)
         } else {

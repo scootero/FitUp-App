@@ -14,6 +14,7 @@ private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 428
 private let homeHeroHorizontalPadding: CGFloat = 15
 
 struct HomeView: View {
+    @ObservedObject var viewModel: HomeViewModel
     let profile: Profile?
     let showOnboardingSearching: Bool
     var onOpenChallenge: (ChallengePrefillOpponent?) -> Void
@@ -21,7 +22,6 @@ struct HomeView: View {
 
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var viewModel = HomeViewModel()
     @State private var homeFirstRenderAt: Date?
     @State private var hasLoggedFirstRender = false
     @State private var hasLoggedHeroFirstRender = false
@@ -256,11 +256,15 @@ struct HomeView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active, profile?.id != nil else { return }
-            Task { await viewModel.reload(force: true) }
+            if viewModel.hasMemoryState, !viewModel.isHeroLoading {
+                Task { await viewModel.refreshOnForeground() }
+            } else {
+                Task { await viewModel.reload(force: true) }
+            }
         }
         .onDisappear {
             isPastMatchesExpanded = false
-            viewModel.stop()
+            viewModel.pauseLivePipeline()
         }
     }
 

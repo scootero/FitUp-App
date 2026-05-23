@@ -154,6 +154,9 @@ final class HomeViewModel: ObservableObject {
     private var heroSparklineLoadGeneration: UInt64 = 0
     private var statsRefreshTask: Task<Void, Never>?
     private var heroHealthKitValueByMetric: [String: Int] = [:]
+    private var heroHealthKitPatchCompletedAt: Date?
+    private var heroHealthKitPatchCompletedMetric: String?
+    private var heroHealthKitPatchCompletedValue: Int?
     private var heroLoadStartedAt: Date?
     private var heroStateResolvedAt: Date?
     private var lastStatsRefreshAt: Date?
@@ -202,6 +205,11 @@ final class HomeViewModel: ObservableObject {
     var invitesWaitingCount: Int { receivedPendingMatches.count }
     var waitingOnOpponentCount: Int { sentPendingMatchesWaitingOnOpponent.count }
     var activeBattleCount: Int { activeMatches.count }
+
+    /// True when hero state was resolved from disk or network and can be shown without a cold-load skeleton.
+    var hasMemoryState: Bool {
+        heroStateResolvedAt != nil || !activeMatches.isEmpty
+    }
 
     var heroSummaryText: String? {
         guard let total = battleSummaryStats.totalActive, total > 0 else { return nil }
@@ -352,6 +360,9 @@ final class HomeViewModel: ObservableObject {
             isStatsLoading = false
             isStatsRefreshing = false
             heroHealthKitValueByMetric = [:]
+            heroHealthKitPatchCompletedAt = nil
+            heroHealthKitPatchCompletedMetric = nil
+            heroHealthKitPatchCompletedValue = nil
             heroSparklineUserSeries = nil
             heroSparklineOpponentSeries = nil
             heroViewerHealthKitStepsReadAt = nil
@@ -394,11 +405,35 @@ final class HomeViewModel: ObservableObject {
         Task { await reload(force: false) }
     }
 
-    /// Resumes background polling when Home becomes visible again (e.g. after `stop()` ran under a full-screen cover).
+    /// Resumes background polling when Home becomes visible again (e.g. after tab switch or full-screen cover).
     func resumeHomeLivePipeline(profile: Profile?, sessionStore: SessionStore) {
         guard let profileId = profile?.id, profileId == userId else { return }
         self.sessionStore = sessionStore
+        myDisplayName = profile?.displayName ?? "You"
+        profileTimeZoneIdentifier = profile?.timezone
         startPollingIfNeeded()
+    }
+
+    /// Pauses polling and in-flight hero tasks when Home leaves the screen; keeps in-memory hero state.
+    func pauseLivePipeline() {
+        heroHealthKitPatchTask?.cancel()
+        heroHealthKitPatchTask = nil
+        heroSparklineFetchTask?.cancel()
+        heroSparklineFetchTask = nil
+        heroSparklineLoadGeneration &+= 1
+        statsRefreshTask?.cancel()
+        statsRefreshTask = nil
+        pollingTask?.cancel()
+        pollingTask = nil
+    }
+
+    /// Soft refresh when returning to foreground with warm hero state.
+    func refreshOnForeground() async {
+        guard userId != nil else { return }
+        await reload(force: false)
+        if !shouldSkipSchedulingHeroHealthKitPatch() {
+            scheduleHeroHealthKitPatch()
+        }
     }
 
     func stop() {
@@ -553,7 +588,9 @@ final class HomeViewModel: ObservableObject {
             await executeHeroHealthKitPatch(userId: userId)
         } else {
             refreshHomeStatsInBackground(userId: userId, force: true)
-            scheduleHeroHealthKitPatch()
+            if !shouldSkipSchedulingHeroHealthKitPatch() {
+                scheduleHeroHealthKitPatch()
+            }
         }
         evaluateHeroOpponentHandoffIfNeeded(userId: userId)
         return true
@@ -960,10 +997,36 @@ final class HomeViewModel: ObservableObject {
         userId: UUID
     ) {
         guard self.userId == userId else { return }
+
+        if metricType == "active_calories",
+           let featured = featuredHomeStepMatch,
+           normalizedHeroMetricType(featured.metricType) == "steps" {
+            heroHealthKitValueByMetric[metricType] = value
+            return
+        }
+
+        if heroHealthKitValueByMetric[metricType] == value {
+            AppLogger.log(
+                category: "home_perf",
+                level: .info,
+                message: "hk_patch_skipped",
+                userId: userId,
+                metadata: [
+                    "reason": "unchanged_value",
+                    "metric_type": metricType,
+                    "value": "\(value)",
+                ]
+            )
+            return
+        }
+
         heroHealthKitValueByMetric[metricType] = value
         activeMatches = applyHealthKitOverrides(to: activeMatches)
         syncLiveActivity()
         persistFreshHeroSnapshot(profileId: userId)
+        heroHealthKitPatchCompletedAt = Date()
+        heroHealthKitPatchCompletedMetric = metricType
+        heroHealthKitPatchCompletedValue = value
         let elapsedMs: Int
         if let startedAt = heroLoadStartedAt {
             elapsedMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
@@ -985,6 +1048,18 @@ final class HomeViewModel: ObservableObject {
             heroViewerHealthKitStepsReadAt = Date()
         }
         scheduleHeroSparklineRefresh()
+    }
+
+    private func shouldSkipSchedulingHeroHealthKitPatch() -> Bool {
+        guard let completedAt = heroHealthKitPatchCompletedAt,
+              let metric = heroHealthKitPatchCompletedMetric,
+              let completedValue = heroHealthKitPatchCompletedValue,
+              Date().timeIntervalSince(completedAt) < 2 else {
+            return false
+        }
+        guard let firstActive = activeMatches.first else { return false }
+        let expectedMetric = normalizedHeroMetricType(firstActive.metricType)
+        return metric == expectedMetric && heroHealthKitValueByMetric[expectedMetric] == completedValue
     }
 
     private func applyHealthKitOverrides(to matches: [HomeActiveMatch]) -> [HomeActiveMatch] {

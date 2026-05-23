@@ -115,13 +115,20 @@ enum AppLogger {
         }
     }
 
+    private static func consoleTimestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.string(from: Date())
+    }
+
     private static func consoleLine(
         category: String,
         message: String,
         userId: UUID?,
         metadata: [String: String]?
     ) -> String {
-        var segments: [String] = ["[\(category)] \(message)"]
+        var segments: [String] = ["[\(consoleTimestamp())] [\(category)] \(message)"]
         if let userId {
             segments.append("userId=\(userId.uuidString)")
         }

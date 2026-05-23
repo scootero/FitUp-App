@@ -85,6 +85,7 @@ private struct RootShellView: View {
     let showOnboardingSearching: Bool
 
     @State private var selectedTab: MainTab = .home
+    @StateObject private var homeViewModel = HomeViewModel()
     @State private var challengeLaunchContext: ChallengeLaunchContext?
     @State private var matchDetailsContext: MatchDetailsContext?
     @State private var showingPaywall = false
@@ -251,6 +252,7 @@ private struct RootShellView: View {
         switch selectedTab {
         case .home:
             HomeView(
+                viewModel: homeViewModel,
                 profile: profile,
                 showOnboardingSearching: showOnboardingSearching,
                 onOpenChallenge: { prefilledOpponent in
