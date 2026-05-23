@@ -31,11 +31,13 @@ struct StatsMockShellView: View {
     let hasLoadedRivalStats: Bool
     let oneDayHourlySteps: [HealthIntradayHourlyBucket]
     let isOneDayHourlyLoading: Bool
+    let stepsToday: Int
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var marginMode: MarginMode = .net
     @State private var netLineRevealProgress: Double = 0
     @State private var dailyBarsProgress: Double = 0
     @State private var chartAnimationTask: Task<Void, Never>?
+    @Binding var activeExplainer: StatsMetricExplainerKind?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -125,41 +127,29 @@ struct StatsMockShellView: View {
     }
 
     private var rangeSelector: some View {
-        HStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                rangePillButton(.oneDay, nestedInBattleGroup: false)
+
                 HStack(spacing: 6) {
-                    ForEach(topRangeOptions) { range in
-                        Button {
-                            onSelectRange(range)
-                        } label: {
-                            Text(range.rawValue)
-                                .font(FitUpFont.body(11, weight: .bold))
-                                .foregroundStyle(
-                                    selectedRange == range ? Color.white : FitUpColors.Text.secondary
-                                )
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 6)
-                                .background {
-                                    if selectedRange == range {
-                                        Capsule()
-                                            .fill(FitUpColors.Neon.green.opacity(0.85))
-                                            .shadow(color: FitUpColors.Neon.green.opacity(0.5), radius: 9)
-                                    }
-                                }
-                        }
-                        .buttonStyle(.plain)
+                    ForEach(battleMarginRangeOptions) { range in
+                        rangePillButton(range, nestedInBattleGroup: true)
                     }
                 }
-                .padding(.trailing, 2)
+                .padding(6)
+                .background(Color.white.opacity(0.07))
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.9)
+                }
             }
-            .padding(4)
+            .padding(7)
             .background(Color.white.opacity(0.055))
             .clipShape(Capsule())
             .overlay {
                 Capsule()
-                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.8)
+                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.9)
             }
 
             Spacer(minLength: 0)
@@ -175,7 +165,7 @@ struct StatsMockShellView: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.vertical, 7)
             .background(Color.white.opacity(0.04))
             .clipShape(Capsule())
             .overlay {
@@ -185,38 +175,80 @@ struct StatsMockShellView: View {
         }
     }
 
+    private func rangePillButton(_ range: HealthViewModel.StatsRangeKey, nestedInBattleGroup: Bool) -> some View {
+        let isSelected = selectedRange == range
+        return Button {
+            onSelectRange(range)
+        } label: {
+            Text(range.rawValue)
+                .font(FitUpFont.body(nestedInBattleGroup ? 12 : 12, weight: .bold))
+                .foregroundStyle(isSelected ? Color.white : FitUpColors.Text.secondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, nestedInBattleGroup ? 14 : 13)
+                .padding(.vertical, nestedInBattleGroup ? 8 : 8)
+                .background {
+                    if isSelected {
+                        Capsule()
+                            .fill(
+                                nestedInBattleGroup
+                                    ? FitUpColors.Neon.cyan.opacity(0.88)
+                                    : FitUpColors.Neon.green.opacity(0.85)
+                            )
+                            .shadow(
+                                color: (nestedInBattleGroup ? FitUpColors.Neon.cyan : FitUpColors.Neon.green).opacity(0.5),
+                                radius: 9
+                            )
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(range.rawValue) timeframe")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
     private var summaryCard: some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("THIS \(effectiveRange.fallbackDayCount) DAYS")
-                    .font(FitUpFont.body(11, weight: .heavy))
-                    .fitUpGlobalTitleStyle(weight: .heavy, tracking: 1.2)
+                HStack(alignment: .top, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(summaryMetricTitle)
+                            .font(FitUpFont.body(11, weight: .heavy))
+                            .fitUpGlobalTitleStyle(weight: .heavy, tracking: 1.2)
 
-                Text(netMarginDisplayText)
-                    .font(FitUpFont.display(36, weight: .heavy))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [FitUpColors.Neon.green, FitUpColors.Neon.cyan],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .shadow(color: FitUpColors.Neon.green.opacity(0.34), radius: 8, x: 0, y: 2)
+                        Text(summaryPrimaryValueText)
+                            .font(FitUpFont.display(36, weight: .heavy))
+                            .foregroundStyle(summaryPrimaryValueGradient)
+                            .shadow(color: summaryPrimaryGlowColor.opacity(0.34), radius: 8, x: 0, y: 2)
 
-                Text("NET BATTLE MARGIN")
-                    .font(FitUpFont.body(11, weight: .bold))
-                    .foregroundStyle(FitUpColors.Text.secondary)
+                        Text(summaryMetricSubtitle)
+                            .font(FitUpFont.body(11, weight: .bold))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                if let rangeScopeNote {
-                    Text(rangeScopeNote)
-                        .font(FitUpFont.body(10, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        if !isOneDayMode {
+                            if let rangeScopeNote {
+                                Text(rangeScopeNote)
+                                    .font(FitUpFont.body(10, weight: .medium))
+                                    .foregroundStyle(FitUpColors.Text.tertiary)
+                            }
+
+                            Text(previousPeriodLabel)
+                                .font(FitUpFont.body(11, weight: .semibold))
+                                .foregroundStyle(previousPeriodColor)
+                                .padding(.top, 2)
+                        } else {
+                            Text("From Apple Health · updates as you move")
+                                .font(FitUpFont.body(10, weight: .medium))
+                                .foregroundStyle(FitUpColors.Text.tertiary)
+                                .padding(.top, 2)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+
+                    metricInfoButton(kind: isOneDayMode ? .stepsToday : .battleMargin)
                 }
-
-                Text(previousPeriodLabel)
-                    .font(FitUpFont.body(11, weight: .semibold))
-                    .foregroundStyle(previousPeriodColor)
-                    .padding(.top, 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -265,27 +297,32 @@ struct StatsMockShellView: View {
 
     private var marginChartCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Picker("Battle margin mode", selection: $marginMode) {
-                ForEach(MarginMode.allCases) { mode in
-                    Text(modeLabel(for: mode)).tag(mode)
+            if !isOneDayMode {
+                Picker("Battle margin mode", selection: $marginMode) {
+                    ForEach(MarginMode.allCases) { mode in
+                        Text(modeLabel(for: mode)).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .tint(marginMode == .net ? FitUpColors.Neon.green.opacity(0.95) : FitUpColors.Neon.cyan.opacity(0.95))
             }
-            .pickerStyle(.segmented)
-            .tint(marginMode == .net ? FitUpColors.Neon.green.opacity(0.95) : FitUpColors.Neon.cyan.opacity(0.95))
 
-            HStack(alignment: .firstTextBaseline) {
-                Text(currentChartHeaderText)
-                    .font(FitUpFont.body(11, weight: .heavy))
-                    .fitUpGlobalTitleStyle(weight: .heavy, tracking: 1.3)
-                Spacer()
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(currentChartHeaderText)
+                        .font(FitUpFont.body(11, weight: .heavy))
+                        .fitUpGlobalTitleStyle(weight: .heavy, tracking: 1.3)
+                    Text(currentChartDescriptionText)
+                        .font(FitUpFont.body(11, weight: .medium))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
                 Text(currentChartTrailingText)
                     .font(FitUpFont.body(15, weight: .heavy))
-                    .foregroundStyle(marginMode == .net ? FitUpColors.Neon.green : FitUpColors.Neon.cyan)
+                    .foregroundStyle(isOneDayMode ? FitUpColors.Neon.cyan : (marginMode == .net ? FitUpColors.Neon.green : FitUpColors.Neon.cyan))
+                metricInfoButton(kind: isOneDayMode ? .stepsToday : .battleMargin)
             }
-
-            Text(currentChartDescriptionText)
-                .font(FitUpFont.body(11, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.secondary)
 
             if isOneDayMode {
                 if isOneDayHourlyLoading, oneDayHourlySteps.isEmpty {
@@ -335,8 +372,76 @@ struct StatsMockShellView: View {
         selectedRange == .oneDay
     }
 
-    private var topRangeOptions: [HealthViewModel.StatsRangeKey] {
-        HealthViewModel.StatsRangeKey.allCases.filter { $0 != .oneYear && $0 != .all }
+    private var battleMarginRangeOptions: [HealthViewModel.StatsRangeKey] {
+        [.sevenDays, .thirtyDays, .threeMonths]
+    }
+
+    private var summaryMetricTitle: String {
+        isOneDayMode ? "YOUR STEPS TODAY" : "BATTLE MARGIN"
+    }
+
+    private var summaryMetricSubtitle: String {
+        if isOneDayMode {
+            return "Actual steps you've taken today"
+        }
+        return battleMarginRangeSubtitle
+    }
+
+    private var battleMarginRangeSubtitle: String {
+        switch effectiveRange {
+        case .sevenDays:
+            return "Net steps ahead/behind rivals · last 7 days"
+        case .thirtyDays:
+            return "Net steps ahead/behind rivals · last 30 days"
+        case .threeMonths:
+            return "Net steps ahead/behind rivals · last 3 months"
+        default:
+            return "Net steps ahead/behind rivals · \(effectiveRange.fallbackDayCount) days"
+        }
+    }
+
+    private var summaryPrimaryValueText: String {
+        if isOneDayMode {
+            return stepsToday.formatted()
+        }
+        return netMarginDisplayText
+    }
+
+    private var summaryPrimaryValueGradient: LinearGradient {
+        if isOneDayMode {
+            return LinearGradient(
+                colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        return LinearGradient(
+            colors: [FitUpColors.Neon.green, FitUpColors.Neon.cyan],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var summaryPrimaryGlowColor: Color {
+        isOneDayMode ? FitUpColors.Neon.cyan : FitUpColors.Neon.green
+    }
+
+    private func metricInfoButton(kind: StatsMetricExplainerKind) -> some View {
+        Button {
+            activeExplainer = kind
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(FitUpColors.Text.secondary.opacity(0.92))
+                .frame(width: 28, height: 28)
+                .background(Color.white.opacity(0.05))
+                .clipShape(Circle())
+                .overlay {
+                    Circle().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.8)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("What is \(kind.accessibilityTitle)?")
     }
 
     private func modeLabel(for mode: MarginMode) -> String {
@@ -348,7 +453,7 @@ struct StatsMockShellView: View {
 
     private var currentChartHeaderText: String {
         if isOneDayMode {
-            return "HOURLY STEPS TODAY"
+            return "YOUR STEPS TODAY"
         }
         return "\(marginMode.headerLabel) (\(marginModeDayCount) DAYS)"
     }
@@ -362,7 +467,7 @@ struct StatsMockShellView: View {
 
     private var currentChartDescriptionText: String {
         if isOneDayMode {
-            return "Your steps per hour today, starting from the first hour you logged activity."
+            return "Hourly breakdown of the steps you've actually taken today."
         }
         return marginMode.descriptionText
     }
@@ -1598,6 +1703,123 @@ private struct PersonalBestItem: Identifiable {
     var id: String { title }
 }
 
+// MARK: - Metric explainers
+
+enum StatsMetricExplainerKind: Equatable {
+    case stepsToday
+    case battleMargin
+
+    var accessibilityTitle: String {
+        switch self {
+        case .stepsToday: return "your steps today"
+        case .battleMargin: return "battle margin"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .stepsToday: return "Your steps today"
+        case .battleMargin: return "Battle margin"
+        }
+    }
+
+    var bodyText: String {
+        switch self {
+        case .stepsToday:
+            return "This is your real step count from Apple Health for today only—not match scores or rival comparisons."
+        case .battleMargin:
+            return "Each day we compare your full-day steps to the closest rival affecting your standing. Positive means you were ahead that day; negative means behind. The net total adds those daily margins across the range you picked."
+        }
+    }
+
+    var exampleText: String {
+        switch self {
+        case .stepsToday:
+            return "Example: You've logged 8,432 steps by 6pm—the chart shows when those steps landed each hour."
+        case .battleMargin:
+            return "Example: You beat your closest rival by +1,240 on Tuesday and lost by −600 on Wednesday. Your 7-day net margin is +640—you're ahead overall for that week."
+        }
+    }
+
+    var accentColor: Color {
+        switch self {
+        case .stepsToday: return FitUpColors.Neon.cyan
+        case .battleMargin: return FitUpColors.Neon.green
+        }
+    }
+}
+
+struct StatsMetricExplainerOverlay: View {
+    let kind: StatsMetricExplainerKind
+    var onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.62)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onDismiss)
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top) {
+                    Text(kind.title)
+                        .font(FitUpFont.display(22, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Text.primary)
+                    Spacer(minLength: 8)
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .frame(width: 28, height: 28)
+                            .background(Color.white.opacity(0.08))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                }
+
+                Text(kind.bodyText)
+                    .font(FitUpFont.body(13, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(kind.accentColor)
+                        .padding(.top, 2)
+                    Text(kind.exampleText)
+                        .font(FitUpFont.body(12, weight: .semibold))
+                        .foregroundStyle(kind.accentColor.opacity(0.95))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(kind.accentColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous))
+
+                Text("Tap anywhere to close")
+                    .font(FitUpFont.body(11, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .padding(18)
+            .frame(maxWidth: min(UIScreen.main.bounds.width - 40, 340))
+            .background(
+                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                    .fill(Color(rgb: 0x0A1020).opacity(0.97))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                            .strokeBorder(kind.accentColor.opacity(0.45), lineWidth: 1.1)
+                    )
+            )
+            .shadow(color: kind.accentColor.opacity(0.22), radius: 16, y: 8)
+            .onTapGesture { }
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        .zIndex(20)
+    }
+}
+
 #Preview {
     ScrollView {
         StatsMockShellView(
@@ -1622,7 +1844,9 @@ private struct PersonalBestItem: Identifiable {
             isRivalStatsLoading: false,
             hasLoadedRivalStats: true,
             oneDayHourlySteps: [],
-            isOneDayHourlyLoading: false
+            isOneDayHourlyLoading: false,
+            stepsToday: 0,
+            activeExplainer: .constant(nil)
         )
             .padding(.horizontal, 16)
     }

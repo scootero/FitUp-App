@@ -69,6 +69,14 @@ struct HomeEnergyBeamHeroCard: View {
     var debugBeamCollisionDelta: Double = 0
     /// DEBUG: bump to replay app-open intro + score catch-up from artificially stale values.
     var debugAppOpenPreviewToken: UUID = UUID()
+    /// Slice 7: hide opponent + margin copy while handoff crossfade runs beam intro underneath blur.
+    var handoffRevealActive: Bool = false
+    /// Slice 7: bump to start app-open intro when handoff reveal begins (same path as DEBUG preview).
+    var handoffIntroKickoff: UUID = UUID()
+    /// Slice 7: parent keeps opponent blacked out until overlay is fully gone, then bumps this to fade in.
+    var handoffOpponentRevealKickoff: UUID = UUID()
+    /// When true, opponent column stays at reveal progress 0 (no flash before intentional fade-in).
+    var handoffKeepOpponentBlackedOut: Bool = false
     /// Opens the new battle flow when the hero has no active step battle.
     var onStartBattle: (() -> Void)? = nil
 
@@ -84,6 +92,8 @@ struct HomeEnergyBeamHeroCard: View {
     @State private var battleCountFinishTask: Task<Void, Never>?
     @State private var introFinishTask: Task<Void, Never>?
     @State private var didRunInitialOpenAnimation = false
+    @State private var keepHandoffMarginHeadlineHidden = false
+    @State private var opponentRevealProgress: CGFloat
 
     private func restingSnapshot() -> EnergyBeamHeroAnimatedSnapshot {
         .init(
@@ -140,6 +150,10 @@ struct HomeEnergyBeamHeroCard: View {
         debugBeamLabEnabled: Bool = false,
         debugBeamCollisionDelta: Double = 0,
         debugAppOpenPreviewToken: UUID = UUID(),
+        handoffRevealActive: Bool = false,
+        handoffIntroKickoff: UUID = UUID(),
+        handoffOpponentRevealKickoff: UUID = UUID(),
+        handoffKeepOpponentBlackedOut: Bool = false,
         onStartBattle: (() -> Void)? = nil
     ) {
         self.match = match
@@ -151,7 +165,12 @@ struct HomeEnergyBeamHeroCard: View {
         self.debugBeamLabEnabled = debugBeamLabEnabled
         self.debugBeamCollisionDelta = debugBeamCollisionDelta
         self.debugAppOpenPreviewToken = debugAppOpenPreviewToken
+        self.handoffRevealActive = handoffRevealActive
+        self.handoffIntroKickoff = handoffIntroKickoff
+        self.handoffOpponentRevealKickoff = handoffOpponentRevealKickoff
+        self.handoffKeepOpponentBlackedOut = handoffKeepOpponentBlackedOut
         self.onStartBattle = onStartBattle
+        let startsWithOpponentBlackedOut = handoffRevealActive || handoffKeepOpponentBlackedOut
         let initialMargin: Double
         let initialUserBattleScore: Double
         let initialOpponentBattleScore: Double
@@ -177,6 +196,7 @@ struct HomeEnergyBeamHeroCard: View {
         _displayBeamCollisionMargin = State(initialValue: initialMargin)
         _beamIntroStartedAt = State(initialValue: nil)
         _holdIntroGhostBeforeFirstPlay = State(initialValue: true)
+        _opponentRevealProgress = State(initialValue: startsWithOpponentBlackedOut ? 0 : 1)
     }
 
     private var debugBeamCollisionTarget: Double? {
@@ -238,14 +258,39 @@ struct HomeEnergyBeamHeroCard: View {
                         proceduralMotionScale: motionScale,
                         impactStrengthScale: impactScale,
                         proceduralDrawSeed: stableBeamSeed,
-                        suppressImpactBursts: slideActive
+                        suppressImpactBursts: slideActive,
+                        opponentRevealProgress: opponentRevealProgress,
+                        opponentContentSuppressed: handoffKeepOpponentBlackedOut,
+                        hideMarginHeadline: keepHandoffMarginHeadlineHidden
                     )
                 }
                 .transaction { $0.disablesAnimations = false }
+                .onChange(of: handoffRevealActive) { _, active in
+                    if active {
+                        resetOpponentForHandoffReveal()
+                    }
+                }
                 .onAppear {
+                    if handoffRevealActive {
+                        startHandoffRevealIntro(for: match)
+                        return
+                    }
                     guard !didRunInitialOpenAnimation else { return }
                     didRunInitialOpenAnimation = true
                     playSessionOpenAnimations(for: match)
+                }
+                .onChange(of: handoffIntroKickoff) { _, _ in
+                    guard handoffRevealActive else { return }
+                    startHandoffRevealIntro(for: match)
+                }
+                .onChange(of: handoffOpponentRevealKickoff) { _, _ in
+                    guard handoffRevealActive || handoffKeepOpponentBlackedOut else { return }
+                    playOpponentRevealFromBlack()
+                }
+                .onChange(of: handoffKeepOpponentBlackedOut) { _, blackedOut in
+                    if blackedOut {
+                        opponentRevealProgress = 0
+                    }
                 }
                 .onDisappear {
                     introFinishTask?.cancel()
@@ -260,6 +305,9 @@ struct HomeEnergyBeamHeroCard: View {
                     }
                 }
                 .onChange(of: match) { oldMatch, newMatch in
+                    if oldMatch.id != newMatch.id, !handoffRevealActive, !handoffKeepOpponentBlackedOut {
+                        opponentRevealProgress = 1
+                    }
                     if oldMatch.id != newMatch.id {
                         if let stored = EnergyBeamHeroLastDisplayedSnapshotStore.load(for: newMatch.id) {
                             displayMargin = Double(stored.margin)
@@ -410,6 +458,7 @@ struct HomeEnergyBeamHeroCard: View {
         introFinishTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(EnergyBeamHeroLayout.beamIntroAnimationSeconds + 0.05))
             guard !Task.isCancelled else { return }
+            keepHandoffMarginHeadlineHidden = false
             let duration = EnergyBeamHeroLayout.heroBattleTransitionDuration(
                 startMargin: 0,
                 targetMargin: target.margin,
@@ -440,6 +489,40 @@ struct HomeEnergyBeamHeroCard: View {
     /// App open / return to foreground: beam birth + margin/score catch-up in parallel.
     private func playSessionOpenAnimations(for match: HomeActiveMatch) {
         reconcileLiveBattleData(for: match, animated: !reduceMotion, includeBeamIntro: true)
+    }
+
+    private func resetOpponentForHandoffReveal() {
+        opponentRevealProgress = 0
+        keepHandoffMarginHeadlineHidden = true
+    }
+
+    /// Runs after the handoff overlay is fully gone — parent clears suppression first, then fade from black.
+    private func playOpponentRevealFromBlack() {
+        opponentRevealProgress = 0
+        let duration = reduceMotion ? 0.2 : 1.05
+        withAnimation(.easeIn(duration: duration)) {
+            opponentRevealProgress = 1
+        }
+    }
+
+    /// Slice 7 — beam intro under blur; opponent stays blacked until `playOpponentRevealFromBlack`.
+    private func startHandoffRevealIntro(for match: HomeActiveMatch) {
+        didRunInitialOpenAnimation = true
+        resetOpponentForHandoffReveal()
+        if let stored = EnergyBeamHeroLastDisplayedSnapshotStore.load(for: match.id) {
+            displayMargin = Double(stored.margin)
+            displayUserBattleScore = Double(stored.userBattleScore ?? match.myBattleScore)
+            displayOpponentBattleScore = Double(stored.opponentBattleScore ?? match.theirBattleScore)
+            displayBeamCollisionMargin = Double(stored.margin)
+        } else {
+            displayMargin = Double(match.comparableMargin)
+            displayUserBattleScore = Double(match.myBattleScore)
+            displayOpponentBattleScore = Double(match.theirBattleScore)
+            displayBeamCollisionMargin = Double(match.comparableMargin)
+        }
+        beamIntroStartedAt = nil
+        holdIntroGhostBeforeFirstPlay = true
+        playSessionOpenAnimations(for: match)
     }
 
     #if DEBUG

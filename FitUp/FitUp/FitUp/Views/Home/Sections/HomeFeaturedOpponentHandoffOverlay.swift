@@ -2,7 +2,7 @@
 //  HomeFeaturedOpponentHandoffOverlay.swift
 //  FitUp
 //
-//  Slice 7 — Featured opponent change: brief message + wipe/reveal before showing new hero data.
+//  Slice 7 — Blur veil + match-found style rival alert, linear crossfade into handoff beam intro.
 //
 
 import SwiftUI
@@ -17,24 +17,22 @@ enum HomeFeaturedOpponentHandoffFeature {
     }
 }
 
-/// Full-width overlay sized like the energy hero card: message, then wipe, then `onComplete`.
+/// Covers the energy hero card: material blur only (no tint), match-found pop-up, then linear crossfade out.
 struct HomeFeaturedOpponentHandoffOverlay: View {
     let newOpponentName: String
     var reduceMotion: Bool
+    /// 0…1 while the new hero fades in under the dissolving blur (driven with blur fade-out).
+    @Binding var crossfadeProgress: CGFloat
+    /// Popup dismissed — parent mounts new hero and starts app-open beam intro.
+    var onBeginReveal: () -> Void
     let onComplete: () -> Void
 
-    @State private var phase: Phase = .message
-    @State private var wipeProgress: CGFloat = 0
+    @State private var blurStrength: CGFloat = 0
+    @State private var alertScale: CGFloat = 0.06
+    @State private var alertOpacity: CGFloat = 0
+    @State private var alertVisible = true
+    @State private var didBeginReveal = false
     @State private var didFireComplete = false
-
-    private enum Phase {
-        case message
-        case wiping
-        case done
-    }
-
-    private var messageDuration: TimeInterval { reduceMotion ? 1.0 : 2.5 }
-    private var wipeDuration: TimeInterval { reduceMotion ? 0.12 : 0.55 }
 
     private var resolvedName: String {
         let t = newOpponentName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -42,120 +40,197 @@ struct HomeFeaturedOpponentHandoffOverlay: View {
         return "Someone new"
     }
 
+    private var alertScaleInDuration: TimeInterval { reduceMotion ? 0.1 : 0.4 }
+    /// Time at full size before popup + blur veil fade out together.
+    private var alertHoldDuration: TimeInterval { reduceMotion ? 0.35 : 2.0 }
+    private var alertScaleOutDuration: TimeInterval { reduceMotion ? 0.1 : 0.55 }
+    private var blurInDuration: TimeInterval { reduceMotion ? 0.08 : 0.35 }
+    private var blurOutDuration: TimeInterval { reduceMotion ? 0.12 : 0.8 }
+
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(FitUpColors.Bg.base.opacity(0.94))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.18),
-                                    FitUpColors.Neon.orange.opacity(0.22),
-                                    FitUpColors.Neon.cyan.opacity(0.18),
-                                    Color.white.opacity(0.12),
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                HandoffHeroBlurVeil(strength: blurStrength)
 
-            VStack(spacing: 18) {
-                Text("\(resolvedName.uppercased()) IS TRYING TO BEAT YOU!")
-                    .font(FitUpFont.body(13, weight: .heavy))
-                    .foregroundStyle(Color.white.opacity(0.92))
-                    .multilineTextAlignment(.center)
-                    .tracking(1.4)
-                    .minimumScaleFactor(0.72)
+                if alertVisible {
+                    HandoffNewRivalMatchFoundAlert(
+                        opponentName: resolvedName,
+                        scale: alertScale,
+                        opacity: alertOpacity
+                    )
+                    .padding(.top, 20)
                     .padding(.horizontal, 20)
-
-                Text("Refreshing today’s battle…")
-                    .font(FitUpFont.body(12, weight: .semibold))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-            }
-            .padding(.vertical, 36)
-            .opacity(phase == .message ? 1 : 0)
-            .animation(reduceMotion ? .none : .easeOut(duration: 0.22), value: phase)
-
-            if phase == .wiping || phase == .done {
-                GeometryReader { geo in
-                    let h = geo.size.height
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    FitUpColors.Neon.cyan.opacity(0.35),
-                                    Color.black.opacity(0.92),
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(height: h * 1.05)
-                        .offset(y: -h + h * 2 * wipeProgress)
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                .allowsHitTesting(false)
             }
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .frame(width: geo.size.width, height: geo.size.height)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 400)
-        .shadow(color: .black.opacity(0.5), radius: 16, y: 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(true)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(resolvedName) is trying to beat you. Refreshing today’s battle.")
+        .accessibilityLabel("\(resolvedName) is your new top rival to beat.")
         .task {
             await runSequence()
         }
     }
 
     private func runSequence() async {
-        try? await Task.sleep(nanoseconds: UInt64(messageDuration * 1_000_000_000))
-        guard !Task.isCancelled else { return }
-        await MainActor.run {
-            phase = .wiping
-            wipeProgress = 0
-        }
         if reduceMotion {
             await MainActor.run {
-                wipeProgress = 1
+                blurStrength = 1
+                alertScale = 1
+                alertOpacity = 1
+                crossfadeProgress = 0
             }
-        } else {
-            await animateWipe()
+            try? await Task.sleep(nanoseconds: UInt64(alertHoldDuration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await exitAlertAndDissolveBlur()
+            finish()
+            return
         }
-        try? await Task.sleep(nanoseconds: UInt64(max(0.05, wipeDuration) * 0.35 * 1_000_000_000))
-        guard !Task.isCancelled else { return }
+
         await MainActor.run {
-            phase = .done
-            if !didFireComplete {
-                didFireComplete = true
-                onComplete()
+            crossfadeProgress = 0
+            alertScale = 0.06
+            alertOpacity = 0
+            withAnimation(.linear(duration: blurInDuration)) {
+                blurStrength = 1
             }
+            withAnimation(.easeOut(duration: alertScaleInDuration)) {
+                alertScale = 1
+                alertOpacity = 1
+            }
+        }
+        try? await Task.sleep(nanoseconds: UInt64(alertScaleInDuration * 1_000_000_000))
+        guard !Task.isCancelled else { return }
+        try? await Task.sleep(nanoseconds: UInt64(alertHoldDuration * 1_000_000_000))
+        guard !Task.isCancelled else { return }
+
+        await exitAlertAndDissolveBlur()
+        finish()
+    }
+
+    /// Alert scales down while blur + hero crossfade dissolve over 1.5s.
+    private func exitAlertAndDissolveBlur() async {
+        beginRevealIfNeeded()
+        await MainActor.run {
+            withAnimation(.easeIn(duration: alertScaleOutDuration)) {
+                alertScale = 0.06
+                alertOpacity = 0
+            }
+            withAnimation(.linear(duration: blurOutDuration)) {
+                blurStrength = 0
+                crossfadeProgress = 1
+            }
+        }
+        try? await Task.sleep(nanoseconds: UInt64(max(alertScaleOutDuration, blurOutDuration) * 1_000_000_000))
+        await MainActor.run {
+            alertVisible = false
         }
     }
 
-    private func animateWipe() async {
-        let steps = 14
-        for i in 1 ... steps {
-            try? await Task.sleep(nanoseconds: UInt64((wipeDuration / Double(steps)) * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                wipeProgress = CGFloat(i) / CGFloat(steps)
+    private func beginRevealIfNeeded() {
+        guard !didBeginReveal else { return }
+        didBeginReveal = true
+        onBeginReveal()
+    }
+
+    private func finish() {
+        guard !didFireComplete else { return }
+        didFireComplete = true
+        onComplete()
+    }
+}
+
+// MARK: - Blur veil (material only — no color tint)
+
+private struct HandoffHeroBlurVeil: View {
+    let strength: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 28, style: .continuous)
+            .fill(.clear)
+            .background {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .opacity(strength)
             }
+            .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Match-found style rival alert
+
+private struct HandoffNewRivalMatchFoundAlert: View {
+    let opponentName: String
+    let scale: CGFloat
+    let opacity: CGFloat
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text("NEW TOP RIVAL!")
+                .font(FitUpFont.mono(17, weight: .heavy))
+                .foregroundStyle(FitUpColors.Neon.green)
+                .shadow(color: FitUpColors.Neon.green.opacity(0.5), radius: 10)
+                .multilineTextAlignment(.center)
+
+            Text("VS \(opponentName.uppercased())")
+                .font(FitUpFont.mono(13, weight: .semibold))
+                .foregroundStyle(FitUpColors.Neon.yellow)
+                .multilineTextAlignment(.center)
+
+            Text("YOUR NEW TOP RIVAL TO BEAT")
+                .font(FitUpFont.mono(11, weight: .medium))
+                .foregroundStyle(FitUpColors.Neon.cyan)
+                .multilineTextAlignment(.center)
+                .padding(.top, 2)
         }
+        .padding(28)
+        .frame(maxWidth: 320)
+        .background(
+            RoundedRectangle(cornerRadius: FitUpRadius.lg)
+                .fill(Color(rgb: 0x0A1020).opacity(0.95))
+                .overlay(
+                    RoundedRectangle(cornerRadius: FitUpRadius.lg)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    FitUpColors.Neon.cyan,
+                                    FitUpColors.Neon.purple,
+                                    FitUpColors.Neon.green,
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 2
+                        )
+                )
+        )
+        .shadow(color: FitUpColors.Neon.cyan.opacity(0.25), radius: 22)
+        .scaleEffect(scale)
+        .opacity(opacity)
+        .frame(maxWidth: .infinity)
     }
 }
 
 #if DEBUG
 #Preview("Handoff overlay") {
-    HomeFeaturedOpponentHandoffOverlay(
-        newOpponentName: "Jordan",
-        reduceMotion: false,
-        onComplete: {}
-    )
-    .padding()
-    .background(FitUpColors.Bg.base)
+    struct PreviewHost: View {
+        @State private var crossfade: CGFloat = 0
+        var body: some View {
+            HomeFeaturedOpponentHandoffOverlay(
+                newOpponentName: "Jordan",
+                reduceMotion: false,
+                crossfadeProgress: $crossfade,
+                onBeginReveal: {},
+                onComplete: {}
+            )
+            .frame(height: 400)
+            .padding()
+            .background(FitUpColors.Bg.base)
+        }
+    }
+    return PreviewHost()
 }
 #endif

@@ -9,8 +9,11 @@ import Combine
 import Foundation
 import SwiftUI
 
-/// Slice 7 — holds the next featured match while the opponent handoff overlay runs.
+/// Slice 7 — holds the outgoing + incoming featured matches while the handoff overlay runs.
 struct HeroOpponentHandoffOverlayModel: Equatable {
+    /// Hero card shown under the overlay until blackout completes.
+    let previousMatch: HomeActiveMatch?
+    /// Featured match to show after `completeHeroOpponentHandoff()` (beam intro runs then).
     let newMatch: HomeActiveMatch
 }
 
@@ -1347,8 +1350,9 @@ final class HomeViewModel: ObservableObject {
         guard normalizedHeroMetricType(match.metricType) == "steps" else { return }
 
         let newOppId = match.opponent.id
-        if let previous = FeaturedOpponentHandoffStore.lastOpponentProfileId(userId: userId), previous != newOppId {
-            heroOpponentHandoff = HeroOpponentHandoffOverlayModel(newMatch: match)
+        if let previousOppId = FeaturedOpponentHandoffStore.lastOpponentProfileId(userId: userId), previousOppId != newOppId {
+            let previousMatch = activeStepMatches.first { $0.opponent.id == previousOppId }
+            heroOpponentHandoff = HeroOpponentHandoffOverlayModel(previousMatch: previousMatch, newMatch: match)
         } else {
             FeaturedOpponentHandoffStore.saveLastOpponent(newOppId, userId: userId)
         }
@@ -1371,7 +1375,8 @@ final class HomeViewModel: ObservableObject {
         guard heroOpponentHandoff == nil else { return }
         guard let m = featuredHomeStepMatch else { return }
         guard normalizedHeroMetricType(m.metricType) == "steps" else { return }
-        heroOpponentHandoff = HeroOpponentHandoffOverlayModel(newMatch: m)
+        let previous = activeStepMatches.first { $0.opponent.id != m.opponent.id } ?? m
+        heroOpponentHandoff = HeroOpponentHandoffOverlayModel(previousMatch: previous, newMatch: m)
     }
     #endif
 

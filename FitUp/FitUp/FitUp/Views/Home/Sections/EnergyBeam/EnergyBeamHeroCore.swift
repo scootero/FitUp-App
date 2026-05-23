@@ -452,11 +452,11 @@ enum EnergyBeamHeroLayout {
     // MARK: - Hero margin transition (Home + DEBUG previews)
 
     /// Midpoint duration for sliders / presets when not using delta-scaled timing.
-    static let marginDrivenAnimationSeconds: Double = 1.0
+    static let marginDrivenAnimationSeconds: Double = 1.85
 
     /// Minimum duration for margin / score counting and beam collision slide (Home tuning preview).
-    static let marginTransitionMinSeconds: Double = 1.0
-    static let marginTransitionMaxSeconds: Double = 2.0
+    static let marginTransitionMinSeconds: Double = 1.85
+    static let marginTransitionMaxSeconds: Double = 3.25
     /// Above this magnitude of `target - start` (in margin points), duration reaches `marginTransitionMaxSeconds`.
     private static let marginTransitionDeltaSpan: Double = 7500
 
@@ -468,8 +468,8 @@ enum EnergyBeamHeroLayout {
     /// Particle / lane drift speed during intro (`endingProduction` motion × this). **Lower** = calmer intro.
     static let introProceduralMotionScale: Double = 0.01
 
-    /// Particle drift while margin/score slide runs (`endingProduction` × this). Lower = calmer slide.
-    static let battleCountProceduralMotionScale: Double = 0.32
+    /// Particle / lane drift during margin/score slide (`endingProduction` × this). 2× prior 1.6 so flow keeps up when margin moves.
+    static let battleCountProceduralMotionScale: Double = 3.2
 
     /// Impact flashes during slide (0 = off). Integer margin ticks used to retrigger bursts — keep at 0 for fluid slides.
     static let battleCountImpactStrengthScale: Double = 0
@@ -685,7 +685,7 @@ enum EnergyBeamHeroCollisionLayout {
     }
 }
 
-/// Margin block below the beam: eyebrow + unit stay centered; only the hero number tracks collision X.
+/// Margin block below the beam: eyebrow centered; hero number + unit track collision X.
 private struct EnergyBeamCollisionAlignedMarginHeadline: View {
     let collisionX: CGFloat
     let trackWidth: CGFloat
@@ -693,31 +693,37 @@ private struct EnergyBeamCollisionAlignedMarginHeadline: View {
     let unitLabel: String
 
     private var accent: Color { EnergyBeamHeroCollisionLayout.eyebrowColor(margin: margin) }
-    private let blockHeight: CGFloat = 72
-    private let lineGapHalf: CGFloat = 46
-    private let numberRowY: CGFloat = 32
-    private let eyebrowY: CGFloat = 14
-    private let unitY: CGFloat = 54
-    private let verticalMarkerTopY: CGFloat = 2
-    private let verticalMarkerBottomY: CGFloat = 44
+    static let reservedHeight: CGFloat = 82
+    private let blockHeight: CGFloat = reservedHeight
+    private let horizontalEdgePadding: CGFloat = 44
+    private let lineGapHalf: CGFloat = 40
+    /// Sits between the beam bottom edge and the hero number cap height.
+    private let eyebrowY: CGFloat = 9
+    private let numberRowY: CGFloat = 44
+    /// Gap from the guide line (through the number) down to the unit label.
+    private let unitBelowLineGap: CGFloat = 11
+    /// Shifts the unit so it reads after the trailing edge of the collision number.
+    private let unitOffsetFromMarkerX: CGFloat = 42
+    /// Connects beam collision down through the hero number.
+    private let beamConnectorTopY: CGFloat = 0
+    private let beamConnectorBottomY: CGFloat = 40
+
+    private var unitRowY: CGFloat { numberRowY + unitBelowLineGap }
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
+            let markerX = min(max(collisionX, horizontalEdgePadding), w - horizontalEdgePadding)
 
             ZStack {
-                verticalCollisionMarker
-                    .position(
-                        x: collisionX,
-                        y: (verticalMarkerTopY + verticalMarkerBottomY) * 0.5
-                    )
+                beamCollisionConnector(at: markerX)
 
                 HStack(spacing: 0) {
                     horizontalGuideLine(fadeFromLeading: true)
-                        .frame(width: max(0, collisionX - lineGapHalf))
+                        .frame(width: max(0, markerX - lineGapHalf))
                     Color.clear.frame(width: lineGapHalf * 2)
                     horizontalGuideLine(fadeFromLeading: false)
-                        .frame(width: max(0, w - collisionX - lineGapHalf))
+                        .frame(width: max(0, w - markerX - lineGapHalf))
                 }
                 .frame(width: w, height: 1)
                 .position(x: w * 0.5, y: numberRowY)
@@ -730,41 +736,43 @@ private struct EnergyBeamCollisionAlignedMarginHeadline: View {
                     .position(x: w * 0.5, y: eyebrowY)
 
                 Text(EnergyBeamHeroCollisionLayout.heroNumberText(margin: margin))
-                    .font(FitUpFont.display(41, weight: .heavy))
+                    .font(FitUpFont.display(34, weight: .heavy))
                     .foregroundStyle(Color.white)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.48)
+                    .minimumScaleFactor(0.55)
                     .allowsTightening(true)
                     .contentTransition(.numericText())
-                    .position(x: collisionX, y: numberRowY)
+                    .frame(maxWidth: w - horizontalEdgePadding * 2)
+                    .position(x: markerX, y: numberRowY)
 
                 Text(unitLabel)
                     .font(FitUpFont.body(12, weight: .semibold))
                     .foregroundStyle(FitUpColors.Text.secondary)
                     .tracking(3.2)
-                    .frame(maxWidth: .infinity)
-                    .position(x: w * 0.5, y: unitY)
+                    .fixedSize()
+                    .position(x: markerX + unitOffsetFromMarkerX, y: unitRowY)
             }
         }
         .frame(height: blockHeight)
         .frame(maxWidth: .infinity)
     }
 
-    /// Faded vertical rail under the beam collision — strongest at the top (beam center line).
-    private var verticalCollisionMarker: some View {
+    /// Dim vertical link from beam center line down to the margin number.
+    private func beamCollisionConnector(at x: CGFloat) -> some View {
         Rectangle()
             .fill(
                 LinearGradient(
                     colors: [
-                        accent.opacity(0.38),
-                        accent.opacity(0.14),
-                        accent.opacity(0.03),
+                        accent.opacity(0.42),
+                        accent.opacity(0.2),
+                        accent.opacity(0.06),
                     ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
             )
-            .frame(width: 1, height: verticalMarkerBottomY - verticalMarkerTopY)
+            .frame(width: 1, height: beamConnectorBottomY - beamConnectorTopY)
+            .position(x: x, y: (beamConnectorTopY + beamConnectorBottomY) * 0.5)
     }
 
     private func horizontalGuideLine(fadeFromLeading: Bool) -> some View {
@@ -2584,6 +2592,12 @@ struct EnergyBeamHeroGlassCardView: View {
     var impactStrengthScale: CGFloat = 1
     var proceduralDrawSeed: Int? = nil
     var suppressImpactBursts: Bool = false
+    /// Slice 7 handoff: 0 = opponent column fully blacked out, 1 = fully revealed.
+    var opponentRevealProgress: CGFloat = 1
+    /// When true, opponent profile/scores are not rendered — solid black placeholder only (prevents first-frame flash).
+    var opponentContentSuppressed: Bool = false
+    /// Hides the ahead/behind headline under the beam (Slice 7 handoff reveal).
+    var hideMarginHeadline: Bool = false
 
     private var narrativeMarginInt: Int { Int(margin.rounded(.towardZero)) }
     private var beamCollisionMarginPrecise: Double {
@@ -2696,6 +2710,13 @@ struct EnergyBeamHeroGlassCardView: View {
         }
     }
 
+    /// Solid black stand-in so rival name/scores never paint before the handoff reveal.
+    private var opponentColumnBlackPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color.black)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var playersRow: some View {
         HStack(alignment: .top, spacing: 14) {
             PlayerColumnPreview(
@@ -2708,15 +2729,29 @@ struct EnergyBeamHeroGlassCardView: View {
             )
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            PlayerColumnPreview(
-                role: .opponent,
-                accent: FitUpColors.Neon.orange,
-                name: opponentName,
-                stepCount: opponentSteps,
-                battleScore: opponentBattleScore,
-                scoreCaption: battleScoreColumnTitle
-            )
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            ZStack(alignment: .topTrailing) {
+                if opponentContentSuppressed {
+                    opponentColumnBlackPlaceholder
+                } else {
+                    PlayerColumnPreview(
+                        role: .opponent,
+                        accent: FitUpColors.Neon.orange,
+                        name: opponentName,
+                        stepCount: opponentSteps,
+                        battleScore: opponentBattleScore,
+                        scoreCaption: battleScoreColumnTitle
+                    )
+                    .scaleEffect(0.88 + 0.12 * opponentRevealProgress, anchor: .topTrailing)
+                    .opacity(opponentRevealProgress)
+
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.black)
+                        .opacity(1 - opponentRevealProgress)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .topTrailing)
+            .frame(minHeight: 132)
+            .accessibilityHidden(opponentContentSuppressed || opponentRevealProgress < 0.04)
         }
     }
 
@@ -2752,7 +2787,7 @@ struct EnergyBeamHeroGlassCardView: View {
                     wall: wall
                 )
 
-                VStack(spacing: 4) {
+                VStack(spacing: 8) {
                     ProceduralEnergyBeamView(
                         marginPrecise: beamCollisionMarginPrecise,
                         referenceBattleValue: referenceBattleValue,
@@ -2768,15 +2803,20 @@ struct EnergyBeamHeroGlassCardView: View {
                     )
                     .frame(height: layoutTuning.beamOuterHeight)
 
-                    EnergyBeamCollisionAlignedMarginHeadline(
-                        collisionX: collisionX,
-                        trackWidth: w,
-                        margin: beamMarginDisplayInt,
-                        unitLabel: unitLabel
-                    )
+                    if !hideMarginHeadline {
+                        EnergyBeamCollisionAlignedMarginHeadline(
+                            collisionX: collisionX,
+                            trackWidth: w,
+                            margin: beamMarginDisplayInt,
+                            unitLabel: unitLabel
+                        )
+                    } else {
+                        Color.clear
+                            .frame(height: EnergyBeamCollisionAlignedMarginHeadline.reservedHeight)
+                    }
                 }
             }
-            .frame(height: layoutTuning.beamOuterHeight + 72)
+            .frame(height: layoutTuning.beamOuterHeight + EnergyBeamCollisionAlignedMarginHeadline.reservedHeight)
         }
     }
 

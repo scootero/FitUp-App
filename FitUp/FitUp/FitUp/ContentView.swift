@@ -88,42 +88,90 @@ private struct RootShellView: View {
     @State private var challengeLaunchContext: ChallengeLaunchContext?
     @State private var matchDetailsContext: MatchDetailsContext?
     @State private var showingPaywall = false
-    @State private var showTesterFeedback = false
 
     var body: some View {
-        ZStack {
-            BackgroundGradientView()
-            currentTabContent
+        Group {
+            if selectedTab == .home {
+                mainTabShell
+            } else {
+                FitUpAppChromeContainer(
+                    profile: profile,
+                    showsGreeting: false,
+                    onOpenChallenge: { challengeLaunchContext = .battleEntry },
+                    onOpenMatchDetails: { matchId, _ in
+                        matchDetailsContext = MatchDetailsContext(matchId: matchId)
+                    }
+                ) {
+                    mainTabShell
+                }
+            }
         }
+        .environmentObject(sessionStore)
+        .environmentObject(notificationService)
         .safeAreaInset(edge: .bottom) {
             FloatingTabBar(selected: $selectedTab) {
                 challengeLaunchContext = .battleEntry
             }
         }
         .fullScreenCover(item: $challengeLaunchContext) { launchContext in
-            ChallengeFlowView(
+            FitUpAppChromeContainer(
                 profile: profile,
-                launchContext: launchContext
+                showsGreeting: false,
+                onOpenChallenge: {
+                    challengeLaunchContext = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        challengeLaunchContext = .battleEntry
+                    }
+                },
+                onOpenMatchDetails: { matchId, _ in
+                    challengeLaunchContext = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        matchDetailsContext = MatchDetailsContext(matchId: matchId)
+                    }
+                }
             ) {
-                challengeLaunchContext = nil
-                sessionStore.requestHomeSnapshotRefresh()
+                ChallengeFlowView(
+                    profile: profile,
+                    launchContext: launchContext
+                ) {
+                    challengeLaunchContext = nil
+                    sessionStore.requestHomeSnapshotRefresh()
+                }
+                .environmentObject(sessionStore)
+                .trackProductScreen("challenge_flow", userId: sessionStore.currentProfile?.id)
             }
             .environmentObject(sessionStore)
-            .trackProductScreen("challenge_flow", userId: sessionStore.currentProfile?.id)
+            .environmentObject(notificationService)
         }
         .fullScreenCover(item: $matchDetailsContext) { context in
-            MatchDetailsView(
-                matchId: context.matchId,
-                profile: profile
-            ) {
-                matchDetailsContext = nil
-            } onRematch: { launchContext in
-                matchDetailsContext = nil
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    challengeLaunchContext = launchContext
+            FitUpAppChromeContainer(
+                profile: profile,
+                showsGreeting: false,
+                onOpenChallenge: {
+                    matchDetailsContext = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        challengeLaunchContext = .battleEntry
+                    }
+                },
+                onOpenMatchDetails: { matchId, _ in
+                    matchDetailsContext = MatchDetailsContext(matchId: matchId)
                 }
+            ) {
+                MatchDetailsView(
+                    matchId: context.matchId,
+                    profile: profile
+                ) {
+                    matchDetailsContext = nil
+                } onRematch: { launchContext in
+                    matchDetailsContext = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        challengeLaunchContext = launchContext
+                    }
+                }
+                .trackProductScreen("match_detail", userId: sessionStore.currentProfile?.id)
             }
-            .trackProductScreen("match_detail", userId: sessionStore.currentProfile?.id)
+            .environmentObject(sessionStore)
+            .environmentObject(notificationService)
         }
         .sheet(isPresented: $showingPaywall) {
             PaywallView { showingPaywall = false }
@@ -173,33 +221,6 @@ private struct RootShellView: View {
             _ = notificationService.consumeDeepLink()
             handleDeepLink(deepLink)
         }
-        .overlay(alignment: .topTrailing) {
-            if let uid = sessionStore.currentProfile?.id {
-                Button {
-                    ProductAnalytics.track(
-                        ProductAnalytics.Event.feedbackOpened,
-                        userId: uid,
-                        properties: ["source": "root_overlay", "tab": selectedTab.rawValue]
-                    )
-                    showTesterFeedback = true
-                } label: {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(FitUpColors.Neon.cyan)
-                        .padding(10)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .padding(.top, 8)
-                .padding(.trailing, 12)
-                .accessibilityLabel("Send feedback")
-                .sheet(isPresented: $showTesterFeedback) {
-                    TesterFeedbackSheet(
-                        userId: uid,
-                        screenName: "tab:\(selectedTab.rawValue)"
-                    )
-                }
-            }
-        }
     }
 
     private func handleDeepLink(_ deepLink: NotificationDeepLink) {
@@ -209,12 +230,24 @@ private struct RootShellView: View {
             notificationService.requestPresentHomeInbox()
         case .matchDetails(let matchId):
             matchDetailsContext = MatchDetailsContext(matchId: matchId)
+        case .recapInbox:
+            selectedTab = .home
+            notificationService.requestPresentHomeInbox()
         case .activity:
             selectedTab = .home
             notificationService.requestPresentHomeInbox()
         case .friends:
             selectedTab = .profile
             sessionStore.requestOpenFriendsListSheet()
+        case .messages(let peerId):
+            sessionStore.requestOpenMessages(peerId: peerId)
+        }
+    }
+
+    private var mainTabShell: some View {
+        ZStack {
+            BackgroundGradientView()
+            currentTabContent
         }
     }
 

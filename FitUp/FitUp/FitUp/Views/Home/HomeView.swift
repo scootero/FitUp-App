@@ -8,8 +8,14 @@
 import SwiftUI
 
 private let useEnergyBeamHomeHero = true
+/// Beam collision tuning strip on Home. Keep `false` for normal Home; set `true` locally when tuning (DEBUG builds only).
+private let showHomeEnergyBeamDebugLab = true
+/// Stable token when the lab is off so the hero card does not see a new UUID every render.
+private let homeEnergyBeamDebugLabDisabledPreviewToken = UUID()
 /// Approximates loaded energy beam hero height (card + beam + chart + day bar) for skeleton parity.
 private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 400
+/// Horizontal inset for the energy beam hero only (slightly tighter than the rest of Home).
+private let homeHeroHorizontalPadding: CGFloat = 15
 
 struct HomeView: View {
     let profile: Profile?
@@ -18,11 +24,8 @@ struct HomeView: View {
     var onOpenMatchDetails: (UUID, String) -> Void
 
     @EnvironmentObject private var sessionStore: SessionStore
-    @EnvironmentObject private var notificationService: NotificationService
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel = HomeViewModel()
-    @State private var isNotificationInboxVisible = false
-    @State private var markReadTask: Task<Void, Never>?
     @State private var homeFirstRenderAt: Date?
     @State private var hasLoggedFirstRender = false
     @State private var hasLoggedHeroFirstRender = false
@@ -32,6 +35,13 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var beamLabUseBeamPreviewOffset = false
     @State private var beamLabSliderOffset: Double = 0
+    /// Crossfade from outgoing featured hero → incoming (0…1, linear with blur fade-out).
+    @State private var handoffCrossfadeProgress: CGFloat = 0
+    @State private var handoffRevealingNewHero = false
+    @State private var handoffIntroKickoff = UUID()
+    @State private var handoffOpponentRevealKickoff = UUID()
+    @State private var handoffKeepOpponentBlackedOut = false
+    @State private var handoffFinishTask: Task<Void, Never>?
     @State private var beamLabAppOpenPreviewToken = UUID()
 
     var body: some View {
@@ -41,12 +51,11 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     #if DEBUG
-                    if useEnergyBeamHomeHero, !viewModel.isHeroLoading {
+                    if showHomeEnergyBeamDebugLab, useEnergyBeamHomeHero, !viewModel.isHeroLoading {
                         homeEnergyBeamDebugLabStrip
+                            .padding(.horizontal, 16)
                     }
                     #endif
-
-                    header
 
                     if viewModel.isHeroLoading {
                         skeletonBlock(height: homeEnergyBeamHeroSkeletonHeight)
@@ -55,55 +64,10 @@ struct HomeView: View {
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
                             .padding(.top, 10)
+                            .padding(.horizontal, homeHeroHorizontalPadding)
                     } else {
                         if useEnergyBeamHomeHero {
-                            if let handoff = viewModel.heroOpponentHandoff {
-                                ZStack {
-                                    skeletonBlock(height: homeEnergyBeamHeroSkeletonHeight)
-                                        .homeLiquidGlassCard(.base)
-                                        .opacity(0.5)
-                                        .allowsHitTesting(false)
-                                    HomeFeaturedOpponentHandoffOverlay(
-                                        newOpponentName: handoff.newMatch.opponent.displayName,
-                                        reduceMotion: reduceMotion,
-                                        onComplete: {
-                                            viewModel.completeHeroOpponentHandoff()
-                                        }
-                                    )
-                                }
-                                .padding(.top, 10)
-                            } else if let primaryMatch = viewModel.featuredHomeStepMatch {
-                                // Match details title uses raw `displayName` (may be empty) to stay consistent with other Home entry points.
-                                Button {
-                                    onOpenMatchDetails(primaryMatch.id, primaryMatch.opponent.displayName)
-                                } label: {
-                                    HomeEnergyBeamHeroCard(
-                                        match: primaryMatch,
-                                        profile: profile,
-                                        sparklineUserValues: viewModel.heroSparklineUserSeries,
-                                        sparklineOpponentValues: viewModel.heroSparklineOpponentSeries,
-                                        viewerIntradayHealthKitSyncedAt: viewModel.heroViewerHealthKitStepsReadAt,
-                                        opponentIntradayLatestTickAt: viewModel.heroOpponentIntradayLatestTickAt,
-                                        debugBeamLabEnabled: beamLabUseBeamPreviewOffset,
-                                        debugBeamCollisionDelta: beamLabSliderOffset,
-                                        debugAppOpenPreviewToken: beamLabAppOpenPreviewToken
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .transaction { $0.disablesAnimations = false }
-                                .padding(.top, 10)
-                            } else {
-                                HomeEnergyBeamHeroCard(
-                                    match: nil,
-                                    profile: profile,
-                                    sparklineUserValues: viewModel.heroSparklineUserSeries,
-                                    sparklineOpponentValues: viewModel.heroSparklineOpponentSeries,
-                                    viewerIntradayHealthKitSyncedAt: viewModel.heroViewerHealthKitStepsReadAt,
-                                    opponentIntradayLatestTickAt: viewModel.heroOpponentIntradayLatestTickAt,
-                                    onStartBattle: { onOpenChallenge(nil) }
-                                )
-                                .padding(.top, 10)
-                            }
+                            energyBeamHeroSection
                         } else if let primaryMatch = viewModel.featuredHomeStepMatch {
                             Button {
                                 onOpenMatchDetails(primaryMatch.id, primaryMatch.opponent.displayName)
@@ -115,67 +79,71 @@ struct HomeView: View {
                             }
                             .buttonStyle(.plain)
                             .padding(.top, 10)
+                            .padding(.horizontal, 16)
                         } else {
                             HomeBattleHeroCard(
                                 matches: heroSortedStepMatches,
                                 featuredMatch: nil
                             )
                             .padding(.top, 10)
+                            .padding(.horizontal, 16)
                         }
                     }
 
-                    heroSummaryLine
-                    battleStatusStrip
-                    battleMiniStatsGrid
+                    Group {
+                        heroSummaryLine
+                        battleStatusStrip
+                        battleMiniStatsGrid
 
-                    if let errorMessage = viewModel.errorMessage, !errorMessage.isEmpty {
-                        Text(errorMessage)
-                            .font(FitUpFont.body(12, weight: .semibold))
-                            .foregroundStyle(FitUpColors.Neon.pink)
-                            .padding(.horizontal, 2)
-                    }
-
-                    if viewModel.isInitialLoading {
-                        deferredSectionsLoadingSkeleton
-                    } else {
-                        ActiveSection(
-                            matches: viewModel.sortedActiveMatchesForHome,
-                            onOpenMatch: { match in
-                                onOpenMatchDetails(match.id, match.opponent.displayName)
-                            }
-                        )
-
-                        pendingAndSearchingSection
-
-                        if !viewModel.hasAnyContent, !viewModel.isLoading {
-                            zeroState
+                        if let errorMessage = viewModel.errorMessage, !errorMessage.isEmpty {
+                            Text(errorMessage)
+                                .font(FitUpFont.body(12, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Neon.pink)
+                                .padding(.horizontal, 2)
                         }
 
-                        HealthPastMatchesCard(
-                            matches: viewModel.completedMatches,
-                            isExpanded: isPastMatchesExpanded,
-                            isLoading: viewModel.isLoadingCompletedMatches,
-                            onToggleExpanded: {
-                                isPastMatchesExpanded.toggle()
-                                if isPastMatchesExpanded {
-                                    Task { await viewModel.loadCompletedMatchesIfNeeded() }
+                        if viewModel.isInitialLoading {
+                            deferredSectionsLoadingSkeleton
+                        } else {
+                            ActiveSection(
+                                matches: viewModel.sortedActiveMatchesForHome,
+                                onOpenMatch: { match in
+                                    onOpenMatchDetails(match.id, match.opponent.displayName)
                                 }
-                            },
-                            onOpenMatch: { match in
-                                onOpenMatchDetails(match.id, match.opponentName)
-                            }
-                        )
-                        .padding(.top, 4)
-                    }
+                            )
 
-                    #if DEBUG
-                    HomeStepAveragesDebugCard(
-                        profileId: profile?.id,
-                        featuredStepMatch: viewModel.featuredHomeStepMatch
-                    )
-                    #endif
+                            pendingAndSearchingSection
+
+                            if !viewModel.hasAnyContent, !viewModel.isLoading {
+                                zeroState
+                            }
+
+                            HealthPastMatchesCard(
+                                matches: viewModel.completedMatches,
+                                isExpanded: isPastMatchesExpanded,
+                                isLoading: viewModel.isLoadingCompletedMatches,
+                                onToggleExpanded: {
+                                    isPastMatchesExpanded.toggle()
+                                    if isPastMatchesExpanded {
+                                        Task { await viewModel.loadCompletedMatchesIfNeeded() }
+                                    }
+                                },
+                                onOpenMatch: { match in
+                                    onOpenMatchDetails(match.id, match.opponentName)
+                                }
+                            )
+                            .padding(.top, 4)
+                        }
+
+                        #if DEBUG
+                        HomeStepAveragesDebugCard(
+                            profileId: profile?.id,
+                            featuredStepMatch: viewModel.featuredHomeStepMatch
+                        )
+                        #endif
+                    }
+                    .padding(.horizontal, 16)
                 }
-                .padding(.horizontal, 16)
                 .padding(.top, 10)
                 .padding(.bottom, 8)
             }
@@ -218,10 +186,6 @@ struct HomeView: View {
             }
 
             friendNotificationTopStack
-
-            if isNotificationInboxVisible {
-                notificationInboxOverlay
-            }
         }
         .transaction { transaction in
             transaction.disablesAnimations = true
@@ -309,17 +273,173 @@ struct HomeView: View {
             Task { await viewModel.reload(force: true) }
         }
         .onDisappear {
-            markReadTask?.cancel()
             isPastMatchesExpanded = false
             viewModel.stop()
         }
-        .onChange(of: notificationService.shouldPresentHomeInbox) { _, shouldPresent in
-            guard shouldPresent else { return }
-            _ = notificationService.consumePresentHomeInbox()
-            withAnimation(.spring(response: 0.36, dampingFraction: 0.86)) {
-                isNotificationInboxVisible = true
+    }
+
+    private var energyBeamHeroActiveMatch: HomeActiveMatch? {
+        let handoff = viewModel.heroOpponentHandoff
+        if let handoff {
+            if handoffRevealingNewHero { return handoff.newMatch }
+            return handoff.previousMatch ?? handoff.newMatch
+        }
+        return viewModel.featuredHomeStepMatch
+    }
+
+    private var energyBeamDebugLabEnabled: Bool {
+        showHomeEnergyBeamDebugLab && beamLabUseBeamPreviewOffset
+    }
+
+    private var energyBeamDebugCollisionDelta: Double {
+        showHomeEnergyBeamDebugLab ? beamLabSliderOffset : 0
+    }
+
+    private var energyBeamDebugPreviewToken: UUID {
+        showHomeEnergyBeamDebugLab
+            ? beamLabAppOpenPreviewToken
+            : homeEnergyBeamDebugLabDisabledPreviewToken
+    }
+
+    @ViewBuilder
+    private func energyBeamHeroCard(
+        match: HomeActiveMatch?,
+        handoffRevealActive: Bool = false,
+        handoffIntroKickoff: UUID = UUID(),
+        handoffOpponentRevealKickoff: UUID = UUID(),
+        handoffKeepOpponentBlackedOut: Bool = false,
+        onStartBattle: (() -> Void)? = nil,
+        fixedDebugPreviewToken: UUID? = nil
+    ) -> some View {
+        let previewToken = fixedDebugPreviewToken ?? energyBeamDebugPreviewToken
+        HomeEnergyBeamHeroCard(
+            match: match,
+            profile: profile,
+            sparklineUserValues: viewModel.heroSparklineUserSeries,
+            sparklineOpponentValues: viewModel.heroSparklineOpponentSeries,
+            viewerIntradayHealthKitSyncedAt: viewModel.heroViewerHealthKitStepsReadAt,
+            opponentIntradayLatestTickAt: viewModel.heroOpponentIntradayLatestTickAt,
+            debugBeamLabEnabled: energyBeamDebugLabEnabled,
+            debugBeamCollisionDelta: energyBeamDebugCollisionDelta,
+            debugAppOpenPreviewToken: previewToken,
+            handoffRevealActive: handoffRevealActive,
+            handoffIntroKickoff: handoffIntroKickoff,
+            handoffOpponentRevealKickoff: handoffOpponentRevealKickoff,
+            handoffKeepOpponentBlackedOut: handoffKeepOpponentBlackedOut,
+            onStartBattle: onStartBattle
+        )
+    }
+
+    @ViewBuilder
+    private var energyBeamHeroHandoffStack: some View {
+        let handoff = viewModel.heroOpponentHandoff
+        let activeMatch = energyBeamHeroActiveMatch
+
+        ZStack {
+            if let handoff, let previous = handoff.previousMatch, handoffRevealingNewHero {
+                energyBeamHeroCard(
+                    match: previous,
+                    fixedDebugPreviewToken: homeEnergyBeamDebugLabDisabledPreviewToken
+                )
+                    .opacity(1 - handoffCrossfadeProgress)
+                    .allowsHitTesting(false)
             }
-            scheduleInboxAutoRead()
+
+            if let activeMatch {
+                Button {
+                    onOpenMatchDetails(activeMatch.id, activeMatch.opponent.displayName)
+                } label: {
+                    energyBeamHeroCard(
+                        match: activeMatch,
+                        handoffRevealActive: handoff != nil && handoffRevealingNewHero,
+                        handoffIntroKickoff: handoffIntroKickoff,
+                        handoffOpponentRevealKickoff: handoffOpponentRevealKickoff,
+                        handoffKeepOpponentBlackedOut: handoffKeepOpponentBlackedOut
+                    )
+                    .id(activeMatch.id)
+                }
+                .buttonStyle(.plain)
+                .transaction { $0.disablesAnimations = false }
+                .opacity(handoff != nil && handoffRevealingNewHero ? handoffCrossfadeProgress : 1)
+                .overlay {
+                    if handoff != nil, handoffRevealingNewHero {
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(Color.black)
+                            .opacity(1 - handoffCrossfadeProgress)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .allowsHitTesting(handoff == nil)
+            } else {
+                skeletonBlock(height: homeEnergyBeamHeroSkeletonHeight)
+                    .homeLiquidGlassCard(.base)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// Overlay fully gone — un-suppress rival column, fade in from black, then clear handoff state.
+    private func finishHandoffAfterOverlayDismissed() {
+        handoffFinishTask?.cancel()
+        let revealDuration: TimeInterval = reduceMotion ? 0.2 : 1.05
+        handoffKeepOpponentBlackedOut = false
+        handoffOpponentRevealKickoff = UUID()
+        handoffFinishTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(revealDuration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            handoffRevealingNewHero = false
+            handoffCrossfadeProgress = 0
+            handoffKeepOpponentBlackedOut = false
+            viewModel.completeHeroOpponentHandoff()
+        }
+    }
+
+    @ViewBuilder
+    private var energyBeamHeroSection: some View {
+        let handoff = viewModel.heroOpponentHandoff
+        let activeMatch = energyBeamHeroActiveMatch
+
+        if activeMatch != nil || handoff != nil {
+            energyBeamHeroHandoffStack
+                .overlay {
+                    if let handoff {
+                        HomeFeaturedOpponentHandoffOverlay(
+                            newOpponentName: handoff.newMatch.opponent.displayName,
+                            reduceMotion: reduceMotion,
+                            crossfadeProgress: $handoffCrossfadeProgress,
+                            onBeginReveal: {
+                                handoffFinishTask?.cancel()
+                                handoffKeepOpponentBlackedOut = true
+                                handoffRevealingNewHero = true
+                                handoffCrossfadeProgress = 0
+                                handoffIntroKickoff = UUID()
+                            },
+                            onComplete: {
+                                finishHandoffAfterOverlayDismissed()
+                            }
+                        )
+                    }
+                }
+                .padding(.top, 10)
+                .padding(.horizontal, homeHeroHorizontalPadding)
+                .onAppear {
+                    handoffRevealingNewHero = false
+                    handoffCrossfadeProgress = 0
+                    handoffKeepOpponentBlackedOut = viewModel.heroOpponentHandoff != nil
+                }
+                .onChange(of: viewModel.heroOpponentHandoff?.newMatch.id) { _, newId in
+                    handoffFinishTask?.cancel()
+                    handoffRevealingNewHero = false
+                    handoffCrossfadeProgress = 0
+                    handoffKeepOpponentBlackedOut = newId != nil
+                }
+                .onDisappear {
+                    handoffFinishTask?.cancel()
+                }
+        } else {
+            energyBeamHeroCard(match: nil, onStartBattle: { onOpenChallenge(nil) })
+                .padding(.top, 10)
+                .padding(.horizontal, homeHeroHorizontalPadding)
         }
     }
 
@@ -719,72 +839,6 @@ struct HomeView: View {
         viewModel.sortedActiveMatchesForHome.filter { $0.metricType != "active_calories" }
     }
 
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 0) {
-                    Text("FIT")
-                        .font(FitUpFont.display(27, weight: .black))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                    Text("UP")
-                        .font(FitUpFont.display(27, weight: .black))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [FitUpColors.Neon.orange, FitUpColors.Neon.yellow],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                }
-
-                Text("Let's go, \(firstName)")
-                    .font(FitUpFont.body(12, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-
-                Text("It's battle time. Check your edge before you jump in.")
-                    .font(FitUpFont.body(12, weight: .semibold))
-                    .lineSpacing(1.2)
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [FitUpColors.Neon.cyan.opacity(0.92), FitUpColors.Neon.blue.opacity(0.88)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .shadow(color: FitUpColors.Neon.blue.opacity(0.32), radius: 2, x: 2, y: 6)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 3)
-            }
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 10) {
-                bellButton
-
-                Button {
-                    onOpenChallenge(nil)
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(FitUpColors.Neon.cyan)
-                        .frame(width: 36, height: 36)
-                        .background(
-                            Circle()
-                                .fill(FitUpColors.Neon.cyan.opacity(0.14))
-                                .overlay(Circle().strokeBorder(FitUpColors.Neon.cyan.opacity(0.28), lineWidth: 1))
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
     private var zeroState: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("No battles yet")
@@ -861,11 +915,6 @@ struct HomeView: View {
             .frame(height: height)
     }
 
-    private var firstName: String {
-        let full = profile?.displayName.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Athlete"
-        return full.split(separator: " ").first.map(String.init) ?? full
-    }
-
     private func prefillOpponent(from user: HomeDiscoverUser) -> ChallengePrefillOpponent {
         ChallengePrefillOpponent(
             id: user.id,
@@ -873,199 +922,6 @@ struct HomeView: View {
             initials: user.initials,
             colorHex: user.colorHex
         )
-    }
-
-    private var bellButton: some View {
-        Button {
-            withAnimation(.spring(response: 0.36, dampingFraction: 0.86)) {
-                isNotificationInboxVisible.toggle()
-            }
-            if isNotificationInboxVisible {
-                scheduleInboxAutoRead()
-            } else {
-                markReadTask?.cancel()
-            }
-        } label: {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: "bell.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-                    .frame(width: 36, height: 36)
-                    .homeLiquidGlassCard(.base)
-
-                if notificationService.unreadInboxCount > 0 {
-                    Circle()
-                        .fill(FitUpColors.Neon.pink)
-                        .frame(width: 10, height: 10)
-                        .overlay(
-                            Circle()
-                                .strokeBorder(Color.white.opacity(0.9), lineWidth: 1)
-                        )
-                        .offset(x: 3, y: -3)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Notifications")
-    }
-
-    private var notificationInboxOverlay: some View {
-        ZStack(alignment: .topTrailing) {
-            Color.black.opacity(0.001)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.87)) {
-                        isNotificationInboxVisible = false
-                    }
-                }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Notifications")
-                    .font(FitUpFont.mono(12, weight: .heavy))
-                    .foregroundStyle(FitUpColors.Neon.cyan)
-                    .fitUpGlobalTitleStyle(weight: .heavy, tracking: 0.5)
-
-                if notificationService.inboxItems.isEmpty {
-                    Text("No alerts yet.")
-                        .font(FitUpFont.body(13, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.secondary)
-                        .padding(.vertical, 8)
-                } else {
-                    ScrollView {
-                        VStack(spacing: 8) {
-                            ForEach(notificationService.inboxItems) { item in
-                                inboxRow(for: item)
-                                    .onTapGesture { handleInboxTap(item) }
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 320)
-                }
-            }
-            .padding(12)
-            .frame(width: min(UIScreen.main.bounds.width - 32, 330))
-            .background(
-                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                    .fill(Color(rgb: 0x0A1020).opacity(0.96))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        FitUpColors.Neon.cyan.opacity(0.85),
-                                        FitUpColors.Neon.purple.opacity(0.45),
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1.2
-                            )
-                    )
-            )
-            .shadow(color: FitUpColors.Neon.cyan.opacity(0.18), radius: 14, y: 6)
-            .padding(.top, 56)
-            .padding(.trailing, 16)
-            .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.98, anchor: .topTrailing)))
-        }
-        .zIndex(8)
-    }
-
-    private func inboxRow(for item: InAppNotificationItem) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: iconName(for: item))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(iconColor(for: item))
-                .frame(width: 22, height: 22)
-                .background(
-                    Circle()
-                        .fill(iconColor(for: item).opacity(item.isRead ? 0.14 : 0.22))
-                )
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(item.title)
-                        .font(FitUpFont.body(13, weight: .bold))
-                        .foregroundStyle(item.isRead ? FitUpColors.Text.secondary : FitUpColors.Text.primary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    if !item.isRead {
-                        Text("UNREAD")
-                            .font(FitUpFont.mono(9, weight: .heavy))
-                            .foregroundStyle(FitUpColors.Neon.orange)
-                    }
-                }
-                Text(item.body)
-                    .font(FitUpFont.body(12, weight: .medium))
-                    .foregroundStyle(item.isRead ? FitUpColors.Text.tertiary : FitUpColors.Text.secondary)
-                    .lineLimit(2)
-                Text(item.createdAt.formatted(date: .omitted, time: .shortened))
-                    .font(FitUpFont.mono(9, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.tertiary)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .background(
-            RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
-                .fill(item.isRead ? Color.white.opacity(0.04) : FitUpColors.Neon.cyan.opacity(0.11))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
-                .strokeBorder(
-                    item.isRead ? Color.white.opacity(0.05) : FitUpColors.Neon.cyan.opacity(0.4),
-                    lineWidth: 1
-                )
-        )
-        .animation(.easeInOut(duration: 0.26), value: item.isRead)
-    }
-
-    private func iconName(for item: InAppNotificationItem) -> String {
-        switch item.eventType {
-        case "match_found", "challenge_received", "match_active":
-            return "bolt.fill"
-        case "friend_request_received", "friend_request_accepted":
-            return "person.2.fill"
-        default:
-            return "bell.fill"
-        }
-    }
-
-    private func iconColor(for item: InAppNotificationItem) -> Color {
-        switch item.eventType {
-        case "match_found", "challenge_received", "match_active":
-            return item.isRead ? FitUpColors.Neon.blue : FitUpColors.Neon.cyan
-        case "friend_request_received", "friend_request_accepted":
-            return item.isRead ? FitUpColors.Neon.purple : FitUpColors.Neon.green
-        default:
-            return item.isRead ? FitUpColors.Text.tertiary : FitUpColors.Neon.orange
-        }
-    }
-
-    private func scheduleInboxAutoRead() {
-        markReadTask?.cancel()
-        markReadTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.32)) {
-                notificationService.markAllInboxItemsRead()
-            }
-        }
-    }
-
-    private func handleInboxTap(_ item: InAppNotificationItem) {
-        notificationService.markInboxItemRead(item.id)
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-            isNotificationInboxVisible = false
-        }
-
-        if let matchId = item.matchId {
-            onOpenMatchDetails(matchId, "Match")
-            return
-        }
-
-        if item.eventType == "friend_request_received" || item.deepLinkTarget == "friends" {
-            sessionStore.requestOpenFriendsListSheet()
-        }
     }
 
 }

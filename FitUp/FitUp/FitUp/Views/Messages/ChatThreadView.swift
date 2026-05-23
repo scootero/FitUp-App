@@ -15,6 +15,7 @@ struct ChatThreadView: View {
     var showCloseInToolbar: Bool = true
 
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var composerFocused: Bool
 
     @StateObject private var viewModel: ChatThreadViewModel
 
@@ -29,25 +30,28 @@ struct ChatThreadView: View {
 
     var body: some View {
         ZStack {
-            BackgroundGradientView()
+            MessagingArenaBackground()
+
             VStack(spacing: 0) {
                 if let err = viewModel.bannerError, !err.isEmpty {
                     Text(err)
-                        .font(FitUpFont.body(12, weight: .semibold))
+                        .font(FitUpFont.body(13, weight: .semibold))
                         .foregroundStyle(FitUpColors.Neon.pink)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, MessagingLayout.horizontalInset)
+                        .padding(.vertical, 10)
+                        .background(FitUpColors.Neon.pink.opacity(0.12))
                 }
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 10) {
+                        LazyVStack(alignment: .leading, spacing: 14) {
                             if viewModel.messages.isEmpty, viewModel.isLoading {
                                 ProgressView()
                                     .tint(FitUpColors.Neon.cyan)
+                                    .scaleEffect(1.2)
                                     .frame(maxWidth: .infinity)
-                                    .padding(.top, 40)
+                                    .padding(.top, 48)
                             } else {
                                 ForEach(viewModel.messages) { msg in
                                     messageBubble(msg)
@@ -55,9 +59,10 @@ struct ChatThreadView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, MessagingLayout.horizontalInset)
+                        .padding(.vertical, MessagingLayout.verticalInset)
                     }
+                    .scrollDismissesKeyboard(.interactively)
                     .onChange(of: viewModel.messages.count) { _, _ in
                         if let last = viewModel.messages.last {
                             withAnimation(.easeOut(duration: 0.2)) {
@@ -65,8 +70,17 @@ struct ChatThreadView: View {
                             }
                         }
                     }
+                    .onChange(of: composerFocused) { _, focused in
+                        guard focused, let last = viewModel.messages.last else { return }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                proxy.scrollTo(last.id, anchor: .bottom)
+                            }
+                        }
+                    }
                 }
-
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 composer
             }
         }
@@ -76,6 +90,7 @@ struct ChatThreadView: View {
             if showCloseInToolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
+                        .font(FitUpFont.body(14, weight: .bold))
                         .foregroundStyle(FitUpColors.Neon.cyan)
                 }
             }
@@ -86,73 +101,135 @@ struct ChatThreadView: View {
         .task {
             await viewModel.pollLoop()
         }
+        .onDisappear {
+            viewModel.markThreadReadIfNeeded()
+        }
     }
 
     private func messageBubble(_ msg: MessageRowRecord) -> some View {
         let mine = msg.senderId == viewer.id
-        return HStack {
-            if mine { Spacer(minLength: 48) }
-            Text(msg.body)
-                .font(FitUpFont.body(14, weight: .medium))
-                .foregroundStyle(mine ? Color.white : FitUpColors.Text.primary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(
-                            mine
-                                ? LinearGradient(
-                                    colors: [FitUpColors.Neon.cyan.opacity(0.45), FitUpColors.Neon.blue.opacity(0.35)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                                : LinearGradient(
-                                    colors: [Color.white.opacity(0.1), Color.white.opacity(0.06)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                        )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                )
-            if !mine { Spacer(minLength: 48) }
+        return HStack(alignment: .bottom, spacing: 0) {
+            if mine { Spacer(minLength: MessagingLayout.bubbleSideGutter) }
+            VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
+                Text(msg.body)
+                    .font(FitUpFont.body(16, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .multilineTextAlignment(mine ? .trailing : .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(bubbleFill(mine: mine))
+                    .overlay(bubbleStroke(mine: mine))
+                    .shadow(
+                        color: mine
+                            ? FitUpColors.Neon.cyan.opacity(0.35)
+                            : FitUpColors.Neon.orange.opacity(0.28),
+                        radius: mine ? 10 : 6,
+                        y: 3
+                    )
+
+                Text(msg.createdAt.formatted(date: .omitted, time: .shortened))
+                    .font(FitUpFont.mono(10, weight: .semibold))
+                    .foregroundStyle(
+                        mine
+                            ? FitUpColors.Neon.cyan.opacity(0.9)
+                            : FitUpColors.Neon.orange.opacity(0.75)
+                    )
+            }
+            .frame(maxWidth: MessagingLayout.bubbleMaxWidth, alignment: mine ? .trailing : .leading)
+            if !mine { Spacer(minLength: MessagingLayout.bubbleSideGutter) }
         }
     }
 
+    @ViewBuilder
+    private func bubbleFill(mine: Bool) -> some View {
+        if mine {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            FitUpColors.Neon.cyan.opacity(0.82),
+                            FitUpColors.Neon.blue.opacity(0.62),
+                            FitUpColors.Neon.blue.opacity(0.45),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        } else {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            FitUpColors.Neon.orange.opacity(0.42),
+                            FitUpColors.Neon.orange.opacity(0.22),
+                            Color.white.opacity(0.1),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        }
+    }
+
+    @ViewBuilder
+    private func bubbleStroke(mine: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .strokeBorder(
+                mine
+                    ? FitUpColors.Neon.cyan.opacity(0.9)
+                    : FitUpColors.Neon.orange.opacity(0.65),
+                lineWidth: 1.2
+            )
+    }
+
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField("Message", text: $viewModel.draft, axis: .vertical)
+        HStack(alignment: .bottom, spacing: 12) {
+            TextField("Drop a message…", text: $viewModel.draft, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(FitUpFont.body(14))
-                .foregroundStyle(FitUpColors.Text.primary)
+                .font(FitUpFont.body(16, weight: .medium))
+                .foregroundStyle(Color.white)
                 .lineLimit(1...5)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .focused($composerFocused)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.white.opacity(0.14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(FitUpColors.Neon.cyan.opacity(0.45), lineWidth: 1)
+                        )
                 )
 
             Button {
                 Task { await viewModel.send() }
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 32, weight: .semibold))
+                    .font(.system(size: 36, weight: .semibold))
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(
                         canSend ? FitUpColors.Neon.cyan : FitUpColors.Text.tertiary,
-                        Color.white.opacity(0.08)
+                        Color.white.opacity(0.12)
                     )
+                    .shadow(color: canSend ? FitUpColors.Neon.cyan.opacity(0.5) : .clear, radius: 8)
             }
             .buttonStyle(.plain)
             .disabled(!canSend || viewModel.sendBusy)
             .accessibilityLabel("Send")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color.black.opacity(0.35))
+        .padding(.horizontal, MessagingLayout.horizontalInset)
+        .padding(.top, 12)
+        .padding(.bottom, MessagingLayout.composerBottomPad)
+        .background {
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial).opacity(0.4)
+                LinearGradient(
+                    colors: [Color.black.opacity(0.25), Color.black.opacity(0.72)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        }
     }
 
     private var canSend: Bool {
@@ -177,6 +254,7 @@ private final class ChatThreadViewModel: ObservableObject {
 
     private let messagesRepo = MessageRepository()
     private let profiles = ProfileRepository()
+    private let friendshipRepo = FriendshipRepository()
 
     init(peerProfileId: UUID, viewer: Profile) {
         self.peerProfileId = peerProfileId
@@ -197,15 +275,48 @@ private final class ChatThreadViewModel: ObservableObject {
             if let peer = try await profiles.fetchPeerPublicProfile(id: peerProfileId) {
                 peerDisplayName = peer.displayName
             }
-            let tid = try await messagesRepo.ensureThread(
+
+            let phase = try await friendshipRepo.friendshipPhase(
+                currentProfileId: viewer.id,
+                peerProfileId: peerProfileId
+            )
+            let existingThread = try await messagesRepo.threadIdIfExists(
                 peerProfileId: peerProfileId,
                 currentProfileId: viewer.id
             )
+            if phase != .accepted, existingThread == nil {
+                bannerError = "Add this person as a friend to message them."
+                return
+            }
+
+            let tid: UUID
+            if let existingThread {
+                tid = existingThread
+            } else {
+                tid = try await messagesRepo.ensureThread(
+                    peerProfileId: peerProfileId,
+                    currentProfileId: viewer.id
+                )
+            }
             threadId = tid
             messages = try await messagesRepo.fetchMessages(threadId: tid)
+            markThreadReadIfNeeded()
         } catch {
-            bannerError = friendlyError(error)
+            AppLogger.log(
+                category: "messaging",
+                level: .error,
+                message: "chat_load_failed",
+                userId: viewer.id,
+                metadata: AppLogger.supabaseErrorMetadata(error)
+            )
+            bannerError = MessageRepository.userFacingMessage(for: error)
         }
+    }
+
+    func markThreadReadIfNeeded() {
+        guard let tid = threadId else { return }
+        let through = messages.last?.createdAt ?? Date()
+        MessageReadStore.markThreadRead(threadId: tid, profileId: viewer.id, through: through)
     }
 
     func pollLoop() async {
@@ -216,9 +327,10 @@ private final class ChatThreadViewModel: ObservableObject {
                 let next = try await messagesRepo.fetchMessages(threadId: tid)
                 if next != messages {
                     messages = next
+                    markThreadReadIfNeeded()
                 }
             } catch {
-                // Polling: keep last good payload; optional soft error
+                // Polling: keep last good payload
             }
         }
     }
@@ -232,16 +344,17 @@ private final class ChatThreadViewModel: ObservableObject {
             try await messagesRepo.sendMessage(threadId: tid, body: text, senderId: viewer.id)
             draft = ""
             messages = try await messagesRepo.fetchMessages(threadId: tid)
+            markThreadReadIfNeeded()
         } catch {
-            bannerError = friendlyError(error)
+            AppLogger.log(
+                category: "messaging",
+                level: .error,
+                message: "chat_send_failed",
+                userId: viewer.id,
+                metadata: AppLogger.supabaseErrorMetadata(error)
+            )
+            bannerError = MessageRepository.userFacingMessage(for: error)
         }
-    }
-
-    private func friendlyError(_ error: Error) -> String {
-        if let le = error as? LocalizedError, let d = le.errorDescription {
-            return d
-        }
-        return MessageRepositoryError.unexpectedResponse.localizedDescription
     }
 }
 

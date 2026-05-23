@@ -77,6 +77,7 @@ serve(async (request)=>{
             opponent_display_name: opponentName,
             my_score: myScore,
             their_score: theirScore,
+            days_left: 0,
             deep_link_target: "match_details"
           }
         });

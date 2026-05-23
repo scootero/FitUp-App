@@ -17,8 +17,10 @@ import UserNotifications
 enum NotificationDeepLink: Equatable {
     case home
     case matchDetails(matchId: UUID)
+    case recapInbox
     case activity
     case friends
+    case messages(peerId: UUID?)
 }
 
 struct InAppNotificationItem: Identifiable, Equatable, Codable {
@@ -28,6 +30,7 @@ struct InAppNotificationItem: Identifiable, Equatable, Codable {
     let eventType: String
     let deepLinkTarget: String?
     let matchId: UUID?
+    let peerProfileId: UUID?
     let createdAt: Date
     var isRead: Bool
 }
@@ -41,6 +44,7 @@ final class NotificationService: NSObject, ObservableObject {
 
     /// Published so `ContentView` / `RootShellView` can react to tapped notifications.
     @Published private(set) var pendingDeepLink: NotificationDeepLink?
+    @Published private(set) var pendingRecapCards: [RecapMatchCard] = []
     @Published private(set) var inboxItems: [InAppNotificationItem] = []
     @Published private(set) var shouldPresentHomeInbox: Bool = false
 
@@ -108,6 +112,11 @@ final class NotificationService: NSObject, ObservableObject {
         let shouldPresent = shouldPresentHomeInbox
         shouldPresentHomeInbox = false
         return shouldPresent
+    }
+
+    func consumeRecapCards() -> [RecapMatchCard] {
+        defer { pendingRecapCards = [] }
+        return pendingRecapCards
     }
 
     func markAllInboxItemsRead() {
@@ -184,11 +193,20 @@ final class NotificationService: NSObject, ObservableObject {
             shouldPresentHomeInbox = true
             return
         }
+        if eventType == "message_received" {
+            let peerId = (userInfo["peer_profile_id"] as? String).flatMap(UUID.init(uuidString:))
+            pendingDeepLink = .messages(peerId: peerId)
+            return
+        }
 
         let matchIdString = userInfo["match_id"] as? String ?? ""
         let target = userInfo["deep_link_target"] as? String ?? ""
 
         switch target {
+        case "recap_inbox":
+            pendingRecapCards = RecapMatchCardParser.parse(from: userInfo)
+            pendingDeepLink = .recapInbox
+            shouldPresentHomeInbox = true
         case "match_details":
             if let uuid = UUID(uuidString: matchIdString) {
                 pendingDeepLink = .matchDetails(matchId: uuid)
@@ -199,6 +217,9 @@ final class NotificationService: NSObject, ObservableObject {
             pendingDeepLink = .activity
         case "friends":
             pendingDeepLink = .friends
+        case "messages":
+            let peerId = (userInfo["peer_profile_id"] as? String).flatMap(UUID.init(uuidString:))
+            pendingDeepLink = .messages(peerId: peerId)
         default:
             pendingDeepLink = .home
             shouldPresentHomeInbox = true
@@ -214,6 +235,10 @@ final class NotificationService: NSObject, ObservableObject {
             guard let raw = userInfo["match_id"] as? String else { return nil }
             return UUID(uuidString: raw)
         }()
+        let peerProfileId: UUID? = {
+            guard let raw = userInfo["peer_profile_id"] as? String else { return nil }
+            return UUID(uuidString: raw)
+        }()
         let item = InAppNotificationItem(
             id: UUID(),
             title: title,
@@ -221,6 +246,7 @@ final class NotificationService: NSObject, ObservableObject {
             eventType: eventType,
             deepLinkTarget: deepLinkTarget,
             matchId: matchId,
+            peerProfileId: peerProfileId,
             createdAt: Date(),
             isRead: false
         )
@@ -241,6 +267,12 @@ final class NotificationService: NSObject, ObservableObject {
             return "Friend Request"
         case "friend_request_accepted":
             return "Friend Request Accepted"
+        case "yesterday_recap":
+            return "Yesterday's Results"
+        case "final_day_comeback":
+            return "FINAL DAY"
+        case "message_received":
+            return "New Message"
         default:
             return "FitUp Alert"
         }
@@ -248,6 +280,10 @@ final class NotificationService: NSObject, ObservableObject {
 
     private func defaultBody(for eventType: String) -> String {
         switch eventType {
+        case "yesterday_recap":
+            return "Open your daily scoreboard."
+        case "final_day_comeback":
+            return "You still have time to close the gap today."
         case "match_found", "challenge_received":
             return "You have a new matchup waiting."
         case "match_active":
@@ -256,6 +292,8 @@ final class NotificationService: NSObject, ObservableObject {
             return "You received a new friend request."
         case "friend_request_accepted":
             return "You are connected. Time to compete."
+        case "message_received":
+            return "Tap to read and reply."
         default:
             return "Open FitUp to view details."
         }
@@ -288,6 +326,10 @@ extension NotificationService: UNUserNotificationCenterDelegate {
     ) {
         let userInfo = notification.request.content.userInfo
         Task { @MainActor in
+            let eventType = userInfo["event_type"] as? String ?? ""
+            if eventType == "yesterday_recap" {
+                self.pendingRecapCards = RecapMatchCardParser.parse(from: userInfo)
+            }
             self.recordInboxItem(
                 from: userInfo,
                 providedTitle: notification.request.content.title,

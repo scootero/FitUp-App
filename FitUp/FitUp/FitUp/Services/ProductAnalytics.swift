@@ -76,6 +76,7 @@ enum ProductAnalytics {
 
         static let feedbackOpened = "feedback_opened"
         static let feedbackSubmitted = "feedback_submitted"
+        static let messagesOpened = "messages_opened"
 
         static let screenViewed = "screen_viewed"
         static let screenExited = "screen_exited"

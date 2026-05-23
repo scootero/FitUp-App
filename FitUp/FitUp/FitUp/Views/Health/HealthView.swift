@@ -15,6 +15,7 @@ struct HealthView: View {
     @StateObject private var viewModel = HealthViewModel()
     @Environment(\.openURL) private var openURL
     @State private var isPastMatchesExpanded = false
+    @State private var statsMetricExplainer: StatsMetricExplainerKind?
 
     var body: some View {
         ScrollView {
@@ -45,7 +46,9 @@ struct HealthView: View {
                     isRivalStatsLoading: viewModel.isRivalStatsLoading,
                     hasLoadedRivalStats: viewModel.hasLoadedRivalStats,
                     oneDayHourlySteps: viewModel.oneDayHourlySteps,
-                    isOneDayHourlyLoading: viewModel.isOneDayHourlyLoading
+                    isOneDayHourlyLoading: viewModel.isOneDayHourlyLoading,
+                    stepsToday: viewModel.stepsTodayValue,
+                    activeExplainer: $statsMetricExplainer
                 )
                     .padding(.bottom, 10)
 
@@ -125,6 +128,14 @@ struct HealthView: View {
             .padding(.horizontal, 16)
         }
         .scrollIndicators(.hidden)
+        .overlay {
+            if let explainer = statsMetricExplainer {
+                StatsMetricExplainerOverlay(
+                    kind: explainer,
+                    onDismiss: { statsMetricExplainer = nil }
+                )
+            }
+        }
         .refreshable {
             await viewModel.reload(source: "pull_refresh")
         }

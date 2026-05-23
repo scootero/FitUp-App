@@ -48,6 +48,10 @@ final class SessionStore: ObservableObject {
     /// After accepting a friend request: optional sheet with "Compete?"
     @Published var becameFriendsChallenge: ChallengePrefillOpponent?
 
+    /// Opens Messages inbox; optional peer opens that thread after load.
+    @Published var shouldPresentMessages = false
+    @Published var pendingMessagesPeerId: UUID?
+
     private let profileRepository = ProfileRepository()
 
     /// Legacy global key (pre–per-profile). Migrated only for profiles created before the v2 install anchor.
@@ -444,6 +448,16 @@ final class SessionStore: ObservableObject {
 
     func dismissFriendsListSheet() {
         presentFriendsListSheet = false
+    }
+
+    func requestOpenMessages(peerId: UUID? = nil) {
+        pendingMessagesPeerId = peerId
+        shouldPresentMessages = true
+    }
+
+    func dismissMessagesPresentation() {
+        shouldPresentMessages = false
+        pendingMessagesPeerId = nil
     }
 
     func setBecameFriendsChallenge(_ opponent: ChallengePrefillOpponent) {

@@ -1,7 +1,15 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { battleScore } from "../_shared/battleScore.ts";
 import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
 import { apnsConfigured, sendAlertPush, sendLiveActivityPush } from "../_shared/apns.ts";
 import { supabaseAdmin } from "../_shared/supabase.ts";
+
+const HARD_DAILY_ALERT_CAP = 12;
+const LEAD_MAX_PER_LOCAL_DAY = 3;
+const LEAD_COOLDOWN_HOURS = 3;
+const LEAD_MATCH_COOLDOWN_HOURS = 6;
+const LEAD_RAW_MIN_SWING = 500;
+const LEAD_BS_MIN_SWING = 30;
 serve(async (request)=>{
   if (request.method === "OPTIONS") {
     return new Response("ok", {
@@ -45,12 +53,20 @@ serve(async (request)=>{
       const userId = String(row.user_id);
       const rowPayload = normalizePayload(row.payload);
       try {
-        const enforceCap = eventType !== "live_activity_update" && !isFriendRequestEventType(eventType);
+        const enforceCap = eventType !== "live_activity_update" && !isCapExemptEventType(eventType);
         if (enforceCap) {
-          const capReached = await reachedDailyCap(userId);
+          const capReached = await reachedHardDailyCap(userId);
           if (capReached) {
             failed += 1;
             await markFailed(eventId, rowPayload, "daily_cap_reached");
+            continue;
+          }
+        }
+        if (eventType === "lead_changed") {
+          const leadGate = await evaluateLeadChangeGate(userId, rowPayload);
+          if (!leadGate.ok) {
+            failed += 1;
+            await markFailed(eventId, rowPayload, leadGate.reason);
             continue;
           }
         }
@@ -201,16 +217,36 @@ function buildMessage(eventType, payload, explicitTitle, explicitBody) {
     case "lead_changed": {
       const scoringModeLc = stringFromPayload(payload, "scoring_mode", "").toLowerCase();
       const isBalancedSteps = scoringModeLc === "balanced" && metricLabel === "steps";
+      const syncLine = " Open FitUp to sync your latest activity.";
       if (isBalancedSteps) {
+        const bsGap = numberFromPayload(payload, "lead_delta_bs", leadDelta);
         return {
           title: "FitUp",
-          body: `${opponent} passed you in Battle Score.`
+          body: `${opponent} has taken the lead by ${bsGap} Battle Score.${syncLine}`,
         };
       }
       const unitLead = metricLabel === "steps" ? "steps" : metricLabel;
       return {
         title: "FitUp",
-        body: `${opponent} just passed you - they're up ${leadDelta} ${unitLead}`
+        body: `${opponent} has taken the lead by ${leadDelta} ${unitLead}.${syncLine}`,
+      };
+    }
+    case "yesterday_recap": {
+      const teaser = stringFromPayload(payload, "teaser", "Open your scoreboard");
+      return {
+        title: "Yesterday's Results",
+        body: teaser,
+      };
+    }
+    case "final_day_comeback": {
+      const scoringModeFd = stringFromPayload(payload, "scoring_mode", "").toLowerCase();
+      const mTypeFd = stringFromPayload(payload, "metric_type", "steps");
+      const isBalancedFd = scoringModeFd === "balanced" && mTypeFd === "steps";
+      const gap = numberFromPayload(payload, "checkin_gap", 0);
+      const unit = isBalancedFd ? "Battle Score" : mTypeFd === "active_calories" ? "cal" : "steps";
+      return {
+        title: "FINAL DAY",
+        body: `You trail ${opponent} by ${gap} ${unit}. Still time today.`,
       };
     }
     case "morning_checkin": {
@@ -287,15 +323,15 @@ function buildMessage(eventType, payload, explicitTitle, explicitBody) {
     case "match_won": {
       const footMw = stepsResultFooter(payload);
       return {
-        title: "FitUp",
-        body: `You won the match ${myScore}-${theirScore}. Rematch?${footMw}`
+        title: "Match complete",
+        body: `You won ${myScore}–${theirScore} vs ${opponent}. Run it back?${footMw}`,
       };
     }
     case "match_lost": {
       const footMl = stepsResultFooter(payload);
       return {
-        title: "FitUp",
-        body: `${opponent} won ${theirScore}-${myScore}. Rematch?${footMl}`
+        title: "Match complete",
+        body: `${opponent} won ${theirScore}–${myScore}. Run it back?${footMl}`,
       };
     }
     case "friend_request_received": {
@@ -320,6 +356,19 @@ function buildMessage(eventType, payload, explicitTitle, explicitBody) {
         body: `${accepter} accepted your friend request`
       };
     }
+    case "message_received": {
+      const sender = stringFromPayload(
+        payload,
+        "sender_display_name",
+        stringFromPayload(payload, "opponent_display_name", "A friend")
+      );
+      const preview = stringFromPayload(payload, "message_preview", "");
+      const body = preview.length > 0 ? `${sender}: ${preview}` : `${sender} sent you a message`;
+      return {
+        title: "New message",
+        body
+      };
+    }
     default:
       return {
         title: "FitUp",
@@ -329,6 +378,12 @@ function buildMessage(eventType, payload, explicitTitle, explicitBody) {
 }
 function isFriendRequestEventType(eventType) {
   return eventType === "friend_request_received" || eventType === "friend_request_accepted";
+}
+function isCapExemptEventType(eventType) {
+  return eventType === "live_activity_update" ||
+    isFriendRequestEventType(eventType) ||
+    eventType === "yesterday_recap" ||
+    eventType === "message_received";
 }
 function buildLiveActivityPayload(payload) {
   return {
@@ -344,18 +399,150 @@ function buildLiveActivityPayload(payload) {
     opponent_display_name: stringFromPayload(payload, "opponent_display_name", "Opponent")
   };
 }
-async function reachedDailyCap(userId) {
-  const utcStart = new Date();
-  utcStart.setUTCHours(0, 0, 0, 0);
-  const utcEnd = new Date(utcStart.getTime() + 24 * 60 * 60 * 1000);
-  const { count, error } = await supabaseAdmin.from("notification_events").select("id", {
-    count: "exact",
-    head: true
-  }).eq("user_id", userId).eq("status", "sent").gte("sent_at", utcStart.toISOString()).lt("sent_at", utcEnd.toISOString());
+async function reachedHardDailyCap(userId) {
+  const exempt = new Set([
+    "live_activity_update",
+    "yesterday_recap",
+    "friend_request_received",
+    "friend_request_accepted",
+  ]);
+  const tz = await loadProfileTimezone(userId);
+  const { startIso, endIso } = localDayBoundsUtc(tz);
+  const { data, error } = await supabaseAdmin.from("notification_events").select("event_type").eq("user_id", userId)
+    .eq("status", "sent").gte("sent_at", startIso).lt("sent_at", endIso);
   if (error) {
     throw error;
   }
-  return (count ?? 0) >= 10;
+  const counted = (data ?? []).filter((row) => !exempt.has(String(row.event_type))).length;
+  return counted >= HARD_DAILY_ALERT_CAP;
+}
+type LeadGateResult = { ok: boolean; reason: string };
+async function evaluateLeadChangeGate(userId, payload) {
+  const matchId = stringFromPayload(payload, "match_id", "");
+  if (!matchId) {
+    return { ok: false, reason: "lead_missing_match_id" };
+  }
+  const tz = await loadProfileTimezone(userId);
+  const { startIso } = localDayBoundsUtc(tz);
+  const threeHoursAgo = new Date(Date.now() - LEAD_COOLDOWN_HOURS * 60 * 60 * 1000).toISOString();
+  const sixHoursAgo = new Date(Date.now() - LEAD_MATCH_COOLDOWN_HOURS * 60 * 60 * 1000).toISOString();
+
+  const { count: dayCount, error: dayErr } = await supabaseAdmin.from("notification_events").select("id", {
+    count: "exact",
+    head: true,
+  }).eq("user_id", userId).eq("event_type", "lead_changed").eq("status", "sent").gte("sent_at", startIso);
+  if (dayErr) {
+    throw dayErr;
+  }
+  if ((dayCount ?? 0) >= LEAD_MAX_PER_LOCAL_DAY) {
+    return { ok: false, reason: "lead_throttled_daily_cap" };
+  }
+
+  const { data: recentGlobal, error: globalErr } = await supabaseAdmin.from("notification_events").select("sent_at").eq(
+    "user_id",
+    userId,
+  ).eq("event_type", "lead_changed").eq("status", "sent").gte("sent_at", threeHoursAgo).order("sent_at", {
+    ascending: false,
+  }).limit(1);
+  if (globalErr) {
+    throw globalErr;
+  }
+  if ((recentGlobal ?? []).length > 0) {
+    return { ok: false, reason: "lead_throttled_cooldown" };
+  }
+
+  const { count: matchCount, error: matchErr } = await supabaseAdmin.from("notification_events").select("id", {
+    count: "exact",
+    head: true,
+  }).eq("user_id", userId).eq("event_type", "lead_changed").eq("status", "sent").gte("sent_at", sixHoursAgo).contains(
+    "payload",
+    { match_id: matchId },
+  );
+  if (matchErr) {
+    throw matchErr;
+  }
+  if ((matchCount ?? 0) > 0) {
+    return { ok: false, reason: "lead_throttled_match_cooldown" };
+  }
+
+  const swing = await measureLeadSwing(userId, matchId, payload);
+  if (!swing.ok) {
+    return { ok: false, reason: swing.reason };
+  }
+  if (swing.leadDeltaBs != null) {
+    payload.lead_delta_bs = swing.leadDeltaBs;
+  }
+  return { ok: true, reason: "ok" };
+}
+async function measureLeadSwing(userId, matchId, payload) {
+  const scoringMode = stringFromPayload(payload, "scoring_mode", "").toLowerCase();
+  const metricType = stringFromPayload(payload, "metric_type", "steps");
+  const leadDeltaRaw = numberFromPayload(payload, "lead_delta", 0);
+
+  const { data: dayRows } = await supabaseAdmin.from("match_days").select("id").eq("match_id", matchId).neq(
+    "status",
+    "finalized",
+  ).order("day_number", { ascending: true }).limit(1);
+  if (!dayRows?.length) {
+    return { ok: false, reason: "lead_no_active_day" };
+  }
+  const dayId = String(dayRows[0].id);
+  const { data: mdpRows } = await supabaseAdmin.from("match_day_participants").select("user_id, metric_total").eq(
+    "match_day_id",
+    dayId,
+  );
+  const opponentRow = (mdpRows ?? []).find((r) => String(r.user_id) !== userId);
+  const myRow = (mdpRows ?? []).find((r) => String(r.user_id) === userId);
+  if (!opponentRow || !myRow) {
+    return { ok: false, reason: "lead_missing_participants" };
+  }
+  const myTotal = toNumber(myRow.metric_total);
+  const theirTotal = toNumber(opponentRow.metric_total);
+  const gapRaw = Math.abs(myTotal - theirTotal);
+  if (scoringMode === "balanced" && metricType === "steps") {
+    const { data: partRows } = await supabaseAdmin.from("match_participants").select("user_id, baseline_steps").eq(
+      "match_id",
+      matchId,
+    );
+    const baselines = new Map();
+    for (const pr of partRows ?? []) {
+      baselines.set(String(pr.user_id), pr.baseline_steps == null ? null : toNumber(pr.baseline_steps));
+    }
+    const opponentId = String(opponentRow.user_id);
+    const myBS = battleScore(myTotal, baselines.get(userId), baselines.get(opponentId));
+    const theirBS = battleScore(theirTotal, baselines.get(opponentId), baselines.get(userId));
+    const gapBs = Math.abs(myBS - theirBS);
+    if (gapBs < LEAD_BS_MIN_SWING) {
+      return { ok: false, reason: "lead_throttled_min_swing" };
+    }
+    return { ok: true, reason: "ok", leadDeltaBs: gapBs };
+  }
+  const minSwing = Math.max(LEAD_RAW_MIN_SWING, Math.round(Math.max(myTotal, theirTotal) * 0.01));
+  if (gapRaw < minSwing && leadDeltaRaw < minSwing) {
+    return { ok: false, reason: "lead_throttled_min_swing" };
+  }
+  return { ok: true, reason: "ok", leadDeltaBs: null };
+}
+async function loadProfileTimezone(userId) {
+  const { data } = await supabaseAdmin.from("profiles").select("timezone").eq("id", userId).limit(1).maybeSingle();
+  const tz = data?.timezone;
+  if (typeof tz === "string" && tz.trim().length > 0) {
+    return tz.trim();
+  }
+  return "America/New_York";
+}
+function localDayBoundsUtc(timezone) {
+  const tz = timezone.trim() || "America/New_York";
+  const localDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const [y, m, d] = localDate.split("-").map((v) => parseInt(v, 10));
+  const startUtc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
+  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+  return { startIso: startUtc.toISOString(), endIso: endUtc.toISOString(), localDate };
 }
 async function loadRecipient(userId) {
   let selectColumns = "apns_token, notifications_enabled, live_activity_push_token";

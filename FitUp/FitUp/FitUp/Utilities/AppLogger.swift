@@ -41,6 +41,25 @@ enum AppLogger {
         return result
     }
 
+    /// Short copy for banners/alerts; prefers PostgREST message when present.
+    static func userFacingMessage(for error: Error, fallback: String) -> String {
+        if let pg = error as? PostgrestError {
+            let msg = pg.message.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !msg.isEmpty { return msg }
+        }
+        if let le = error as? LocalizedError,
+           let d = le.errorDescription?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !d.isEmpty
+        {
+            return d
+        }
+        let raw = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !raw.isEmpty, raw != "The operation couldn’t be completed." {
+            return raw
+        }
+        return fallback
+    }
+
     /// Per-value cap so huge fields (e.g. `hk_snapshot`) don’t flood the Xcode console.
     private static let maxConsoleMetadataValueLength = 800
 
