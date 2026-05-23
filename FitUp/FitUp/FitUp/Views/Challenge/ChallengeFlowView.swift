@@ -53,6 +53,13 @@ struct ChallengeLaunchContext: Identifiable, Equatable {
 }
 
 struct ChallengeFlowView: View {
+    /// Slice 1B: Opponent → Duration → Difficulty (steps-only).
+    private enum FlowStep {
+        static let opponent = 0
+        static let duration = 1
+        static let difficulty = 2
+    }
+
     @EnvironmentObject private var sessionStore: SessionStore
 
     let profile: Profile?
@@ -62,7 +69,7 @@ struct ChallengeFlowView: View {
     private let matchmakingService: MatchmakingService
     private let directChallengeService: DirectChallengeService
 
-    @State private var stepIndex = 0
+    @State private var stepIndex = FlowStep.opponent
     @State private var selectedMetric: ChallengeMetricType?
     @State private var selectedFormat: ChallengeFormatType?
     @State private var selectedOpponent: ChallengeOpponent?
@@ -87,8 +94,12 @@ struct ChallengeFlowView: View {
     @State private var myPublicCalories: Int?
     @State private var isLoadingRivalStrip = false
 
-    @State private var scoringModePreference: MatchScoringModePreference = .balanced
+    @State private var scoringModePreference: MatchScoringModePreference = .raw
     @State private var difficultyPreference: MatchDifficultyPreference = .fair
+
+    private var isDirectedOpponent: Bool {
+        !isQuickMatch && selectedOpponent != nil
+    }
 
     private let publicDailyActivityRepository = PublicDailyActivityRepository()
 
@@ -229,60 +240,76 @@ struct ChallengeFlowView: View {
                 onClose()
             }
         } else {
-            switch stepIndex {
-            case 0:
-                SportStepView { metric in
-                    selectedMetric = metric
-                    stepIndex = 1
-                    query = ""
-                    reloadOpponentsForQuery()
+            VStack(alignment: .leading, spacing: 12) {
+                ScrollView {
+                    flowStepContent
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-            case 1:
-                FormatStepView { format in
-                    selectedFormat = format
-                    if selectedOpponent != nil && !isQuickMatch {
-                        stepIndex = 3
-                    } else {
-                        stepIndex = 2
-                    }
-                }
-            case 2:
-                OpponentStepView(
-                    query: $query,
-                    opponents: opponents,
-                    isLoading: isLoadingOpponents,
-                    onQuickMatch: {
-                        isQuickMatch = true
-                        selectedOpponent = nil
-                        stepIndex = 3
-                    },
-                    onSelectOpponent: { opponent in
-                        selectedOpponent = opponent
-                        isQuickMatch = false
-                        stepIndex = 3
-                    }
-                )
-            default:
-                if let metric = selectedMetric, let format = selectedFormat {
-                    ReviewStepView(
-                        profile: profile,
-                        selectedMetric: metric,
-                        selectedFormat: format,
-                        selectedOpponent: selectedOpponent,
-                        isQuickMatch: isQuickMatch,
-                        isSending: isSending,
-                        scoringMode: $scoringModePreference,
-                        difficulty: $difficultyPreference
-                    ) {
-                        Task { await submitChallenge() }
-                    }
-                }
+                .scrollIndicators(.hidden)
+
+                battleSetupDock
             }
         }
     }
 
+    @ViewBuilder
+    private var flowStepContent: some View {
+        switch stepIndex {
+        case FlowStep.opponent:
+            OpponentStepView(
+                query: $query,
+                opponents: opponents,
+                isLoading: isLoadingOpponents,
+                onQuickMatch: {
+                    isQuickMatch = true
+                    selectedOpponent = nil
+                    stepIndex = FlowStep.duration
+                },
+                onSelectOpponent: { opponent in
+                    selectedOpponent = opponent
+                    isQuickMatch = false
+                    stepIndex = FlowStep.duration
+                }
+            )
+        case FlowStep.duration:
+            DurationStepView { format in
+                selectedFormat = format
+                stepIndex = FlowStep.difficulty
+            }
+        case FlowStep.difficulty:
+            if let metric = selectedMetric, let format = selectedFormat {
+                ReviewStepView(
+                    profile: profile,
+                    selectedMetric: metric,
+                    selectedFormat: format,
+                    selectedOpponent: selectedOpponent,
+                    isQuickMatch: isQuickMatch,
+                    isDirectedOpponent: isDirectedOpponent,
+                    isSending: isSending,
+                    scoringMode: $scoringModePreference,
+                    difficulty: $difficultyPreference
+                ) {
+                    Task { await submitChallenge() }
+                }
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    private var battleSetupDock: some View {
+        ChallengeBattleSetupDock(
+            currentStepIndex: stepIndex,
+            isQuickMatch: isQuickMatch,
+            opponentDisplayName: isQuickMatch ? nil : selectedOpponent?.displayName,
+            selectedFormat: selectedFormat,
+            scoringMode: scoringModePreference,
+            difficulty: difficultyPreference
+        )
+    }
+
     private var progressStepper: some View {
-        let labels = ["SPORT", "FORMAT", "OPPONENT", "SEND"]
+        let labels = ["OPPONENT", "DURATION", "DIFFICULTY"]
         return HStack(spacing: 6) {
             ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
                 VStack(spacing: 3) {
@@ -320,8 +347,7 @@ struct ChallengeFlowView: View {
 
         if gate.isBlocked {
             showingPaywallSheet = true
-            AppLogger.log(
-                category: "paywall",
+            PaywallLogger.log(
                 level: .info,
                 message: "challenge entry blocked at slot limit",
                 userId: profile.id,
@@ -333,12 +359,7 @@ struct ChallengeFlowView: View {
             return
         }
 
-        if let prefilledMetric = launchContext.prefilledMetric {
-            selectedMetric = prefilledMetric == .activeCalories ? .steps : prefilledMetric
-        }
-        if let prefilledFormat = launchContext.prefilledFormat {
-            selectedFormat = prefilledFormat
-        }
+        selectedMetric = .steps
 
         if let prefill = launchContext.prefilledOpponent {
             selectedOpponent = ChallengeOpponent(
@@ -388,22 +409,20 @@ struct ChallengeFlowView: View {
 
     private func selectRivalFromStrip(_ entry: ChallengeRivalStripEntry) {
         query = entry.displayName
-        if selectedMetric != nil, selectedFormat != nil {
-            selectedOpponent = ChallengeOpponent(
-                id: entry.userId,
-                displayName: entry.displayName,
-                initials: entry.initials,
-                colorHex: entry.colorHex,
-                todaySteps: entry.steps,
-                wins: nil,
-                losses: nil,
-                rollingStepsBaseline: nil,
-                rollingCaloriesBaseline: nil
-            )
-            isQuickMatch = false
-            stepIndex = 3
-        } else {
-            if selectedMetric != nil { stepIndex = 1 }
+        selectedOpponent = ChallengeOpponent(
+            id: entry.userId,
+            displayName: entry.displayName,
+            initials: entry.initials,
+            colorHex: entry.colorHex,
+            todaySteps: entry.steps,
+            wins: nil,
+            losses: nil,
+            rollingStepsBaseline: nil,
+            rollingCaloriesBaseline: nil
+        )
+        isQuickMatch = false
+        if stepIndex == FlowStep.opponent {
+            stepIndex = FlowStep.duration
         }
     }
 
@@ -411,7 +430,7 @@ struct ChallengeFlowView: View {
     private func submitChallenge() async {
         guard let profileId = profile?.id else { return }
         guard let selectedMetric, let selectedFormat else {
-            errorMessage = "Select sport and format before sending."
+            errorMessage = "Select a battle duration before sending."
             return
         }
 
@@ -422,10 +441,7 @@ struct ChallengeFlowView: View {
         do {
             if isQuickMatch {
                 let scoring = selectedMetric == .steps ? scoringModePreference : nil
-                let difficulty: MatchDifficultyPreference? = {
-                    guard selectedMetric == .steps, scoringModePreference == .raw else { return nil }
-                    return difficultyPreference
-                }()
+                let difficulty = resolvedSubmitDifficulty(for: selectedMetric)
                 _ = try await matchmakingService.submitQuickMatch(
                     currentUserId: profileId,
                     metricType: selectedMetric,
@@ -441,10 +457,7 @@ struct ChallengeFlowView: View {
                     return
                 }
                 let scoring = selectedMetric == .steps ? scoringModePreference : nil
-                let difficulty: MatchDifficultyPreference? = {
-                    guard selectedMetric == .steps, scoringModePreference == .raw else { return nil }
-                    return difficultyPreference
-                }()
+                let difficulty = resolvedSubmitDifficulty(for: selectedMetric)
                 _ = try await directChallengeService.submitDirectChallenge(
                     challengerId: profileId,
                     opponentId: selectedOpponent.id,
@@ -474,15 +487,16 @@ struct ChallengeFlowView: View {
             onClose()
             return
         }
-        if stepIndex == 0 {
+        switch stepIndex {
+        case FlowStep.opponent:
             onClose()
-            return
+        case FlowStep.duration:
+            stepIndex = FlowStep.opponent
+        case FlowStep.difficulty:
+            stepIndex = FlowStep.duration
+        default:
+            onClose()
         }
-        if stepIndex == 3 {
-            stepIndex = 2
-            return
-        }
-        stepIndex -= 1
     }
 
     private func reloadOpponentsForQuery() {
@@ -529,18 +543,22 @@ struct ChallengeFlowView: View {
         }
     }
 
-    private func applyLaunchStepIfNeeded() {
-        let hasMetric = selectedMetric != nil
-        let hasFormat = selectedFormat != nil
-        let hasOpponent = selectedOpponent != nil
+    private func resolvedSubmitDifficulty(for metric: ChallengeMetricType) -> MatchDifficultyPreference? {
+        guard metric == .steps, scoringModePreference == .raw else { return nil }
+        if isDirectedOpponent { return .fair }
+        return difficultyPreference
+    }
 
-        if hasMetric && hasFormat && hasOpponent {
+    private func applyLaunchStepIfNeeded() {
+        if selectedMetric == nil {
+            selectedMetric = .steps
+        }
+
+        if selectedOpponent != nil, !isQuickMatch {
             isQuickMatch = false
-            stepIndex = 3
-        } else if hasMetric && hasFormat {
-            stepIndex = 2
-        } else if hasMetric {
-            stepIndex = 1
+            stepIndex = FlowStep.duration
+        } else {
+            stepIndex = FlowStep.opponent
         }
     }
 }

@@ -42,6 +42,20 @@ enum ChallengeFormatType: CaseIterable {
         }
     }
 
+    /// One-line explainer for the Duration step “How this works” section.
+    var howItWorksLine: String {
+        switch self {
+        case .daily:
+            return "One competition day — highest step count wins."
+        case .firstTo3:
+            return "Up to 3 competition days — first to 2 day-wins."
+        case .bestOf5:
+            return "Up to 5 competition days — first to 3 day-wins."
+        case .bestOf7:
+            return "Up to 7 competition days — first to 4 day-wins."
+        }
+    }
+
     var durationDays: Int {
         switch self {
         case .daily: return 1
@@ -92,7 +106,7 @@ enum MatchDifficultyPreference: String, CaseIterable {
         }
     }
 
-    /// Raw Battle matchmaking intent (Slice 5); shown on Challenge review when Raw is selected.
+    /// Raw Battle matchmaking intent; shown on Challenge difficulty step when Raw is selected.
     var subtitle: String {
         switch self {
         case .easy:
@@ -103,6 +117,10 @@ enum MatchDifficultyPreference: String, CaseIterable {
             return "We first look for an opponent with a higher daily average."
         }
     }
+
+    /// Shown when Raw is selected for a direct (non–Quick Battle) challenge.
+    static let directedOpponentFootnote =
+        "Choose difficulty in random matches only. Direct battles use Fair matchmaking rules when you use Raw."
 }
 
 struct ChallengeOpponent: Identifiable, Equatable {
@@ -189,8 +207,7 @@ final class MatchmakingService {
                 slotLimit: 1
             )
         } catch {
-            AppLogger.log(
-                category: "paywall",
+            PaywallLogger.log(
                 level: .warning,
                 message: "slot gate check failed",
                 userId: profile?.id,

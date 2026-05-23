@@ -14,8 +14,11 @@ struct FitUpApp: App {
     @StateObject private var sessionStore = SessionStore()
 
     init() {
+        DevMode.bootstrapOnLaunch()
         AppThirdPartyConfig.configureIfPossible()
-        Task { await SubscriptionService.shared.refreshEntitlement() }
+        if PaywallLogger.shouldUseRevenueCat {
+            Task { await SubscriptionService.shared.refreshEntitlement() }
+        }
     }
 
     var body: some Scene {

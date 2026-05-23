@@ -46,6 +46,7 @@
 		D2B71DAE2F72E373000CB580 /* FitUpWidgetExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "FitUpWidgetExtension-Info.plist"; sourceTree = "<group>"; };
 		E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FitUpWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E3C4B5A62F72E372000CB5A1 /* FitUpActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FitUpActivityAttributes.swift; path = FitUp/Views/LiveActivity/FitUpActivityAttributes.swift; sourceTree = SOURCE_ROOT; };
+		F1T0B3A12F900001000CB580 /* BetaFlags.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = BetaFlags.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -104,6 +105,7 @@
 			isa = PBXGroup;
 			children = (
 				D2B71DA92F72E373000CB580 /* Debug.xcconfig */,
+				F1T0B3A12F900001000CB580 /* BetaFlags.xcconfig */,
 				D2B71DAA2F72E373000CB580 /* Secrets.example.xcconfig */,
 				D2B71DAC2F72E373000CB580 /* Info-Additional.plist */,
 				D2B71DAE2F72E373000CB580 /* FitUpWidgetExtension-Info.plist */,

@@ -3,7 +3,7 @@
 //  FitUp
 //
 //  Slice 13 — centralised RevenueCat entitlement wrapper.
-//  Dev Mode (debug-only) short-circuits all premium checks to true.
+//  Dev Mode short-circuits premium checks when active (Debug toggle or TestFlight bypass build).
 //
 
 import Combine
@@ -24,11 +24,9 @@ final class SubscriptionService: ObservableObject {
 
     @Published private(set) var tier: SubscriptionTier = .free
 
-    /// True if the user has a premium entitlement, OR if Dev Mode is on (debug builds only).
+    /// True if the user has a premium entitlement, OR if Dev Mode is active.
     var isPremium: Bool {
-#if DEBUG
-        if UserDefaults.standard.bool(forKey: "devMode") { return true }
-#endif
+        if DevMode.isActive { return true }
         return tier == .premium
     }
 
@@ -64,12 +62,13 @@ final class SubscriptionService: ObservableObject {
     /// Refreshes the cached entitlement from RevenueCat.
     /// Called on app launch and after any purchase or restore.
     func refreshEntitlement() async {
+        guard PaywallLogger.shouldUseRevenueCat else { return }
+
         do {
             let info = try await Purchases.shared.customerInfo()
             tier = info.entitlements["pro"]?.isActive == true ? .premium : .free
         } catch {
-            AppLogger.log(
-                category: "paywall",
+            PaywallLogger.log(
                 level: .warning,
                 message: "entitlement refresh failed",
                 metadata: ["error": error.localizedDescription]
@@ -80,12 +79,13 @@ final class SubscriptionService: ObservableObject {
     /// Fetches the current RevenueCat offering packages.
     /// Returns an empty array if the SDK isn't configured or has no offering.
     func fetchOffering() async -> [RevenueCat.Package] {
+        guard PaywallLogger.shouldUseRevenueCat else { return [] }
+
         do {
             let offerings = try await Purchases.shared.offerings()
             return offerings.current?.availablePackages ?? []
         } catch {
-            AppLogger.log(
-                category: "paywall",
+            PaywallLogger.log(
                 level: .warning,
                 message: "offerings fetch failed",
                 metadata: ["error": error.localizedDescription]
@@ -96,12 +96,14 @@ final class SubscriptionService: ObservableObject {
 
     /// Purchases the given RevenueCat package and refreshes the tier.
     func purchase(package: RevenueCat.Package) async throws {
+        guard PaywallLogger.shouldUseRevenueCat else { return }
         let result = try await Purchases.shared.purchase(package: package)
         tier = result.customerInfo.entitlements["pro"]?.isActive == true ? .premium : .free
     }
 
     /// Restores previous purchases and refreshes the tier.
     func restorePurchases() async throws {
+        guard PaywallLogger.shouldUseRevenueCat else { return }
         let info = try await Purchases.shared.restorePurchases()
         tier = info.entitlements["pro"]?.isActive == true ? .premium : .free
     }

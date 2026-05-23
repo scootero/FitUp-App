@@ -93,6 +93,7 @@ Supabase changes:
 - Direct challenge writes `matches` + both `match_participants` rows (sender auto-accepted via `accepted_at`) + `direct_challenges`.
 Notes:
 - Replaced the slice 4 placeholder full-screen cover with a real 4-step `ChallengeFlowView`.
+- **Superseded (2026-05):** flow is now 3-step steps-only — see **Challenge flow redesign** in this tracker and `FitUp/docs/challenge-flow-redesign-slices.md`.
 - Added entry paywall gate at challenge launch (free tier slot limit = 1) with annual plan shown prominently.
 - Discover row challenge launch now passes prefilled opponent context into challenge flow.
 - Verified build success: `xcodebuild -project "FitUp/FitUp.xcodeproj" -scheme "FitUp" -destination "platform=iOS Simulator,name=iPhone 17" build`.
@@ -116,7 +117,7 @@ Supabase changes:
 - Added live refresh loop on Match Details for day totals (`match_day_participants`) so values update without manual refresh.
 Notes:
 - Match Details now supports pending, active, and completed variants and includes Swift Charts day breakdown + results list.
-- Rematch now launches Challenge flow prefilled with opponent, sport, and format and jumps to Review when prefill is complete.
+- Rematch now launches Challenge flow prefilled with opponent (starts at **Duration**; duration re-selected). See **Challenge flow redesign** in this tracker.
 - Verified build success: `xcodebuild -project "FitUp/FitUp/FitUp.xcodeproj" -scheme "FitUp" -destination "platform=iOS Simulator,name=iPhone 17" build`.
 - New Swift files were picked up by the existing Xcode synchronized root group; no manual `project.pbxproj` target-entry edits were required.
 
@@ -430,3 +431,48 @@ Supabase changes:
 - None.
 Notes:
 - This pass focuses on first-glance clarity for home metrics so the hero ring and nearby sections are self-explanatory without adding extra cards.
+
+## Challenge flow redesign — slices 1A through 4
+Date: 2026-05-23  
+Status: Complete  
+Plan: **`FitUp/docs/challenge-flow-redesign-slices.md`**
+
+Replaced legacy 4-step challenge flow with 3-step steps-only flow, sent-screen auto-return, Battle Setup dock, step UI polish, and direct-opponent difficulty rules.
+
+### Slice 1A — Sent auto-fade + Home landing
+Files modified:
+- `FitUp/FitUp/FitUp/Views/Challenge/ChallengeSentView.swift` (auto-dismiss ~2s, fade unless Reduce Motion)
+- `FitUp/FitUp/FitUp/ContentView.swift` (`selectedTab = .home` on flow close)
+
+### Slice 1B — Flow engine + Rematch/prefill
+Files modified:
+- `FitUp/FitUp/FitUp/Views/Challenge/ChallengeFlowView.swift` (3-step machine, launch/back/stepper)
+- `FitUp/FitUp/FitUp/ViewModels/MatchDetailsViewModel.swift` (`makeRematchLaunchContext()` → `.prefilled(opponent:)` only)
+- `FitUp/FitUp/FitUp/Views/Challenge/Steps/OpponentStepView.swift`, `FormatStepView.swift`, `ReviewStepView.swift` (step indices)
+
+### Slice 2 — Battle Setup dock
+Files created:
+- `FitUp/FitUp/FitUp/Views/Challenge/ChallengeBattleSetupDock.swift`
+Files modified:
+- `FitUp/FitUp/FitUp/Views/Challenge/ChallengeFlowView.swift` (scroll + dock pinned below steps 0–2)
+
+### Slice 3 — Opponent + Duration step UI
+Files modified:
+- `FitUp/FitUp/FitUp/Views/Challenge/Steps/OpponentStepView.swift` (Quick Battle first, neon default card)
+- `FitUp/FitUp/FitUp/Views/Challenge/Steps/FormatStepView.swift` (`DurationStepView`, duration cards, “How this works”)
+- `FitUp/FitUp/FitUp/Services/MatchmakingService.swift` (`ChallengeFormatType.howItWorksLine`)
+- `FitUp/FitUp/FitUp/Views/Challenge/ChallengeFlowView.swift` (`DurationStepView` wiring)
+
+### Slice 4 — Difficulty step polish + direct-opponent rules
+Files modified:
+- `FitUp/FitUp/FitUp/Views/Challenge/Steps/ReviewStepView.swift` (“Battle difficulty”, VS card, segment gating)
+- `FitUp/FitUp/FitUp/Views/Challenge/ChallengeFlowView.swift` (default Raw; `isDirectedOpponent`; `resolvedSubmitDifficulty()`)
+- `FitUp/FitUp/FitUp/Services/MatchmakingService.swift` (`directedOpponentFootnote`)
+
+Supabase changes:
+- None across redesign slices 1A–4.
+
+Notes:
+- **Do not rebuild** `UnmatchedOpponentDetailView` / “Mash” — not in scope.
+- `SportStepView.swift` retained but not used in active flow (deferred cleanup).
+- Docs updated in Slice 5 (this tracker + `fitup-build-slices.md` + `fitup-docs-pack.md`).

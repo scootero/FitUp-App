@@ -543,6 +543,66 @@ enum HealthKitService {
         try await fetchSevenDayDailyTotals(quantityIdentifier: .activeEnergyBurned, unit: .kilocalorie())
     }
 
+    /// Daily step totals keyed by `yyyy-MM-dd` in the profile (or device) timezone, inclusive of both bounds.
+    static func fetchDailyStepsByCalendarDate(
+        startCalendarDateKey: String,
+        endCalendarDateKey: String,
+        profileTimeZoneIdentifier: String?
+    ) async throws -> [String: Int] {
+        guard isHealthDataAvailable else { throw HealthKitError.notAvailable }
+        guard startCalendarDateKey <= endCalendarDateKey else { return [:] }
+
+        let tz = profileTimeZoneIdentifier.flatMap { TimeZone(identifier: $0) } ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = tz
+
+        guard
+            let startDate = parseCalendarDateKey(startCalendarDateKey, calendar: calendar),
+            let endDate = parseCalendarDateKey(endCalendarDateKey, calendar: calendar)
+        else {
+            throw HealthKitError.invalidDateRange
+        }
+
+        let startDay = calendar.startOfDay(for: startDate)
+        let endDay = calendar.startOfDay(for: endDate)
+
+        var result: [String: Int] = [:]
+        var day = startDay
+        while day <= endDay {
+            let key = formatCalendarDateKey(day, calendar: calendar, timeZone: tz)
+            let steps = try await fetchMetricTotal(metricType: .steps, for: day, timeZone: tz)
+            result[key] = steps
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
+        }
+        return result
+    }
+
+    private static func parseCalendarDateKey(_ key: String, calendar: Calendar) -> Date? {
+        let parts = key.split(separator: "-")
+        guard parts.count == 3,
+              let year = Int(parts[0]),
+              let month = Int(parts[1]),
+              let day = Int(parts[2])
+        else { return nil }
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        return calendar.date(from: components)
+    }
+
+    private static func formatCalendarDateKey(_ date: Date, calendar: Calendar, timeZone: TimeZone) -> String {
+        var cal = calendar
+        cal.timeZone = timeZone
+        let formatter = DateFormatter()
+        formatter.calendar = cal
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = timeZone
+        return formatter.string(from: date)
+    }
+
     /// Best single-day and best rolling 7-day totals from Apple Health (up to 10 years of daily sums).
     static func fetchAllTimeBestsFromHealth() async throws -> HealthKitAllTimeBests {
         guard isHealthDataAvailable else { throw HealthKitError.notAvailable }

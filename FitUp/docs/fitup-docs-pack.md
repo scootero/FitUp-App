@@ -53,7 +53,7 @@ FitUp is a challenge-first iOS fitness app. Users compete in 1v1 matches using r
 - Home screen: stats row, Searching, Pending, Active, past matches, Discover Players (**as built:** section order differs slightly from the original JSX order; there is **no separate Activity tab** — history and stats live on Home)
 - Match Details: per-day bar chart, live totals, series score, provisional/finalized indicators
 - Live Match screen: real-time step race (accessible from active Match Details only — not in nav)
-- Challenge creation flow: 4-step (Sport → Format → Opponent → Review/Send)
+- Challenge creation flow: **3-step steps-only** (Opponent → Duration → Difficulty); metric fixed to steps — see **`FitUp/docs/challenge-flow-redesign-slices.md`**
 - Activity / history: active and past matches surfaced on **Home** (and Match Details), backed by `ActivityRepository` — not a standalone tab in the shipped app
 - Leaderboard / Ranks screen: global and friends rankings, podium, points system
 - Health screen: Battle Readiness score, steps/calories stats, sleep quality, HR zones
@@ -238,6 +238,7 @@ App Launch
               │     └── back / done → Home
               ├── tap past match row (Home) → Match Details
               ├── Health tab → Health Screen
+              │     └── STATS date chip → Activity Calendar sheet (Battles + Steps; see `activity-calendar.md`)
               ├── Ranks tab → Leaderboard Screen
               └── Profile tab → Profile Screen
 ```
@@ -295,11 +296,14 @@ App Launch
 
 | | |
 |---|---|
-| Entry | BATTLE center button, or Challenge button from Discover |
-| Steps | 0: Sport → 1: Format → 2: Opponent → 3: Review/Send |
-| Confirmation | Sent state with "Waiting for [name]..." + Back to Home |
-| Progress indicator | 4-step bar at top |
-| JSX reference | `ChallengeScreen` |
+| Entry | BATTLE center button, Discover/Leaderboard challenge CTAs, Rematch (prefilled opponent) |
+| Steps | **0: Opponent** → **1: Duration** → **2: Difficulty / Send** (steps-only; no Sport step) |
+| Dock | `ChallengeBattleSetupDock` on steps 0–2; hidden on sent |
+| Confirmation | Sent state auto-returns Home ~2s; manual **Back to Home** fallback |
+| Progress indicator | 3-step bar: OPPONENT · DURATION · DIFFICULTY |
+| Prefill / Rematch | Opponent set → starts at **Duration** (step 1) |
+| Quick Battle | Random opponent → **Duration** (step 1), not straight to Send |
+| Plan / as-built | **`FitUp/docs/challenge-flow-redesign-slices.md`** |
 
 #### Activity (history on Home — as built)
 
@@ -734,9 +738,9 @@ Tap targets, their actions, navigation destinations, and backend writes for each
 | Pending card Accept ✓ | Accept challenge | Stays on Home (card updates to active) | `match_participants.accepted_at = now()` |
 | Pending card Decline ✗ | Decline challenge | Stays on Home (card removed) | `direct_challenges.status = 'declined'`, new `match_search_requests` row for challenger |
 | Searching card Cancel | Cancel search | Stays on Home (card removed) | `match_search_requests.status = 'cancelled'` |
-| Discover row Challenge | Open challenge flow pre-filled | Challenge flow Step 1 (Sport) | None at this point |
-| BATTLE center button | Open challenge flow | Challenge flow Step 0 (Sport) | None at this point |
-| Zero state CTA | Open challenge flow | Challenge flow Step 0 | None |
+| Discover row Challenge | Open challenge flow (prefilled opponent) | Challenge flow **Duration** (step 1) | None at this point |
+| BATTLE center button | Open challenge flow | Challenge flow **Opponent** (step 0) | None at this point |
+| Zero state CTA | Open challenge flow | Challenge flow **Opponent** (step 0) | None |
 | Past match row | Open match | Match Details (completed) | None |
 | Stats row (where present) | Informational | — | None |
 | Tab bar items | Navigate | Home / Health / Ranks / Profile (no Activity tab) | None |
@@ -745,14 +749,16 @@ Tap targets, their actions, navigation destinations, and backend writes for each
 
 | Tap target | Action | Navigates to | Backend write |
 |---|---|---|---|
-| Sport card (Steps / Calories) | Select sport | Step 1 (Format) | None |
-| Format card | Select format | Step 2 (Opponent) | None |
-| Quick Match button | Select random opponent | Step 3 (Review) | None |
-| Opponent row | Select specific opponent | Step 3 (Review) | None |
-| Send Challenge button | Submit challenge | Sent confirmation | `direct_challenges` row + `matches` row + `match_participants` rows |
-| Quick Match (Step 2 path) | Submit search | Sent confirmation | `match_search_requests` row |
-| Back to Home | Dismiss flow | Home | None |
-| Back chevron (any step) | Go to previous step | Previous step | None |
+| Quick Battle card | Random opponent | Step 1 (Duration) | None |
+| Opponent search row | Select opponent | Step 1 (Duration) | None |
+| Duration card | Select format/duration | Step 2 (Difficulty) | None |
+| Scoring segment (Raw / Balanced) | Set scoring mode | Same step | None |
+| Difficulty segment (Easy / Fair / Hard) | Set matchmaking intent (Quick + Raw only) | Same step | None — **direct opponent + Raw locks Fair** |
+| Send Battle button | Submit challenge | Sent confirmation → auto Home | Quick: `match_search_requests`; Direct: `direct_challenges` + `matches` + `match_participants` |
+| Back to Home (sent) | Dismiss flow | **Home tab** | None |
+| Back chevron (steps 1–2) | Previous step | Previous step | None |
+| Back chevron (step 0) | Close flow | Previous screen | None |
+| Rival strip opponent | Set opponent | Step 1 (Duration) | None |
 
 ### Match Details
 
@@ -761,7 +767,7 @@ Tap targets, their actions, navigation destinations, and backend writes for each
 | Accept button (pending) | Accept match | Stays (state updates to active) | `match_participants.accepted_at = now()` |
 | Decline button (pending) | Decline match | Back to Home | `direct_challenges.status = 'declined'` |
 | Watch Live button (active) | Open live view | Live Match Screen | None |
-| Rematch button (completed) | Start new match | Challenge flow (pre-filled with same opponent + settings) | None at this point |
+| Rematch button (completed) | Start new match | Challenge flow **Duration** (prefilled opponent) | None at this point |
 | Back chevron | Go back | Previous screen (typically Home) | None |
 
 ### Live Match
@@ -780,7 +786,7 @@ There is no Activity tab; the mockup’s Activity list behaviors map to **Home**
 | Tap target | Action | Navigates to | Backend write |
 |---|---|---|---|
 | Global / Friends toggle | Switch tab | Same screen (data reloads) | None |
-| User row (other user) | Open challenge flow targeting that user | Challenge flow Step 1 | None |
+| User row (other user) | Open challenge flow targeting that user | Challenge flow **Duration** (prefilled opponent) | None |
 
 ### Health
 
@@ -946,7 +952,7 @@ readiness = round(sleepScore × 0.35 + hrScore × 0.25 + stepsScore × 0.25 + ca
 ### Search flow
 
 ```
-User taps Quick Match (from Challenge flow Step 2)
+User taps Quick Battle (from Challenge flow **Opponent** step)
   → match_search_requests row created (status = 'searching')
   → Postgres trigger / `pg_net` invokes **`matchmaking-pairing`** Edge Function (see migrations — not a separate client call)
 
@@ -970,7 +976,7 @@ On successful pairing:
 ### Direct challenge flow
 
 ```
-User selects a specific opponent in Step 2 → completes Step 3 → taps Send
+User selects opponent (or Rematch prefills) → picks duration → Difficulty step → taps Send
   → direct_challenges row created (status = 'pending')
   → matches row created (state = 'pending')
   → match_participants rows: sender auto-accepted (accepted_at set immediately)
@@ -1340,7 +1346,7 @@ or the design system — stop and ask. Do not guess.
 | V1 team style | 1v1 only |
 | V1 durations | 1, 3, 5, 7 days (odd only → always a winner) |
 | Home section order | **As built:** Stats → Searching → Pending → Active → Past → Discover (spec: Searching → Active → Pending → Discover) |
-| Challenge flow | 4-step (Sport → Format → Opponent → Review/Send) |
+| Challenge flow | **3-step** (Opponent → Duration → Difficulty); steps-only; see **`challenge-flow-redesign-slices.md`** |
 | Bottom nav | **As built:** 4 tabs + center Battle (Home, Health, Ranks, Profile); floating card; mockup showed 6 labels |
 | Live Match | V1 launch, from Match Details only |
 | Leaderboard | V1, weekly points system, global + friends |

@@ -35,9 +35,7 @@ struct ProfileView: View {
     @State private var dailyStepGoalSaveError: String?
     @State private var displayedDailyStepGoal: Int = ReadinessGoals.loadFromUserDefaults().stepsGoal
 
-#if DEBUG
-    @AppStorage("devMode") private var devMode = false
-#endif
+    @AppStorage(DevMode.userDefaultsKey) private var devMode = false
 
     var body: some View {
         NavigationStack {
@@ -359,54 +357,69 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - Developer section (#if DEBUG)
+    // MARK: - Developer section (Debug builds + TestFlight bypass)
 
     @ViewBuilder
     private var devSection: some View {
-#if DEBUG
-        VStack(alignment: .leading, spacing: 0) {
-            SettingsGroupView(title: "DEVELOPER") {
-                SettingsRowView(
-                    sfSymbol: "chevron.left.forwardslash.chevron.right",
-                    label: "Dev Mode",
-                    showSeparator: false,
-                    action: .toggle($devMode)
-                )
-            }
-
-            if devMode {
-                Text("Paywall bypassed · Premium tier active")
-                    .font(FitUpFont.body(11, weight: .medium))
-                    .foregroundStyle(FitUpColors.Neon.green)
-                    .padding(.top, 6)
-                    .padding(.leading, 4)
-                    .padding(.bottom, 4)
-
-                NavigationLink {
-                    AnalyticsDebugView()
-                } label: {
-                    HStack {
-                        Text("Analytics (recent events)")
-                            .font(FitUpFont.body(14, weight: .medium))
-                            .foregroundStyle(FitUpColors.Text.primary)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(FitUpColors.Text.tertiary)
+        if DevMode.isAvailable {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsGroupView(title: "DEVELOPER") {
+                    if DevMode.isTestFlightBypassBuild {
+                        SettingsRowView(
+                            sfSymbol: "airplane",
+                            label: "TestFlight Dev Mode",
+                            detail: "On",
+                            showSeparator: false,
+                            action: .badge("BETA", FitUpColors.Neon.green)
+                        )
+                    } else {
+                        SettingsRowView(
+                            sfSymbol: "chevron.left.forwardslash.chevron.right",
+                            label: "Dev Mode",
+                            showSeparator: false,
+                            action: .toggle($devMode)
+                        )
                     }
-                    .padding(14)
-                    .glassCard(.base)
                 }
-                .buttonStyle(.plain)
-                .padding(.bottom, 8)
 
-                LogViewerView(viewModel: viewModel, profile: profile)
-                    .padding(.top, 8)
+                if DevMode.isActive {
+                    Text(devModeStatusLine)
+                        .font(FitUpFont.body(11, weight: .medium))
+                        .foregroundStyle(FitUpColors.Neon.green)
+                        .padding(.top, 6)
+                        .padding(.leading, 4)
+                        .padding(.bottom, 4)
+
+                    NavigationLink {
+                        AnalyticsDebugView()
+                    } label: {
+                        HStack {
+                            Text("Analytics (recent events)")
+                                .font(FitUpFont.body(14, weight: .medium))
+                                .foregroundStyle(FitUpColors.Text.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Text.tertiary)
+                        }
+                        .padding(14)
+                        .glassCard(.base)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 8)
+
+                    LogViewerView(viewModel: viewModel, profile: profile)
+                        .padding(.top, 8)
+                }
             }
         }
-#else
-        EmptyView()
-#endif
+    }
+
+    private var devModeStatusLine: String {
+        if DevMode.isTestFlightBypassBuild {
+            return "TestFlight beta · Paywall bypassed · Premium active"
+        }
+        return "Paywall bypassed · Premium tier active"
     }
 
     // MARK: - Sign Out row

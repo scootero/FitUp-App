@@ -90,21 +90,15 @@ private struct RootShellView: View {
     @State private var showingPaywall = false
 
     var body: some View {
-        Group {
-            if selectedTab == .home {
-                mainTabShell
-            } else {
-                FitUpAppChromeContainer(
-                    profile: profile,
-                    showsGreeting: false,
-                    onOpenChallenge: { challengeLaunchContext = .battleEntry },
-                    onOpenMatchDetails: { matchId, _ in
-                        matchDetailsContext = MatchDetailsContext(matchId: matchId)
-                    }
-                ) {
-                    mainTabShell
-                }
+        FitUpAppChromeContainer(
+            profile: profile,
+            showsGreeting: false,
+            onOpenChallenge: { challengeLaunchContext = .battleEntry },
+            onOpenMatchDetails: { matchId, _ in
+                matchDetailsContext = MatchDetailsContext(matchId: matchId)
             }
+        ) {
+            mainTabShell
         }
         .environmentObject(sessionStore)
         .environmentObject(notificationService)
@@ -135,6 +129,7 @@ private struct RootShellView: View {
                     launchContext: launchContext
                 ) {
                     challengeLaunchContext = nil
+                    selectedTab = .home
                     sessionStore.requestHomeSnapshotRefresh()
                 }
                 .environmentObject(sessionStore)

@@ -223,15 +223,15 @@ enum ProductAnalytics {
         }
     }
 
-    // MARK: - DEBUG buffer
+    // MARK: - Dev analytics buffer (Debug + TestFlight bypass)
 
-#if DEBUG
     private static let debugBufferLock = NSLock()
     private static var debugRecent: [(Date, String)] = []
     private static var debugLastError: String?
     private static let debugMax = 40
 
     private static func recordDebugBuffer(name: String, error: String?) {
+        guard DevMode.isAvailable else { return }
         debugBufferLock.lock()
         defer { debugBufferLock.unlock() }
         debugRecent.append((Date(), name))
@@ -244,21 +244,18 @@ enum ProductAnalytics {
     }
 
     static func debugRecentEvents() -> [(Date, String)] {
+        guard DevMode.isAvailable else { return [] }
         debugBufferLock.lock()
         defer { debugBufferLock.unlock() }
         return debugRecent
     }
 
     static func debugLastInsertError() -> String? {
+        guard DevMode.isAvailable else { return nil }
         debugBufferLock.lock()
         defer { debugBufferLock.unlock() }
         return debugLastError
     }
-#else
-    private static func recordDebugBuffer(name: String, error: String?) {}
-    static func debugRecentEvents() -> [(Date, String)] { [] }
-    static func debugLastInsertError() -> String? { nil }
-#endif
 }
 
 private struct AnalyticsEventInsert: Encodable {

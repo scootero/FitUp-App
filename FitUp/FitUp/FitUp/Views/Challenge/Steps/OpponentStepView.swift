@@ -2,7 +2,7 @@
 //  OpponentStepView.swift
 //  FitUp
 //
-//  Slice 4 step 2: choose quick match or a specific opponent.
+//  Slice 3: choose quick match or a specific opponent.
 //
 
 import SwiftUI
@@ -15,13 +15,14 @@ struct OpponentStepView: View {
     var onSelectOpponent: (ChallengeOpponent) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
+            quickMatchCard
+
             Text("Who do you want to battle?")
                 .font(FitUpFont.body(14, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
 
             searchField
-            quickMatchCard
 
             if isLoading {
                 ProgressView()
@@ -92,39 +93,84 @@ struct OpponentStepView: View {
         Button {
             onQuickMatch()
         } label: {
-            HStack(spacing: 12) {
-                Circle()
-                    .fill(FitUpColors.Neon.purple.opacity(0.14))
-                    .frame(width: 40, height: 40)
-                    .overlay {
-                        Circle()
-                            .strokeBorder(FitUpColors.Neon.purple.opacity(0.28), lineWidth: 1)
-                    }
-                    .overlay {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(FitUpColors.Neon.purple)
-                    }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Quick Battle")
-                        .font(FitUpFont.display(13, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.primary)
-                    Text("Find best available opponent")
-                        .font(FitUpFont.body(11, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 6) {
+                    Text("DEFAULT")
+                        .font(FitUpFont.mono(10, weight: .black))
+                        .foregroundStyle(FitUpColors.Neon.purple)
+                        .tracking(1.4)
+                    Spacer(minLength: 0)
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(FitUpColors.Neon.purple)
                 }
 
-                Spacer(minLength: 0)
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(FitUpColors.Neon.purple)
+                HStack(spacing: 14) {
+                    Circle()
+                        .fill(FitUpColors.Neon.purple.opacity(0.18))
+                        .frame(width: 52, height: 52)
+                        .overlay {
+                            Circle()
+                                .strokeBorder(FitUpColors.Neon.purple.opacity(0.45), lineWidth: 1.5)
+                        }
+                        .overlay {
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Neon.purple)
+                        }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Quick Battle")
+                            .font(FitUpFont.display(18, weight: .black))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        Text("Find the best available opponent instantly")
+                            .font(FitUpFont.body(12, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 0)
+                }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .glassCard(.pending)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                FitUpColors.Neon.purple.opacity(0.14),
+                                FitUpColors.Neon.blue.opacity(0.06),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.35)
+                    }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                FitUpColors.Neon.purple.opacity(0.85),
+                                FitUpColors.Neon.cyan.opacity(0.45),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 2.5
+                    )
+            }
+            .shadow(color: FitUpColors.Neon.purple.opacity(0.22), radius: 18, x: 0, y: 6)
+            .shadow(color: Color.black.opacity(0.35), radius: 10, x: 0, y: 4)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(QuickBattleCardButtonStyle())
     }
 
     private func statLine(for opponent: ChallengeOpponent) -> String {
@@ -146,3 +192,17 @@ struct OpponentStepView: View {
     }
 }
 
+private struct QuickBattleCardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .offset(y: configuration.isPressed ? 2 : 0)
+            .shadow(
+                color: FitUpColors.Neon.purple.opacity(configuration.isPressed ? 0.10 : 0.22),
+                radius: configuration.isPressed ? 8 : 18,
+                x: 0,
+                y: configuration.isPressed ? 2 : 6
+            )
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}

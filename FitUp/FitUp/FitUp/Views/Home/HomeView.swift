@@ -8,12 +8,8 @@
 import SwiftUI
 
 private let useEnergyBeamHomeHero = true
-/// Beam collision tuning strip on Home. Keep `false` for normal Home; set `true` locally when tuning (DEBUG builds only).
-private let showHomeEnergyBeamDebugLab = true
-/// Stable token when the lab is off so the hero card does not see a new UUID every render.
-private let homeEnergyBeamDebugLabDisabledPreviewToken = UUID()
 /// Approximates loaded energy beam hero height (card + beam + chart + day bar) for skeleton parity.
-private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 410
+private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 428
 /// Horizontal inset for the energy beam hero only (slightly tighter than the rest of Home).
 private let homeHeroHorizontalPadding: CGFloat = 15
 
@@ -33,8 +29,6 @@ struct HomeView: View {
     @State private var isPastMatchesExpanded = false
     @State private var inviteWaitingPulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var beamLabUseBeamPreviewOffset = false
-    @State private var beamLabSliderOffset: Double = 0
     /// Crossfade from outgoing featured hero → incoming (0…1, linear with blur fade-out).
     @State private var handoffCrossfadeProgress: CGFloat = 0
     @State private var handoffRevealingNewHero = false
@@ -42,7 +36,6 @@ struct HomeView: View {
     @State private var handoffOpponentRevealKickoff = UUID()
     @State private var handoffKeepOpponentBlackedOut = false
     @State private var handoffFinishTask: Task<Void, Never>?
-    @State private var beamLabAppOpenPreviewToken = UUID()
 
     var body: some View {
         ZStack {
@@ -50,13 +43,6 @@ struct HomeView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    #if DEBUG
-                    if showHomeEnergyBeamDebugLab, useEnergyBeamHomeHero, !viewModel.isHeroLoading {
-                        homeEnergyBeamDebugLabStrip
-                            .padding(.horizontal, 16)
-                    }
-                    #endif
-
                     if viewModel.isHeroLoading {
                         skeletonBlock(height: homeEnergyBeamHeroSkeletonHeight)
                             .homeLiquidGlassCard(.base)
@@ -287,20 +273,6 @@ struct HomeView: View {
         return viewModel.featuredHomeStepMatch
     }
 
-    private var energyBeamDebugLabEnabled: Bool {
-        showHomeEnergyBeamDebugLab && beamLabUseBeamPreviewOffset
-    }
-
-    private var energyBeamDebugCollisionDelta: Double {
-        showHomeEnergyBeamDebugLab ? beamLabSliderOffset : 0
-    }
-
-    private var energyBeamDebugPreviewToken: UUID {
-        showHomeEnergyBeamDebugLab
-            ? beamLabAppOpenPreviewToken
-            : homeEnergyBeamDebugLabDisabledPreviewToken
-    }
-
     @ViewBuilder
     private func energyBeamHeroCard(
         match: HomeActiveMatch?,
@@ -308,10 +280,8 @@ struct HomeView: View {
         handoffIntroKickoff: UUID = UUID(),
         handoffOpponentRevealKickoff: UUID = UUID(),
         handoffKeepOpponentBlackedOut: Bool = false,
-        onStartBattle: (() -> Void)? = nil,
-        fixedDebugPreviewToken: UUID? = nil
+        onStartBattle: (() -> Void)? = nil
     ) -> some View {
-        let previewToken = fixedDebugPreviewToken ?? energyBeamDebugPreviewToken
         HomeEnergyBeamHeroCard(
             match: match,
             profile: profile,
@@ -319,9 +289,6 @@ struct HomeView: View {
             sparklineOpponentValues: viewModel.heroSparklineOpponentSeries,
             viewerIntradayHealthKitSyncedAt: viewModel.heroViewerHealthKitStepsReadAt,
             opponentIntradayLatestTickAt: viewModel.heroOpponentIntradayLatestTickAt,
-            debugBeamLabEnabled: energyBeamDebugLabEnabled,
-            debugBeamCollisionDelta: energyBeamDebugCollisionDelta,
-            debugAppOpenPreviewToken: previewToken,
             handoffRevealActive: handoffRevealActive,
             handoffIntroKickoff: handoffIntroKickoff,
             handoffOpponentRevealKickoff: handoffOpponentRevealKickoff,
@@ -337,10 +304,7 @@ struct HomeView: View {
 
         ZStack {
             if let handoff, let previous = handoff.previousMatch, handoffRevealingNewHero {
-                energyBeamHeroCard(
-                    match: previous,
-                    fixedDebugPreviewToken: homeEnergyBeamDebugLabDisabledPreviewToken
-                )
+                energyBeamHeroCard(match: previous)
                     .opacity(1 - handoffCrossfadeProgress)
                     .allowsHitTesting(false)
             }
@@ -719,121 +683,6 @@ struct HomeView: View {
         let sign = value >= 0 ? "+" : "-"
         return "\(sign)\(abs(value).formatted())"
     }
-
-    @ViewBuilder
-    private var homeEnergyBeamDebugLabStrip: some View {
-        #if DEBUG
-        VStack(alignment: .leading, spacing: 6) {
-            Text("DEBUG — Beam collision lab")
-                .font(FitUpFont.body(10, weight: .heavy))
-                .foregroundStyle(Color.white.opacity(0.4))
-                .tracking(1)
-
-            Button {
-                beamLabAppOpenPreviewToken = UUID()
-            } label: {
-                Text("Preview app open animation")
-                    .font(FitUpFont.body(11, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(FitUpColors.Neon.cyan.opacity(0.15))
-                            .overlay(
-                                Capsule(style: .continuous)
-                                    .strokeBorder(FitUpColors.Neon.cyan.opacity(0.45), lineWidth: 1)
-                            )
-                    )
-                    .foregroundStyle(Color.white.opacity(0.92))
-            }
-            .buttonStyle(.plain)
-            .disabled(viewModel.featuredHomeStepMatch == nil)
-
-            Toggle("Use Beam Preview Offset", isOn: $beamLabUseBeamPreviewOffset)
-                .font(FitUpFont.body(12, weight: .semibold))
-                .controlSize(.small)
-                .tint(FitUpColors.Neon.cyan)
-
-            Slider(
-                value: $beamLabSliderOffset,
-                in: -10_000 ... 10_000,
-                step: 1
-            )
-            .controlSize(.small)
-            .tint(FitUpColors.Neon.cyan)
-            .disabled(!beamLabUseBeamPreviewOffset)
-
-            HStack(spacing: 6) {
-                beamLabPresetButton(title: "Center") {
-                    beamLabSliderOffset = 0
-                }
-                beamLabPresetButton(title: "User Push") {
-                    beamLabSliderOffset = 2_500
-                }
-                beamLabPresetButton(title: "Opponent Push") {
-                    beamLabSliderOffset = -2_500
-                }
-            }
-
-            Button {
-                viewModel.debugPreviewHeroOpponentHandoff()
-            } label: {
-                Text("Preview opponent handoff (Slice 7)")
-                    .font(FitUpFont.body(11, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(FitUpColors.Neon.orange.opacity(0.15))
-                            .overlay(
-                                Capsule(style: .continuous)
-                                    .strokeBorder(FitUpColors.Neon.orange.opacity(0.45), lineWidth: 1)
-                            )
-                    )
-                    .foregroundStyle(Color.white.opacity(0.92))
-            }
-            .buttonStyle(.plain)
-            .disabled(viewModel.heroOpponentHandoff != nil || viewModel.featuredHomeStepMatch == nil)
-
-            Text("Beam preview offset animates collision only (4s min). Scores/copy stay live. App-open preview replays intro + score catch-up.")
-                .font(FitUpFont.body(10, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.tertiary)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-                )
-        )
-        #else
-        EmptyView()
-        #endif
-    }
-
-#if DEBUG
-    private func beamLabPresetButton(title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(FitUpFont.body(11, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .padding(.vertical, 5)
-                .padding(.horizontal, 6)
-                .frame(maxWidth: .infinity)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.white.opacity(0.08))
-                        .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
-                )
-                .foregroundStyle(Color.white.opacity(0.92))
-        }
-        .buttonStyle(.plain)
-    }
-#endif
 
     private var heroSortedStepMatches: [HomeActiveMatch] {
         viewModel.sortedActiveMatchesForHome.filter { $0.metricType != "active_calories" }

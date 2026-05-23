@@ -645,23 +645,13 @@ final class MatchDetailsViewModel: ObservableObject {
     func makeRematchLaunchContext() -> ChallengeLaunchContext? {
         guard let snapshot else { return nil }
 
-        let metric: ChallengeMetricType = snapshot.metricType == ChallengeMetricType.activeCalories.rawValue ? .activeCalories : .steps
-        let format: ChallengeFormatType
-        switch snapshot.durationDays {
-        case 1: format = .daily
-        case 3: format = .firstTo3
-        case 5: format = .bestOf5
-        case 7: format = .bestOf7
-        default:
-            return nil
-        }
-
         let opponent = ChallengePrefillOpponent(
             id: snapshot.opponent.id,
             displayName: snapshot.opponent.displayName,
             initials: snapshot.opponent.initials,
             colorHex: snapshot.opponent.colorHex
         )
-        return .rematch(opponent: opponent, metric: metric, format: format)
+        // Slice 1B: opponent only — user picks duration again on the Duration step.
+        return .prefilled(opponent: opponent)
     }
 }

@@ -342,6 +342,10 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 - [ ] Free tier user at 1-slot limit sees paywall before Step 0
 - [ ] Paywall shows annual plan prominently
 
+### As-built — Challenge flow redesign (2026-05)
+
+Original Slice 4 shipped a **4-step** flow (`Sport → Format → Opponent → Review`). The app now uses a **3-step steps-only** flow (`Opponent → Duration → Difficulty`) documented in **`FitUp/docs/challenge-flow-redesign-slices.md`** (redesign slices 1A–4). `SportStepView.swift` is unused at runtime; metric is always steps. Tracker entries: **Challenge flow redesign** in `FitUp/docs/slice-tracker.md`.
+
 ---
 
 ## Slice 5 — Match Details screen

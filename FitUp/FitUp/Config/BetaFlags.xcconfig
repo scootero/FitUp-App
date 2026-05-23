@@ -1,0 +1,13 @@
+// =============================================================================
+// TESTFLIGHT / INTERNAL BETA
+//
+// FITUP_TESTFLIGHT_BYPASS = YES  → Dev Mode on by default (paywall bypass, log viewer).
+// FITUP_TESTFLIGHT_BYPASS = NO   → Production behavior before App Store release.
+//
+// FITUP_REVENUECAT_LOGGING = NO  → Quiet RevenueCat SDK + no paywall AppLogger lines.
+// FITUP_REVENUECAT_LOGGING = YES → Verbose RC SDK + paywall logs (use when testing purchases).
+//
+// Change this file, then create a new Archive for TestFlight or the App Store.
+// =============================================================================
+FITUP_TESTFLIGHT_BYPASS = YES
+FITUP_REVENUECAT_LOGGING = NO

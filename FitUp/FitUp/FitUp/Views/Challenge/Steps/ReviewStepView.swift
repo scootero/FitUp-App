@@ -2,7 +2,7 @@
 //  ReviewStepView.swift
 //  FitUp
 //
-//  Slice 4 step 3: review and send.
+//  Slice 4: battle difficulty, VS card theming, directed-opponent rules.
 //
 
 import SwiftUI
@@ -13,6 +13,7 @@ struct ReviewStepView: View {
     let selectedFormat: ChallengeFormatType
     let selectedOpponent: ChallengeOpponent?
     let isQuickMatch: Bool
+    let isDirectedOpponent: Bool
     let isSending: Bool
     @Binding var scoringMode: MatchScoringModePreference
     @Binding var difficulty: MatchDifficultyPreference
@@ -23,7 +24,7 @@ struct ReviewStepView: View {
             vsCard
 
             if selectedMetric == .steps {
-                matchOptionsSection
+                battleDifficultySection
             }
 
             Button {
@@ -51,99 +52,169 @@ struct ReviewStepView: View {
             .disabled(isSending)
             .opacity(isSending ? 0.8 : 1)
         }
+        .onAppear {
+            enforceDirectedDifficultyIfNeeded()
+        }
+        .onChange(of: scoringMode) { _, _ in
+            enforceDirectedDifficultyIfNeeded()
+        }
     }
 
     private var vsCard: some View {
-        VStack(spacing: 16) {
-            HStack(alignment: .center, spacing: 16) {
-                VStack(spacing: 6) {
-                    AvatarView(
-                        initials: profile?.initials ?? "YOU",
-                        color: FitUpColors.Neon.cyan,
-                        size: 50,
-                        glow: true
-                    )
-                    Text("You")
-                        .font(FitUpFont.body(12, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.primary)
-                }
+        VStack(spacing: 18) {
+            HStack(alignment: .center, spacing: 12) {
+                vsCombatantColumn(
+                    initials: profile?.initials ?? "YOU",
+                    label: "You",
+                    accent: FitUpColors.Neon.cyan,
+                    glow: true
+                )
 
-                Text("VS")
-                    .font(FitUpFont.display(20, weight: .black))
-                    .foregroundStyle(FitUpColors.Neon.cyan)
+                vsCenterMark
 
-                VStack(spacing: 6) {
-                    AvatarView(
-                        initials: opponentInitials,
-                        color: opponentColor,
-                        size: 50
-                    )
-                    Text(opponentName)
-                        .font(FitUpFont.body(12, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.primary)
-                        .lineLimit(1)
-                }
+                vsCombatantColumn(
+                    initials: opponentInitials,
+                    label: opponentName,
+                    accent: FitUpColors.Neon.orange,
+                    glow: true
+                )
             }
 
             HStack(spacing: 8) {
                 NeonBadge(label: selectedMetric.displayName, color: FitUpColors.Neon.cyan)
-                NeonBadge(label: selectedFormat.displayName, color: FitUpColors.Neon.blue)
+                NeonBadge(label: selectedFormat.displayName, color: FitUpColors.Neon.orange)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
-        .padding(.vertical, 20)
-        .glassCard(.win)
+        .padding(.vertical, 22)
+        .homeLiquidGlassCard(.win)
+        .overlay {
+            RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            FitUpColors.Neon.cyan.opacity(0.55),
+                            FitUpColors.Neon.orange.opacity(0.45),
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    lineWidth: 1.5
+                )
+        }
+        .shadow(color: FitUpColors.Neon.cyan.opacity(0.10), radius: 16, x: -4, y: 0)
+        .shadow(color: FitUpColors.Neon.orange.opacity(0.10), radius: 16, x: 4, y: 0)
     }
 
-    private var matchOptionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Battle setup")
+    private func vsCombatantColumn(
+        initials: String,
+        label: String,
+        accent: Color,
+        glow: Bool
+    ) -> some View {
+        VStack(spacing: 8) {
+            AvatarView(
+                initials: initials,
+                color: accent,
+                size: 54,
+                glow: glow
+            )
+            Text(label)
+                .font(FitUpFont.body(12, weight: .bold))
+                .foregroundStyle(accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var vsCenterMark: some View {
+        VStack(spacing: 4) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.orange],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            Text("VS")
+                .font(FitUpFont.display(22, weight: .black))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.orange],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+        }
+        .frame(minWidth: 52)
+    }
+
+    private var battleDifficultySection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Battle difficulty")
                 .font(FitUpFont.body(12, weight: .heavy))
                 .foregroundStyle(FitUpColors.Text.secondary)
+                .tracking(0.6)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Scoring")
                     .font(FitUpFont.mono(10, weight: .bold))
                     .foregroundStyle(FitUpColors.Text.tertiary)
-                Picker("Scoring", selection: $scoringMode) {
-                    ForEach(MatchScoringModePreference.allCases, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
+
+                ChallengeNeonSegmentControl(
+                    options: MatchScoringModePreference.allCases,
+                    selection: $scoringMode,
+                    title: { $0.title }
+                )
+
                 Text(scoringMode.subtitle)
-                    .font(FitUpFont.body(11, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .font(FitUpFont.body(13, weight: .semibold))
+                    .foregroundStyle(FitUpColors.Text.primary.opacity(0.88))
                     .fixedSize(horizontal: false, vertical: true)
 
                 if scoringMode == .balanced {
                     Text("Difficulty is not used for Balanced Battle.")
-                        .font(FitUpFont.body(11, weight: .medium))
+                        .font(FitUpFont.body(12, weight: .medium))
                         .foregroundStyle(FitUpColors.Text.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
             if scoringMode == .raw {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text("Difficulty")
                         .font(FitUpFont.mono(10, weight: .bold))
                         .foregroundStyle(FitUpColors.Text.tertiary)
-                    Picker("Difficulty", selection: $difficulty) {
-                        ForEach(MatchDifficultyPreference.allCases, id: \.self) { level in
-                            Text(level.title).tag(level)
+
+                    ChallengeNeonSegmentControl(
+                        options: MatchDifficultyPreference.allCases,
+                        selection: $difficulty,
+                        title: { $0.title },
+                        isOptionEnabled: { level in
+                            !isDirectedOpponent || level == .fair
                         }
-                    }
-                    .pickerStyle(.segmented)
+                    )
+
                     Text(difficulty.subtitle)
-                        .font(FitUpFont.body(11, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .font(FitUpFont.body(13, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Text.primary.opacity(0.88))
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("If no close opponent is found, the search may widen to find a battle faster.")
-                        .font(FitUpFont.body(11, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+
+                    if isDirectedOpponent {
+                        Text(MatchDifficultyPreference.directedOpponentFootnote)
+                            .font(FitUpFont.body(12, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("If no close opponent is found, the search may widen to find a battle faster.")
+                            .font(FitUpFont.body(11, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
@@ -167,14 +238,69 @@ struct ReviewStepView: View {
         return selectedOpponent?.initials ?? "OP"
     }
 
-    private var opponentColor: Color {
-        if isQuickMatch {
-            return FitUpColors.Neon.purple
-        }
-        if let selectedOpponent, let value = UInt32(selectedOpponent.colorHex, radix: 16) {
-            return Color(rgb: value)
-        }
-        return FitUpColors.Neon.purple
+    private func enforceDirectedDifficultyIfNeeded() {
+        guard isDirectedOpponent, scoringMode == .raw else { return }
+        difficulty = .fair
     }
 }
 
+// MARK: - Neon segment control
+
+private struct ChallengeNeonSegmentControl<Option: Hashable>: View {
+    let options: [Option]
+    @Binding var selection: Option
+    let title: (Option) -> String
+    var isOptionEnabled: (Option) -> Bool = { _ in true }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(options, id: \.self) { option in
+                segmentButton(for: option)
+            }
+        }
+        .padding(4)
+        .background {
+            RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+                .overlay {
+                    RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                }
+        }
+    }
+
+    private func segmentButton(for option: Option) -> some View {
+        let enabled = isOptionEnabled(option)
+        let isSelected = selection == option
+
+        return Button {
+            guard enabled else { return }
+            selection = option
+        } label: {
+            Text(title(option))
+                .font(FitUpFont.body(12, weight: isSelected ? .heavy : .semibold))
+                .foregroundStyle(segmentForeground(isSelected: isSelected, enabled: enabled))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: FitUpRadius.sm - 2, style: .continuous)
+                            .fill(FitUpColors.Neon.cyan.opacity(0.18))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: FitUpRadius.sm - 2, style: .continuous)
+                                    .strokeBorder(FitUpColors.Neon.cyan.opacity(0.35), lineWidth: 1)
+                            }
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.38)
+    }
+
+    private func segmentForeground(isSelected: Bool, enabled: Bool) -> Color {
+        if !enabled { return FitUpColors.Text.tertiary }
+        if isSelected { return FitUpColors.Neon.cyan }
+        return FitUpColors.Text.secondary
+    }
+}

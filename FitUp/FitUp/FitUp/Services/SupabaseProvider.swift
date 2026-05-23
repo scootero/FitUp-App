@@ -41,18 +41,26 @@ enum AppThirdPartyConfig {
     }
 
     private static func configureRevenueCatIfPossible() {
+        guard PaywallLogger.shouldUseRevenueCat else { return }
+
         guard
             let key = Bundle.main.object(forInfoDictionaryKey: "REVENUECAT_API_KEY") as? String,
             !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
+            if PaywallLogger.isEnabled {
 #if DEBUG
-            print("FitUp: RevenueCat not configured (missing REVENUECAT_API_KEY).")
+                print("FitUp: RevenueCat not configured (missing REVENUECAT_API_KEY).")
 #endif
+            }
             return
         }
+
+        PaywallLogger.applySDKLogLevel()
         Purchases.configure(withAPIKey: key.trimmingCharacters(in: .whitespacesAndNewlines))
+        if PaywallLogger.isEnabled {
 #if DEBUG
-        print("FitUp: RevenueCat configured.")
+            print("FitUp: RevenueCat configured.")
 #endif
+        }
     }
 }

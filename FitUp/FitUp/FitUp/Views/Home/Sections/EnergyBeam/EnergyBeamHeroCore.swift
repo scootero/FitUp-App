@@ -3,7 +3,7 @@
 //  FitUp
 //
 //  Always-compiled energy beam hero visuals (beam, sparkline, momentum, glass chrome).
-//  DEBUG playground: DevPrototypes/EnergyBeamHeroPrototypeView.swift
+//  DEBUG playgrounds: DevPrototypes/EnergyBeamHeroPrototypeView.swift, DevPrototypes/HomeEnergyBeamDebugLab.swift
 //
 
 import SwiftUI
@@ -684,7 +684,7 @@ enum EnergyBeamHeroCollisionLayout {
         return "-\(n)"
     }
 
-    /// Punchier battle-status copy for the retro callout under the beam.
+    /// Punchier battle-status copy for the retro callout above the beam.
     static func statusCallout(margin: Int) -> String {
         let mag = abs(margin)
         if margin == 0 { return "DEAD HEAT" }
@@ -699,57 +699,41 @@ enum EnergyBeamHeroCollisionLayout {
     }
 }
 
-/// Retro arcade status line (TIED / ahead / behind) centered under the beam.
+/// Retro arcade status pill (ahead / behind / tied) — fixed above the beam, no motion effects.
 private struct EnergyBeamBattleStatusCallout: View {
     let margin: Int
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     private var accent: Color { EnergyBeamHeroCollisionLayout.eyebrowColor(margin: margin) }
     private var label: String { EnergyBeamHeroCollisionLayout.statusCallout(margin: margin) }
-    private var isWinning: Bool { margin > 0 }
-    private var isLosing: Bool { margin < 0 }
+
+    static let reservedHeight: CGFloat = 28
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-            let wall = timeline.date.timeIntervalSinceReferenceDate
-            let pulse = isWinning && !reduceMotion ? 0.5 + 0.5 * sin(wall * 1.65) : 1.0
-            let flicker = isLosing && !reduceMotion ? 0.88 + 0.12 * sin(wall * 4.2) : 1.0
-            let scale: CGFloat = {
-                if isWinning { return 1.0 + 0.08 * CGFloat(pulse) }
-                if isLosing { return 0.96 + 0.03 * CGFloat(flicker) }
-                return 1.0
-            }()
-            let glowOpacity = isWinning ? 0.35 + 0.28 * pulse : (isLosing ? 0.22 : 0.14)
-
-            Text(label)
-                .font(FitUpFont.mono(12, weight: .heavy))
-                .foregroundStyle(accent)
-                .tracking(3.4)
-                .lineLimit(1)
-                .minimumScaleFactor(0.62)
-                .allowsTightening(true)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(accent.opacity(isWinning ? 0.12 + 0.06 * pulse : 0.08))
-                        .overlay(
-                            Capsule(style: .continuous)
-                                .strokeBorder(accent.opacity(0.45 + (isWinning ? 0.25 * pulse : 0)), lineWidth: 1)
-                        )
-                )
-                .shadow(color: accent.opacity(glowOpacity), radius: isWinning ? 16 : 8, y: 0)
-                .shadow(color: accent.opacity(glowOpacity * 0.55), radius: isWinning ? 28 : 12, y: 2)
-                .scaleEffect(scale)
-                .animation(.easeInOut(duration: 0.25), value: margin)
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityLabel(label)
+        Text(label)
+            .font(FitUpFont.mono(12, weight: .heavy))
+            .foregroundStyle(accent)
+            .tracking(3.4)
+            .lineLimit(1)
+            .minimumScaleFactor(0.62)
+            .allowsTightening(true)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(accent.opacity(0.1))
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .strokeBorder(accent.opacity(0.5), lineWidth: 1)
+                    )
+            )
+            .shadow(color: accent.opacity(0.2), radius: 8, y: 0)
+            .frame(maxWidth: .infinity)
+            .animation(.easeInOut(duration: 0.25), value: margin)
+            .accessibilityLabel(label)
     }
 }
 
-/// Margin block below the beam: status + unit are page-centered and fixed; only the hero number tracks collision X.
+/// Margin number + guide line + unit sit above the beam; only the hero number and unit track collision X.
 private struct EnergyBeamCollisionAlignedMarginHeadline: View {
     let collisionX: CGFloat
     let trackWidth: CGFloat
@@ -757,25 +741,16 @@ private struct EnergyBeamCollisionAlignedMarginHeadline: View {
     let unitLabel: String
 
     private var accent: Color { EnergyBeamHeroCollisionLayout.eyebrowColor(margin: margin) }
-    static let reservedHeight: CGFloat = 92
+    static let reservedHeight: CGFloat = 74
     private let blockHeight: CGFloat = reservedHeight
     private let horizontalEdgePadding: CGFloat = 44
     private let lineGapHalf: CGFloat = 40
-    /// Sits between the beam bottom edge and the hero number cap height.
-    private let statusCalloutY: CGFloat = 11
-    private let numberRowY: CGFloat = 46
-    /// Vertical gap from the hero number row down to the fixed unit row.
-    private let unitBelowNumberGap: CGFloat = 20
-    /// Connects beam collision down through the hero number.
-    private let beamConnectorTopY: CGFloat = 0
-    private let beamConnectorBottomY: CGFloat = 40
-    /// Max width for the sliding hero number so it cannot spill into player columns.
-    private let collisionNumberMaxWidth: CGFloat = 148
-    /// In the fixed unit row, reserve space for the number column so the unit reads to its right.
-    private let unitRowNumberPlaceholderWidth: CGFloat = 76
-    private let unitRowNumberToLabelSpacing: CGFloat = 10
-
-    private var unitRowY: CGFloat { numberRowY + unitBelowNumberGap + 12 }
+    private let numberRowY: CGFloat = 22
+    private let unitBelowNumberGap: CGFloat = 8
+    /// Vertical link from the hero number down toward the beam.
+    private let beamConnectorTopY: CGFloat = 30
+    private let beamConnectorBottomY: CGFloat = 70
+    private let collisionStackMaxWidth: CGFloat = 148
 
     var body: some View {
         GeometryReader { geo in
@@ -795,34 +770,27 @@ private struct EnergyBeamCollisionAlignedMarginHeadline: View {
                 .frame(width: w, height: 1)
                 .position(x: w * 0.5, y: numberRowY)
 
-                EnergyBeamBattleStatusCallout(margin: margin)
-                    .frame(maxWidth: w - horizontalEdgePadding * 2)
-                    .position(x: w * 0.5, y: statusCalloutY)
+                VStack(spacing: unitBelowNumberGap) {
+                    Text(EnergyBeamHeroCollisionLayout.heroNumberText(margin: margin))
+                        .font(FitUpFont.display(34, weight: .heavy))
+                        .foregroundStyle(Color.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .allowsTightening(true)
+                        .contentTransition(.numericText())
+                        .shadow(color: accent.opacity(0.35), radius: 10, y: 0)
 
-                Text(EnergyBeamHeroCollisionLayout.heroNumberText(margin: margin))
-                    .font(FitUpFont.display(34, weight: .heavy))
-                    .foregroundStyle(Color.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-                    .allowsTightening(true)
-                    .contentTransition(.numericText())
-                    .shadow(color: accent.opacity(0.35), radius: 10, y: 0)
-                    .frame(maxWidth: collisionNumberMaxWidth)
-                    .position(x: markerX, y: numberRowY)
-
-                HStack(alignment: .firstTextBaseline, spacing: unitRowNumberToLabelSpacing) {
-                    Color.clear
-                        .frame(width: unitRowNumberPlaceholderWidth)
                     Text(unitLabel)
-                        .font(FitUpFont.mono(10, weight: .bold))
-                        .foregroundStyle(accent.opacity(0.88))
-                        .tracking(3.4)
+                        .font(FitUpFont.body(11, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Text.secondary.opacity(0.92))
+                        .tracking(2.8)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                         .allowsTightening(true)
                 }
-                .frame(maxWidth: w - horizontalEdgePadding * 2)
-                .position(x: w * 0.5, y: unitRowY)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: collisionStackMaxWidth)
+                .position(x: markerX, y: numberRowY + 10)
             }
             .clipped()
         }
@@ -831,15 +799,15 @@ private struct EnergyBeamCollisionAlignedMarginHeadline: View {
         .clipped()
     }
 
-    /// Dim vertical link from beam center line down to the margin number.
+    /// Dim vertical link from the margin number down toward the beam.
     private func beamCollisionConnector(at x: CGFloat) -> some View {
         Rectangle()
             .fill(
                 LinearGradient(
                     colors: [
-                        accent.opacity(0.42),
-                        accent.opacity(0.2),
                         accent.opacity(0.06),
+                        accent.opacity(0.2),
+                        accent.opacity(0.38),
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -2700,7 +2668,7 @@ struct EnergyBeamHeroGlassCardView: View {
             playersRow
                 .padding(.horizontal, 18)
                 .padding(.top, showTopBrandHeader ? 0 : 10)
-                .padding(.bottom, 14)
+                .padding(.bottom, 22)
 
             beamBattleZone
                 .padding(.horizontal, 18)
@@ -2831,7 +2799,17 @@ struct EnergyBeamHeroGlassCardView: View {
 
     private var beamMarginDisplayInt: Int { Int(beamCollisionMarginPrecise.rounded(.towardZero)) }
 
-    /// Headline + guide rails + procedural beam share one collision X each frame.
+    private static let statusToMarginSpacing: CGFloat = 6
+    private static let marginToBeamSpacing: CGFloat = 6
+
+    private static var aboveBeamStackReservedHeight: CGFloat {
+        EnergyBeamBattleStatusCallout.reservedHeight
+            + statusToMarginSpacing
+            + EnergyBeamCollisionAlignedMarginHeadline.reservedHeight
+            + marginToBeamSpacing
+    }
+
+    /// Status pill, collision headline, and procedural beam share one collision X each frame.
     private var beamBattleZone: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
             let wall = timeline.date.timeIntervalSinceReferenceDate
@@ -2861,7 +2839,24 @@ struct EnergyBeamHeroGlassCardView: View {
                     wall: wall
                 )
 
-                VStack(spacing: 8) {
+                VStack(spacing: 0) {
+                    if !hideMarginHeadline {
+                        EnergyBeamBattleStatusCallout(margin: beamMarginDisplayInt)
+                            .frame(maxWidth: w)
+                            .padding(.bottom, Self.statusToMarginSpacing)
+
+                        EnergyBeamCollisionAlignedMarginHeadline(
+                            collisionX: collisionX,
+                            trackWidth: w,
+                            margin: beamMarginDisplayInt,
+                            unitLabel: unitLabel
+                        )
+                        .padding(.bottom, Self.marginToBeamSpacing)
+                    } else {
+                        Color.clear
+                            .frame(height: Self.aboveBeamStackReservedHeight)
+                    }
+
                     ProceduralEnergyBeamView(
                         marginPrecise: beamCollisionMarginPrecise,
                         referenceBattleValue: referenceBattleValue,
@@ -2876,22 +2871,13 @@ struct EnergyBeamHeroGlassCardView: View {
                         suppressImpactBursts: suppressImpactBursts
                     )
                     .frame(height: layoutTuning.beamOuterHeight)
-
-                    if !hideMarginHeadline {
-                        EnergyBeamCollisionAlignedMarginHeadline(
-                            collisionX: collisionX,
-                            trackWidth: w,
-                            margin: beamMarginDisplayInt,
-                            unitLabel: unitLabel
-                        )
-                    } else {
-                        Color.clear
-                            .frame(height: EnergyBeamCollisionAlignedMarginHeadline.reservedHeight)
-                    }
                 }
                 .clipped()
             }
-            .frame(height: layoutTuning.beamOuterHeight + EnergyBeamCollisionAlignedMarginHeadline.reservedHeight)
+            .frame(
+                height: layoutTuning.beamOuterHeight
+                    + (hideMarginHeadline ? 0 : Self.aboveBeamStackReservedHeight)
+            )
             .clipped()
         }
     }

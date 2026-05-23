@@ -4,7 +4,7 @@
 //
 //  Slice 14 — Dev Tools log viewer: monospace green log lines, time-range + level filters,
 //  JSON export via ShareLink.
-//  Only rendered when Dev Mode is ON (caller guards #if DEBUG).
+//  Only rendered when Dev Mode is active (caller guards via DevMode.isActive).
 //
 
 import SwiftUI

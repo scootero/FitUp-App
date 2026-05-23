@@ -31,6 +31,8 @@ struct HealthView: View {
                 }
 
                 StatsMockShellView(
+                    calendarUserId: profile?.id,
+                    profileTimeZoneIdentifier: profile?.timezone,
                     selectedRange: viewModel.statsSelectedRange,
                     effectiveRange: viewModel.statsEffectiveRange,
                     onSelectRange: { range in

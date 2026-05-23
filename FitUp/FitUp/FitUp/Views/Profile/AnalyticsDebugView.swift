@@ -5,7 +5,6 @@
 
 import SwiftUI
 
-#if DEBUG
 struct AnalyticsDebugView: View {
     var body: some View {
         List {
@@ -46,4 +45,3 @@ struct AnalyticsDebugView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
-#endif

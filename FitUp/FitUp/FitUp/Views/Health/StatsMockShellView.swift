@@ -9,6 +9,8 @@ import Charts
 import SwiftUI
 
 struct StatsMockShellView: View {
+    let calendarUserId: UUID?
+    let profileTimeZoneIdentifier: String?
     let selectedRange: HealthViewModel.StatsRangeKey
     let effectiveRange: HealthViewModel.StatsRangeKey
     let onSelectRange: (HealthViewModel.StatsRangeKey) -> Void
@@ -29,6 +31,7 @@ struct StatsMockShellView: View {
     let isOneDayHourlyLoading: Bool
     let stepsToday: Int
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isActivityCalendarPresented = false
     @State private var marginMode: MarginMode = .net
     @State private var netLineRevealProgress: Double = 0
     @State private var dailyBarsProgress: Double = 0
@@ -81,6 +84,14 @@ struct StatsMockShellView: View {
         }
         .onChange(of: rangeMargins) { _, _ in
             logStatsMarginSeriesDebug()
+        }
+        .sheet(isPresented: $isActivityCalendarPresented) {
+            if let calendarUserId {
+                ActivityCalendarSheet(
+                    userId: calendarUserId,
+                    profileTimeZoneIdentifier: profileTimeZoneIdentifier
+                )
+            }
         }
     }
 
@@ -142,24 +153,30 @@ struct StatsMockShellView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 7) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-                Text(dateChipText)
-                    .font(FitUpFont.mono(10, weight: .semibold))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+            Button {
+                isActivityCalendarPresented = true
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                    Text(dateChipText)
+                        .font(FitUpFont.mono(10, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.04))
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
+                }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color.white.opacity(0.04))
-            .clipShape(Capsule())
-            .overlay {
-                Capsule()
-                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
-            }
+            .buttonStyle(.plain)
+            .disabled(calendarUserId == nil)
         }
     }
 
@@ -1811,6 +1828,8 @@ struct StatsMetricExplainerOverlay: View {
 #Preview {
     ScrollView {
         StatsMockShellView(
+            calendarUserId: nil,
+            profileTimeZoneIdentifier: nil,
             selectedRange: .oneDay,
             effectiveRange: .oneDay,
             onSelectRange: { _ in },
