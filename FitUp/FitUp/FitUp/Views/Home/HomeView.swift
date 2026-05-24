@@ -37,7 +37,6 @@ struct HomeView: View {
     @State private var handoffOpponentRevealKickoff = UUID()
     @State private var handoffKeepOpponentBlackedOut = false
     @State private var handoffFinishTask: Task<Void, Never>?
-    @State private var showIdleHeroTour = false
 
     var body: some View {
         ZStack {
@@ -183,14 +182,6 @@ struct HomeView: View {
             }
 
             friendNotificationTopStack
-
-            if showIdleHeroTour {
-                HomeIdleHeroTourOverlay {
-                    dismissIdleHeroTour()
-                }
-                .zIndex(5)
-                .transition(.opacity)
-            }
         }
         .transaction { transaction in
             transaction.disablesAnimations = true
@@ -215,12 +206,6 @@ struct HomeView: View {
             clearSearchingFlagIfHasMatch()
             viewModel.syncHeroMetricWithActiveMatches()
             startInviteWaitingPulse()
-            evaluateIdleHeroTourPresentation()
-        }
-        .onChange(of: sessionStore.pendingHomeIdleHeroTour) { _, pending in
-            if pending {
-                evaluateIdleHeroTourPresentation()
-            }
         }
         .onChange(of: sessionStore.homeSnapshotRefreshToken) { _, _ in
             Task { await viewModel.reload(force: true) }
@@ -231,9 +216,6 @@ struct HomeView: View {
             homeFirstRenderAt = Date()
         }
         .onChange(of: viewModel.isHeroLoading) { _, isHeroLoading in
-            if !isHeroLoading {
-                evaluateIdleHeroTourPresentation()
-            }
             guard !isHeroLoading, !hasLoggedHeroFirstRender else { return }
             hasLoggedHeroFirstRender = true
             let elapsedMs: Int
@@ -249,11 +231,6 @@ struct HomeView: View {
                 userId: profile?.id,
                 metadata: ["elapsed_ms_from_first_render": "\(elapsedMs)"]
             )
-        }
-        .onChange(of: viewModel.featuredHomeStepMatch?.id) { _, _ in
-            if viewModel.featuredHomeStepMatch != nil {
-                showIdleHeroTour = false
-            }
         }
         .onChange(of: viewModel.isInitialLoading) { _, isInitialLoading in
             guard !isInitialLoading, !hasLoggedFirstDataLoaded else { return }
@@ -330,10 +307,7 @@ struct HomeView: View {
             handoffIntroKickoff: handoffIntroKickoff,
             handoffOpponentRevealKickoff: handoffOpponentRevealKickoff,
             handoffKeepOpponentBlackedOut: handoffKeepOpponentBlackedOut,
-            onStartBattle: onStartBattle,
-            idleTodaySteps: viewModel.heroIdleTodaySteps,
-            idleUserBattleScore: viewModel.heroIdleUserBattleScore,
-            isSearchInProgress: viewModel.activeSearchCount > 0
+            onStartBattle: onStartBattle
         )
     }
 
@@ -568,26 +542,6 @@ struct HomeView: View {
     private func clearSearchingFlagIfHasMatch() {
         if !viewModel.pendingMatches.isEmpty || !viewModel.activeMatches.isEmpty {
             sessionStore.clearSearchingCardOnHomeFlag()
-        }
-    }
-
-    private func evaluateIdleHeroTourPresentation() {
-        guard useEnergyBeamHomeHero else { return }
-        guard !viewModel.isHeroLoading else { return }
-        guard viewModel.featuredHomeStepMatch == nil else {
-            showIdleHeroTour = false
-            return
-        }
-        guard let profileId = profile?.id else { return }
-        let shouldShow = sessionStore.pendingHomeIdleHeroTour
-            || sessionStore.shouldShowHomeIdleHeroTour(profileId: profileId)
-        showIdleHeroTour = shouldShow
-    }
-
-    private func dismissIdleHeroTour() {
-        showIdleHeroTour = false
-        if let profileId = profile?.id {
-            sessionStore.markHomeIdleHeroTourSeen(profileId: profileId)
         }
     }
 

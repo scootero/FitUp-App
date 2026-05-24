@@ -105,18 +105,6 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var heroViewerHealthKitStepsReadAt: Date?
     /// Latest opponent intraday tick `recorded_at` from the last successful sparkline fetch (Slice 6).
     @Published private(set) var heroOpponentIntradayLatestTickAt: Date?
-    /// Today's steps for the idle hero when no active step battle (HealthKit).
-    @Published private(set) var heroIdleTodaySteps: Int = 0
-    /// Solo battle score for idle hero (balanced against user's own step goal baseline).
-    var heroIdleUserBattleScore: Int {
-        let baseline = Double(ReadinessGoals.loadFromUserDefaults().stepsGoal)
-        return HomeActiveMatch.battleScore(
-            actualSteps: heroIdleTodaySteps,
-            myBaseline: baseline,
-            theirBaseline: baseline
-        )
-    }
-
     /// Slice 7: non-nil while the “new opponent” handoff overlay blocks the energy hero card.
     @Published private(set) var heroOpponentHandoff: HeroOpponentHandoffOverlayModel?
     @Published private(set) var isHeroLoading = true
@@ -399,7 +387,6 @@ final class HomeViewModel: ObservableObject {
             heroSparklineOpponentSeries = nil
             heroViewerHealthKitStepsReadAt = nil
             heroOpponentIntradayLatestTickAt = nil
-            heroIdleTodaySteps = 0
             heroSparklineLoadGeneration &+= 1
             heroOpponentHandoff = nil
             heroLoadStartedAt = Date()
@@ -936,7 +923,6 @@ final class HomeViewModel: ObservableObject {
             heroSparklineUserSeries = nil
             heroSparklineOpponentSeries = nil
             heroOpponentIntradayLatestTickAt = nil
-            scheduleIdleHeroSparklineRefresh()
             return
         }
         guard normalizedHeroMetricType(match.metricType) == "steps" else {
@@ -964,30 +950,6 @@ final class HomeViewModel: ObservableObject {
             self.heroSparklineUserSeries = result.userSeries
             self.heroSparklineOpponentSeries = result.opponentSeries
             self.heroOpponentIntradayLatestTickAt = result.opponentLatestTickRecordedAt
-        }
-    }
-
-    private func scheduleIdleHeroSparklineRefresh() {
-        heroSparklineFetchTask?.cancel()
-        guard featuredHomeStepMatch == nil else { return }
-
-        heroSparklineLoadGeneration &+= 1
-        let generation = heroSparklineLoadGeneration
-        let tzId = profileTimeZoneIdentifier
-        let todaySteps = heroIdleTodaySteps
-
-        heroSparklineFetchTask = Task { [weak self] in
-            guard let self else { return }
-            let series = await HomeHeroSparklineLoader.loadIdleUserSparkline(
-                profileTimeZoneIdentifier: tzId,
-                myToday: todaySteps
-            )
-            guard !Task.isCancelled else { return }
-            guard self.heroSparklineLoadGeneration == generation else { return }
-            guard self.featuredHomeStepMatch == nil else { return }
-            self.heroSparklineUserSeries = series
-            self.heroSparklineOpponentSeries = nil
-            self.heroOpponentIntradayLatestTickAt = nil
         }
     }
 
@@ -1022,40 +984,12 @@ final class HomeViewModel: ObservableObject {
 
     private func scheduleHeroHealthKitPatch() {
         guard let userId else { return }
+        guard activeMatches.first != nil else { return }
         heroHealthKitPatchTask?.cancel()
         heroHealthKitPatchTask = Task { [weak self] in
             guard let self else { return }
-            if self.activeMatches.first != nil {
-                await self.executeHeroHealthKitPatch(userId: userId)
-            } else if self.featuredHomeStepMatch == nil {
-                await self.executeIdleHeroHealthKitPatch(userId: userId)
-            }
+            await self.executeHeroHealthKitPatch(userId: userId)
         }
-    }
-
-    private func executeIdleHeroHealthKitPatch(userId: UUID) async {
-        let readStartedAt = Date()
-        let value: Int
-        do {
-            value = try await HealthKitService.fetchTodayStepCount()
-        } catch {
-            scheduleIdleHeroSparklineRefresh()
-            return
-        }
-        guard self.userId == userId else { return }
-        if heroIdleTodaySteps != value {
-            heroIdleTodaySteps = value
-            heroViewerHealthKitStepsReadAt = Date()
-            AppLogger.log(
-                category: "home_perf",
-                level: .info,
-                message: "idle_hero_hk_patch",
-                userId: userId,
-                metadata: ["value": "\(value)"]
-            )
-        }
-        scheduleIdleHeroSparklineRefresh()
-        _ = readStartedAt
     }
 
     private func executeHeroHealthKitPatch(userId: UUID) async {

@@ -93,12 +93,6 @@ struct HomeEnergyBeamHeroCard: View {
     var handoffKeepOpponentBlackedOut: Bool = false
     /// Opens the new battle flow when the hero has no active step battle.
     var onStartBattle: (() -> Void)? = nil
-    /// Today's steps for idle hero (HealthKit).
-    var idleTodaySteps: Int = 0
-    /// Solo battle score estimate for idle hero.
-    var idleUserBattleScore: Int = 0
-    /// Disables Start a Battle CTA while match search is active.
-    var isSearchInProgress: Bool = false
 
     @State private var cardInstanceId = UUID()
     @State private var didLogCardMount = false
@@ -178,10 +172,7 @@ struct HomeEnergyBeamHeroCard: View {
         handoffIntroKickoff: UUID = UUID(),
         handoffOpponentRevealKickoff: UUID = UUID(),
         handoffKeepOpponentBlackedOut: Bool = false,
-        onStartBattle: (() -> Void)? = nil,
-        idleTodaySteps: Int = 0,
-        idleUserBattleScore: Int = 0,
-        isSearchInProgress: Bool = false
+        onStartBattle: (() -> Void)? = nil
     ) {
         self.match = match
         self.profile = profile
@@ -196,9 +187,6 @@ struct HomeEnergyBeamHeroCard: View {
         self.handoffOpponentRevealKickoff = handoffOpponentRevealKickoff
         self.handoffKeepOpponentBlackedOut = handoffKeepOpponentBlackedOut
         self.onStartBattle = onStartBattle
-        self.idleTodaySteps = idleTodaySteps
-        self.idleUserBattleScore = idleUserBattleScore
-        self.isSearchInProgress = isSearchInProgress
         let startsWithOpponentBlackedOut = handoffRevealActive || handoffKeepOpponentBlackedOut
         let gateConsumed = HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession
         let initialMargin: Double
@@ -414,47 +402,9 @@ struct HomeEnergyBeamHeroCard: View {
                     }
                 }
             } else {
-                idleHeroCard
+                emptyHeroCard
             }
         }
-    }
-
-    private static let idleBeamCollisionMarginOverride: Double = 50_000
-
-    private var idleHeroCard: some View {
-        let dayState = Self.dayProgressState(for: profile?.timezone)
-        let userScore = idleUserBattleScore
-        let margin = Double(userScore)
-
-        return EnergyBeamHeroGlassCardView(
-            margin: margin,
-            referenceBattleValue: EnergyBeamHeroLayout.defaultBeamReferenceValue,
-            userName: profile?.displayName ?? "You",
-            opponentName: "???",
-            userSteps: idleTodaySteps,
-            opponentSteps: 0,
-            userBattleScore: userScore,
-            opponentBattleScore: 0,
-            battleScoreColumnTitle: "Battle Score",
-            resultEyebrow: Self.resultEyebrow(for: userScore),
-            resultEyebrowColor: Self.resultEyebrowColor(for: userScore),
-            resultHeroNumberText: Self.resultHeroNumberText(for: userScore),
-            unitLabel: "BATTLE SCORE",
-            sparklineUserValues: sparklineUserValues ?? EnergyBeamHeroMockSeries.cumulativeUser(wiggle: 0),
-            sparklineOpponentValues: Self.neutralOpponentSparkline,
-            dayElapsedFraction: dayState.fraction,
-            dayProgressCaption: dayState.caption,
-            showMockTimelineDebugLabel: mockTimelineDebugFlag,
-            viewerIntradayHealthKitSyncedAt: viewerIntradayHealthKitSyncedAt,
-            opponentIntradayLatestTickAt: nil,
-            beamCollisionMarginPreciseOverride: Self.idleBeamCollisionMarginOverride,
-            showTopBrandHeader: false,
-            beamVisualTuning: .endingProduction,
-            hideOpponentSparkline: true,
-            presentationMode: .idleNoMatch,
-            isSearchInProgress: isSearchInProgress,
-            onStartBattle: onStartBattle
-        )
     }
 
     private var mockTimelineDebugFlag: Bool {
@@ -465,7 +415,44 @@ struct HomeEnergyBeamHeroCard: View {
         #endif
     }
 
-    // Removed: legacy emptyHeroCard replaced by idleHeroCard above.
+    private var emptyHeroCard: some View {
+        VStack(spacing: 14) {
+            Text("NO ACTIVE STEP BATTLE")
+                .font(FitUpFont.body(11, weight: .heavy))
+                .foregroundStyle(Color.white.opacity(0.38))
+                .tracking(2.4)
+
+            Text("Start or accept a battle to see today’s battle here.")
+                .font(FitUpFont.body(14, weight: .semibold))
+                .foregroundStyle(FitUpColors.Text.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+
+            if let onStartBattle {
+                Button("New Battle") {
+                    onStartBattle()
+                }
+                .buttonStyle(.plain)
+                .solidButton(color: FitUpColors.Neon.cyan)
+                .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .padding(.horizontal, 18)
+        .background {
+            ZStack {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(FitUpColors.Bg.base.opacity(0.92))
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(.white.opacity(0.04))
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: .black.opacity(0.45), radius: 14, y: 8)
+    }
 
     private func persistDisplayedSnapshot(for match: HomeActiveMatch, context: HeroAnimContext) {
         let decision = persistSnapshotDecision(for: match)

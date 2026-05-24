@@ -32,98 +32,29 @@ struct NeonHeroMatchHeaderContent: Equatable {
 
 struct NeonHeroMatchHeader: View {
   let content: NeonHeroMatchHeaderContent
-  /// When true, only meta pills + day caption (names/VS live in the hero top row).
-  var metaOnly: Bool = false
 
   var body: some View {
     VStack(spacing: 14) {
-      if !metaOnly {
-        NeonRetroVersusBanner(
-          userName: content.userDisplayName,
-          opponentName: content.opponentDisplayName
-        )
-      }
+      NeonRetroVersusBanner(
+        userName: content.userDisplayName,
+        opponentName: content.opponentDisplayName
+      )
 
-      if !content.pills.isEmpty {
-        NeonHeroMetaPillsRow(pills: content.pills)
-      }
+      NeonHeroMetaPillsRow(pills: content.pills)
 
-      if !content.dayProgressLabel.isEmpty {
-        Text(content.dayProgressLabel.uppercased())
-          .font(FitUpFont.mono(13, weight: .heavy))
-          .tracking(2.2)
-          .foregroundStyle(HomePageStyle.offWhite)
-          .shadow(color: FitUpColors.Neon.cyan.opacity(0.35), radius: 8, x: 0, y: 0)
-          .shadow(color: Color.white.opacity(0.18), radius: 4, x: 0, y: 0)
-          .multilineTextAlignment(.center)
-          .frame(maxWidth: .infinity)
-          .lineLimit(1)
-          .minimumScaleFactor(0.75)
-          .allowsTightening(true)
-      }
+      Text(content.dayProgressLabel.uppercased())
+        .font(FitUpFont.mono(13, weight: .heavy))
+        .tracking(2.2)
+        .foregroundStyle(HomePageStyle.offWhite)
+        .shadow(color: FitUpColors.Neon.cyan.opacity(0.35), radius: 8, x: 0, y: 0)
+        .shadow(color: Color.white.opacity(0.18), radius: 4, x: 0, y: 0)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+        .allowsTightening(true)
     }
     .frame(maxWidth: .infinity)
-  }
-}
-
-// MARK: - Shared VS mark (hero top row)
-
-struct HeroNeonVersusMark: View {
-  var style: Style = .redRetro
-
-  enum Style {
-    case redRetro
-    case gradient
-  }
-
-  var body: some View {
-    Text("VS")
-      .font(FitUpFont.display(28, weight: .black))
-      .tracking(1.8)
-      .foregroundStyle(foregroundGradient)
-      .shadow(color: shadowPrimary, radius: 12, x: 0, y: 0)
-      .shadow(color: shadowSecondary, radius: 22, x: 0, y: 0)
-      .shadow(color: Color.white.opacity(0.22), radius: 4, x: 0, y: 0)
-      .accessibilityLabel("Versus")
-  }
-
-  private var foregroundGradient: LinearGradient {
-    switch style {
-    case .redRetro:
-      LinearGradient(
-        colors: [
-          Color(red: 1, green: 0.22, blue: 0.28),
-          FitUpColors.Neon.pink,
-          Color(red: 1, green: 0.45, blue: 0.12),
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-      )
-    case .gradient:
-      LinearGradient(
-        colors: [
-          FitUpColors.Neon.pink,
-          FitUpColors.Neon.purple,
-          FitUpColors.Neon.yellow.opacity(0.95),
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-      )
-    }
-  }
-
-  private var shadowPrimary: Color {
-    switch style {
-    case .redRetro: return Color(red: 1, green: 0.2, blue: 0.25).opacity(0.75)
-    case .gradient: return FitUpColors.Neon.pink.opacity(0.72)
-    }
-  }
-
-  private var shadowSecondary: Color {
-    switch style {
-    case .redRetro: return FitUpColors.Neon.orange.opacity(0.45)
-    case .gradient: return FitUpColors.Neon.purple.opacity(0.55)
-    }
   }
 }
 
