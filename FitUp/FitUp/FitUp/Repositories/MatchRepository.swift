@@ -27,6 +27,15 @@ struct MatchRepositoryDirectChallengeResult {
 }
 
 final class MatchRepository {
+    private enum OpponentDiscoveryLimits {
+        /// Profiles fetched for client-side sort when RPC is unavailable.
+        static let profilePool = 50
+        /// Default opponent rows when search is empty.
+        static let defaultDisplay = 15
+        /// Max rows when user is searching by name.
+        static let searchDisplay = 50
+    }
+
     private var client: SupabaseClient {
         get throws {
             guard let client = SupabaseProvider.client else {
@@ -51,31 +60,100 @@ final class MatchRepository {
         query: String,
         metricType: ChallengeMetricType
     ) async throws -> [MatchRepositoryOpponentCandidate] {
-        let rows = try await fetchProfileRows()
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isSearching = !trimmedQuery.isEmpty
+        let displayLimit = isSearching
+            ? OpponentDiscoveryLimits.searchDisplay
+            : OpponentDiscoveryLimits.defaultDisplay
+
+        if let rpcCandidates = try? await fetchOpponentCandidatesViaRPC(
+            query: trimmedQuery,
+            metricType: metricType,
+            limit: displayLimit
+        ) {
+            return rpcCandidates
+        }
+
+        return try await fetchOpponentCandidatesBatched(
+            currentUserId: currentUserId,
+            query: trimmedQuery,
+            metricType: metricType,
+            displayLimit: displayLimit
+        )
+    }
+
+    private func fetchOpponentCandidatesViaRPC(
+        query: String,
+        metricType: ChallengeMetricType,
+        limit: Int
+    ) async throws -> [MatchRepositoryOpponentCandidate] {
+        let client = try client
+        let localDate = Self.calendarFormatter.string(from: Date())
+        let params = ListOpponentCandidatesRPCParams(
+            p_query: query,
+            p_metric_type: metricType.rawValue,
+            p_viewer_local_date: localDate,
+            p_limit: limit
+        )
+        let response: PostgrestResponse<[ListOpponentCandidatesRPCRow]> = try await client
+            .rpc("list_opponent_candidates", params: params)
+            .execute()
+        return response.value.map { row in
+            MatchRepositoryOpponentCandidate(
+                id: row.id,
+                displayName: row.display_name ?? "Player",
+                initials: row.initials ?? Self.initials(from: row.display_name ?? "Player"),
+                colorHex: colorHex(for: row.id),
+                todaySteps: row.today_steps,
+                wins: row.wins,
+                losses: row.losses,
+                rollingStepsBaseline: row.rolling_avg_7d_steps,
+                rollingCaloriesBaseline: row.rolling_avg_7d_calories
+            )
+        }
+    }
+
+    private func fetchOpponentCandidatesBatched(
+        currentUserId: UUID,
+        query: String,
+        metricType: ChallengeMetricType,
+        displayLimit: Int
+    ) async throws -> [MatchRepositoryOpponentCandidate] {
+        let rows = try await fetchProfileRows(limit: OpponentDiscoveryLimits.profilePool)
         let myBaselines = try await fetchMyBaselines(userId: currentUserId)
         let myBaseline = metricType == .steps ? myBaselines.steps7 : myBaselines.calories7
+        let trimmedQuery = query.lowercased()
 
-        var candidates: [MatchRepositoryOpponentCandidate] = []
+        var candidateIds: [UUID] = []
+        var profileById: [UUID: [String: Any]] = [:]
         for row in rows {
             guard let id = uuid(from: row["id"]), id != currentUserId else { continue }
             let displayName = string(from: row["display_name"]) ?? "Player"
             if !trimmedQuery.isEmpty, !displayName.lowercased().contains(trimmedQuery) {
                 continue
             }
+            candidateIds.append(id)
+            profileById[id] = row
+        }
 
+        let latestStatsByUser = try await fetchLatestLeaderboardStatsBatch(userIds: candidateIds)
+        let todayStepsByUser = try await fetchLatestTodayStepsBatch(userIds: candidateIds)
+
+        var candidates: [MatchRepositoryOpponentCandidate] = []
+        candidates.reserveCapacity(candidateIds.count)
+        for id in candidateIds {
+            guard let row = profileById[id] else { continue }
+            let displayName = string(from: row["display_name"]) ?? "Player"
             let initials = string(from: row["initials"]) ?? Self.initials(from: displayName)
             let baselines = parseBaselines(from: row["user_health_baselines"])
-            let latestStats = try? await fetchLatestLeaderboardStats(userId: id)
-            let todaySteps = try? await fetchLatestTodaySteps(userId: id)
-
+            let latestStats = latestStatsByUser[id]
             candidates.append(
                 MatchRepositoryOpponentCandidate(
                     id: id,
                     displayName: displayName,
                     initials: initials,
                     colorHex: colorHex(for: id),
-                    todaySteps: todaySteps,
+                    todaySteps: todayStepsByUser[id],
                     wins: latestStats?.wins,
                     losses: latestStats?.losses,
                     rollingStepsBaseline: baselines.steps,
@@ -84,17 +162,11 @@ final class MatchRepository {
             )
         }
 
-        return candidates.sorted {
-            scoreDistance(
-                candidate: $0,
-                myBaseline: myBaseline,
-                metricType: metricType
-            ) < scoreDistance(
-                candidate: $1,
-                myBaseline: myBaseline,
-                metricType: metricType
-            )
+        let sorted = candidates.sorted {
+            scoreDistance(candidate: $0, myBaseline: myBaseline, metricType: metricType)
+                < scoreDistance(candidate: $1, myBaseline: myBaseline, metricType: metricType)
         }
+        return Array(sorted.prefix(displayLimit))
     }
 
     // MARK: - Writes
@@ -309,40 +381,55 @@ final class MatchRepository {
         return count
     }
 
-    private func fetchProfileRows() async throws -> [[String: Any]] {
+    private func fetchProfileRows(limit: Int) async throws -> [[String: Any]] {
         let response = try await client
             .from("profiles")
             .select("id, display_name, initials, created_at, user_health_baselines(rolling_avg_7d_steps, rolling_avg_7d_calories, rolling_avg_30d_steps)")
             .order("created_at", ascending: false)
-            .limit(50)
+            .limit(limit)
             .execute()
         return jsonRows(from: response.data)
     }
 
-    private func fetchLatestLeaderboardStats(userId: UUID) async throws -> (wins: Int?, losses: Int?) {
+    private func fetchLatestLeaderboardStatsBatch(
+        userIds: [UUID]
+    ) async throws -> [UUID: (wins: Int?, losses: Int?)] {
+        guard !userIds.isEmpty else { return [:] }
         let response = try await client
             .from("leaderboard_entries")
-            .select("wins, losses, week_start")
-            .eq("user_id", value: userId.uuidString)
+            .select("user_id, wins, losses, week_start")
+            .in("user_id", values: userIds.map(\.uuidString))
             .order("week_start", ascending: false)
-            .limit(1)
             .execute()
-        let row = jsonRows(from: response.data).first
-        return (int(from: row?["wins"]), int(from: row?["losses"]))
+
+        var latestStatsByUser: [UUID: (wins: Int?, losses: Int?)] = [:]
+        for row in jsonRows(from: response.data) {
+            guard let userId = uuid(from: row["user_id"]), latestStatsByUser[userId] == nil else { continue }
+            latestStatsByUser[userId] = (int(from: row["wins"]), int(from: row["losses"]))
+        }
+        return latestStatsByUser
     }
 
-    private func fetchLatestTodaySteps(userId: UUID) async throws -> Int? {
+    private func fetchLatestTodayStepsBatch(userIds: [UUID]) async throws -> [UUID: Int] {
+        guard !userIds.isEmpty else { return [:] }
+        let today = Self.calendarFormatter.string(from: Date())
         let response = try await client
             .from("metric_snapshots")
-            .select("value, synced_at")
-            .eq("user_id", value: userId.uuidString)
+            .select("user_id, value, synced_at")
+            .in("user_id", values: userIds.map(\.uuidString))
             .eq("metric_type", value: "steps")
-            .eq("source_date", value: Self.calendarFormatter.string(from: Date()))
+            .eq("source_date", value: today)
             .order("synced_at", ascending: false)
-            .limit(1)
             .execute()
-        let row = jsonRows(from: response.data).first
-        return int(from: row?["value"])
+
+        var latestStepsByUser: [UUID: Int] = [:]
+        for row in jsonRows(from: response.data) {
+            guard let userId = uuid(from: row["user_id"]), latestStepsByUser[userId] == nil else { continue }
+            if let steps = int(from: row["value"]) {
+                latestStepsByUser[userId] = steps
+            }
+        }
+        return latestStepsByUser
     }
 
     private func fetchMyBaselines(userId: UUID) async throws -> (steps7: Double?, calories7: Double?, steps30: Double?) {
@@ -554,6 +641,67 @@ private struct SetBaselineRPCParams: Encodable, Sendable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(p_match_id, forKey: .p_match_id)
         try c.encode(p_baseline_steps, forKey: .p_baseline_steps)
+    }
+}
+
+/// Params for `public.list_opponent_candidates` (see `supabase/manual_sql/list_opponent_candidates.sql`).
+private struct ListOpponentCandidatesRPCParams: Sendable {
+    let p_query: String
+    let p_metric_type: String
+    let p_viewer_local_date: String
+    let p_limit: Int
+}
+
+extension ListOpponentCandidatesRPCParams: Encodable {
+    nonisolated func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(p_query, forKey: .p_query)
+        try c.encode(p_metric_type, forKey: .p_metric_type)
+        try c.encode(p_viewer_local_date, forKey: .p_viewer_local_date)
+        try c.encode(p_limit, forKey: .p_limit)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case p_query
+        case p_metric_type
+        case p_viewer_local_date
+        case p_limit
+    }
+}
+
+private struct ListOpponentCandidatesRPCRow: Sendable {
+    let id: UUID
+    let display_name: String?
+    let initials: String?
+    let wins: Int?
+    let losses: Int?
+    let today_steps: Int?
+    let rolling_avg_7d_steps: Double?
+    let rolling_avg_7d_calories: Double?
+}
+
+extension ListOpponentCandidatesRPCRow: Decodable {
+    nonisolated init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        display_name = try c.decodeIfPresent(String.self, forKey: .display_name)
+        initials = try c.decodeIfPresent(String.self, forKey: .initials)
+        wins = try c.decodeIfPresent(Int.self, forKey: .wins)
+        losses = try c.decodeIfPresent(Int.self, forKey: .losses)
+        today_steps = try c.decodeIfPresent(Int.self, forKey: .today_steps)
+        rolling_avg_7d_steps = try c.decodeIfPresent(Double.self, forKey: .rolling_avg_7d_steps)
+        rolling_avg_7d_calories = try c.decodeIfPresent(Double.self, forKey: .rolling_avg_7d_calories)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case display_name
+        case initials
+        case wins
+        case losses
+        case today_steps
+        case rolling_avg_7d_steps
+        case rolling_avg_7d_calories
     }
 }
 

@@ -375,8 +375,9 @@ struct ChallengeFlowView: View {
             )
         }
 
-        await loadOpponents(query: "")
-        await loadRivalStrip()
+        async let opponentsLoad: Void = loadOpponents(query: "")
+        async let rivalStripLoad: Void = loadRivalStrip()
+        _ = await (opponentsLoad, rivalStripLoad)
         hydratePrefillFromFetchedOpponents()
         applyLaunchStepIfNeeded()
     }
