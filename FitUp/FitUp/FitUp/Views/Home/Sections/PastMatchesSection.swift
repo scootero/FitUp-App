@@ -36,8 +36,8 @@ struct PastMatchesSection: View {
                     .padding(.vertical, 14)
                     .homeLiquidGlassCard(.base)
             } else {
-                ForEach(displayedMatches) { match in
-                    PastMatchRow(match: match) {
+                ForEach(Array(displayedMatches.enumerated()), id: \.element.id) { index, match in
+                    PastMatchRow(match: match, rowIndex: index) {
                         onOpenMatch(match)
                     }
                 }

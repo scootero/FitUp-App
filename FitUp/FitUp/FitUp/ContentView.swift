@@ -264,6 +264,9 @@ private struct RootShellView: View {
                 },
                 onOpenMatchDetails: { matchId, _ in
                     matchDetailsContext = MatchDetailsContext(matchId: matchId)
+                },
+                onOpenLeaderboard: {
+                    selectedTab = .ranks
                 }
             )
             .trackProductScreen("home", userId: sessionStore.currentProfile?.id)

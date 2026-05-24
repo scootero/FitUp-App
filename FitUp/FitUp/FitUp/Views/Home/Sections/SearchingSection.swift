@@ -23,15 +23,15 @@ struct SearchingSection: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Searching for random opponent...")
-                                .font(FitUpFont.body(13, weight: .bold))
-                                .foregroundStyle(FitUpColors.Text.primary)
+                                .font(FitUpFont.body(14, weight: .bold))
+                                .foregroundStyle(HomePageStyle.offWhite)
                             HStack(spacing: 4) {
                                 Text("Battle search active ·")
                                 Text("\(sportLabel(for: request.metricType)) · \(MatchDurationCopy.competitionLengthBadge(days: request.durationDays)) ·")
                                 SearchingElapsedLabel(createdAt: request.createdAt)
                             }
-                                .font(FitUpFont.body(11, weight: .medium))
-                                .foregroundStyle(FitUpColors.Text.secondary)
+                                .font(FitUpFont.body(12, weight: .medium))
+                                .foregroundStyle(HomePageStyle.muted)
                         }
 
                         Spacer(minLength: 0)

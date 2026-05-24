@@ -11,78 +11,140 @@ struct PodiumView: View {
     /// Top rows in rank order. Only real rows are rendered (no placeholders).
     let rows: [LeaderboardDisplayRow]
 
-    private let secondHeight: CGFloat = 60
-    private let firstHeight: CGFloat = 75
-    private let thirdHeight: CGFloat = 50
-    private let columnWidth: CGFloat = 82
+    private let secondHeight: CGFloat = 68
+    private let firstHeight: CGFloat = 82
+    private let thirdHeight: CGFloat = 58
+    private let columnWidth: CGFloat = 88
+    private let cardCornerRadius: CGFloat = 16
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: .bottom, spacing: 10) {
             if let second = rows[safe: 1] {
-                podiumColumn(row: second, height: secondHeight, medal: "🥈", style: .base)
+                podiumColumn(row: second, height: secondHeight, tier: .silver, avatarSize: 46)
             }
             if let first = rows[safe: 0] {
-                podiumColumnFirst(row: first, height: firstHeight, medal: "🥇")
+                podiumColumnFirst(row: first, height: firstHeight)
             }
             if let third = rows[safe: 2] {
-                podiumColumn(row: third, height: thirdHeight, medal: "🥉", style: .base)
+                podiumColumn(row: third, height: thirdHeight, tier: .bronze, avatarSize: 42)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 16)
+        .padding(.top, 20)
     }
 
-    private func podiumColumnFirst(row: LeaderboardDisplayRow, height: CGFloat, medal: String) -> some View {
-        VStack(spacing: 6) {
-            ZStack(alignment: .top) {
-                Text("👑")
-                    .font(.system(size: 22))
-                    .offset(y: -18)
-                AvatarView(
-                    initials: row.initials,
-                    color: ProfileAccentColor.swiftUIColor(hex: row.colorHex),
-                    size: 54,
-                    glow: true
-                )
-                .padding(.top, 8)
-            }
-            .frame(height: 62)
+    private func podiumColumnFirst(row: LeaderboardDisplayRow, height: CGFloat) -> some View {
+        VStack(spacing: 8) {
+            podiumAvatar(
+                row: row,
+                size: 58,
+                tier: .gold,
+                showCrown: true
+            )
 
-            podiumCardBody(row: row, height: height, medal: medal, pointsColor: FitUpColors.Neon.yellow)
+            podiumCardBody(row: row, height: height, tier: .gold, medal: "🥇")
                 .frame(width: columnWidth, height: height)
-                .glassCard(.gold)
+                .neonLeaderboardPodiumCard(tier: .gold, cornerRadius: cardCornerRadius)
         }
     }
 
-    private func podiumColumn(row: LeaderboardDisplayRow, height: CGFloat, medal: String, style: GlassCardVariant) -> some View {
-        VStack(spacing: 6) {
+    private func podiumColumn(
+        row: LeaderboardDisplayRow,
+        height: CGFloat,
+        tier: LeaderboardPodiumTier,
+        avatarSize: CGFloat
+    ) -> some View {
+        VStack(spacing: 8) {
+            podiumAvatar(row: row, size: avatarSize, tier: tier, showCrown: false)
+
+            podiumCardBody(
+                row: row,
+                height: height,
+                tier: tier,
+                medal: tier == .silver ? "🥈" : "🥉"
+            )
+            .frame(width: columnWidth, height: height)
+            .neonLeaderboardPodiumCard(tier: tier, cornerRadius: cardCornerRadius)
+        }
+    }
+
+    private func podiumAvatar(
+        row: LeaderboardDisplayRow,
+        size: CGFloat,
+        tier: LeaderboardPodiumTier,
+        showCrown: Bool
+    ) -> some View {
+        ZStack(alignment: .top) {
+            if showCrown {
+                Text("👑")
+                    .font(.system(size: 24))
+                    .shadow(color: FitUpColors.Neon.yellow.opacity(0.8), radius: 8, x: 0, y: 0)
+                    .offset(y: -20)
+            }
+
             AvatarView(
                 initials: row.initials,
                 color: ProfileAccentColor.swiftUIColor(hex: row.colorHex),
-                size: 44,
-                glow: false
+                size: size,
+                glow: true
             )
-
-            podiumCardBody(row: row, height: height, medal: medal, pointsColor: FitUpColors.Text.secondary)
-                .frame(width: columnWidth, height: height)
-                .glassCard(style)
+            .overlay {
+                Circle()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                tier.accent.opacity(0.95),
+                                tier.secondaryAccent.opacity(0.75),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: tier.borderLineWidth
+                    )
+                    .frame(width: size + 8, height: size + 8)
+                    .shadow(color: tier.accent.opacity(tier.outerGlowOpacity), radius: tier.outerGlowRadius * 0.45, x: 0, y: 0)
+            }
+            .padding(.top, showCrown ? 10 : 0)
         }
+        .frame(height: showCrown ? 72 : 54)
     }
 
-    private func podiumCardBody(row: LeaderboardDisplayRow, height: CGFloat, medal: String, pointsColor: Color) -> some View {
-        VStack(spacing: 2) {
+    private func podiumCardBody(
+        row: LeaderboardDisplayRow,
+        height: CGFloat,
+        tier: LeaderboardPodiumTier,
+        medal: String
+    ) -> some View {
+        VStack(spacing: 3) {
             Text(medal)
-                .font(.system(size: height >= firstHeight - 1 ? 22 : 20))
+                .font(.system(size: height >= firstHeight - 1 ? 24 : 20))
+                .shadow(color: tier.accent.opacity(0.5), radius: 6, x: 0, y: 0)
+
             Text(shortName(row.displayName))
                 .font(FitUpFont.body(11, weight: .bold))
-                .foregroundStyle(FitUpColors.Text.primary)
+                .foregroundStyle(HomePageStyle.offWhite)
                 .lineLimit(1)
+                .shadow(color: tier.accent.opacity(0.25), radius: 4, x: 0, y: 0)
+
             Text(formatSteps(row.totalSteps))
-                .font(FitUpFont.body(10, weight: .semibold))
-                .foregroundStyle(pointsColor)
+                .font(FitUpFont.mono(10, weight: .bold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [
+                            tier.accent,
+                            tier.secondaryAccent.opacity(0.92),
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .shadow(color: tier.accent.opacity(0.45), radius: 5, x: 0, y: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
     }
 
     private func shortName(_ full: String) -> String {

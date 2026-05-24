@@ -2,62 +2,92 @@
 //  PastMatchRow.swift
 //  FitUp
 //
-//  Slice 10 Activity completed row.
+//  Neon-styled completed battle row (centered layout).
 //
 
 import SwiftUI
 
 struct PastMatchRow: View {
     let match: ActivityCompletedMatch
+    var rowIndex: Int = 0
     var onTap: () -> Void
+
+    private var accent: Color {
+        ActiveBattleRowFormatting.avatarAccent(for: rowIndex)
+    }
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 12) {
-                AvatarView(
-                    initials: match.opponentInitials,
-                    color: color(from: match.opponentColorHex),
-                    size: 38
-                )
+            ZStack(alignment: .topTrailing) {
+                VStack(spacing: 5) {
+                    avatarBlock
 
-                VStack(alignment: .leading, spacing: 3) {
                     Text(match.opponentName)
-                        .font(FitUpFont.display(13, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.primary)
+                        .font(FitUpFont.body(14, weight: .bold))
+                        .foregroundStyle(HomePageStyle.offWhite)
                         .lineLimit(1)
-                    Text("\(sportLabel(for: match.metricType)) · \(match.rangeLabel)")
-                        .font(FitUpFont.body(11, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.secondary)
-                }
+                        .multilineTextAlignment(.center)
 
-                Spacer(minLength: 0)
+                    Text(match.neonScoreText)
+                        .font(FitUpFont.display(22, weight: .black))
+                        .foregroundStyle(HomePageStyle.offWhite)
+                        .shadow(color: match.neonOutcomeColor.opacity(0.28), radius: 4, x: 0, y: 0)
+                        .multilineTextAlignment(.center)
 
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("\(match.myScore) – \(match.theirScore)")
-                        .font(FitUpFont.display(16, weight: .black))
-                        .foregroundStyle(match.myWon ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange)
-                    NeonBadge(
-                        label: match.myWon ? "WIN" : "LOSS",
-                        color: match.myWon ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange
-                    )
+                    VStack(spacing: 2) {
+                        Text(match.neonSportLabel)
+                            .font(FitUpFont.mono(10, weight: .bold))
+                            .tracking(0.6)
+                            .foregroundStyle(HomePageStyle.muted)
+                            .multilineTextAlignment(.center)
+
+                        Text(match.rangeLabel)
+                            .font(FitUpFont.body(11, weight: .medium))
+                            .foregroundStyle(HomePageStyle.faint)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 2)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 2)
+
+                outcomeBadge
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .glassCard(match.myWon ? .win : .lose)
-            .opacity(0.84)
+            .neonRowInsetPlate(accent: accent)
         }
         .buttonStyle(.plain)
     }
 
-    private func sportLabel(for metricType: String) -> String {
-        metricType == "active_calories" ? "Calories" : "Steps"
+    private var avatarBlock: some View {
+        AvatarView(
+            initials: match.opponentInitials,
+            color: ProfileAccentColor.swiftUIColor(hex: match.opponentColorHex),
+            size: 36,
+            glow: true
+        )
+        .overlay {
+            Circle()
+                .strokeBorder(accent.opacity(0.9), lineWidth: 2.5)
+                .frame(width: 42, height: 42)
+                .shadow(color: accent.opacity(0.55), radius: 10, x: 0, y: 0)
+        }
     }
 
-    private func color(from hex: String) -> Color {
-        guard let value = UInt32(hex, radix: 16) else {
-            return FitUpColors.Neon.blue
-        }
-        return Color(rgb: value)
+    private var outcomeBadge: some View {
+        Text(match.neonOutcomeLabel)
+            .font(FitUpFont.mono(10, weight: .heavy))
+            .tracking(0.8)
+            .foregroundStyle(match.neonOutcomeColor)
+            .shadow(color: match.neonOutcomeColor.opacity(0.45), radius: 6, x: 0, y: 0)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background {
+                Capsule()
+                    .fill(match.neonOutcomeColor.opacity(0.12))
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(match.neonOutcomeColor.opacity(0.42), lineWidth: 1)
+                    }
+            }
     }
 }

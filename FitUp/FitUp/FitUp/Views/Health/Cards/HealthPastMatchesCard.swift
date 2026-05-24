@@ -2,7 +2,7 @@
 //  HealthPastMatchesCard.swift
 //  FitUp
 //
-//  Collapsed/expandable completed matches card for Health.
+//  Collapsed/expandable completed matches card for Home.
 //
 
 import SwiftUI
@@ -17,6 +17,7 @@ struct HealthPastMatchesCard: View {
     @State private var isListExpanded = false
 
     private static let collapsedCount = 4
+    private static let titleAccent = FitUpColors.Neon.purple
 
     private var displayedMatches: [ActivityCompletedMatch] {
         isListExpanded ? matches : Array(matches.prefix(Self.collapsedCount))
@@ -28,91 +29,111 @@ struct HealthPastMatchesCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if isExpanded {
-                        isListExpanded = false
+            VStack(alignment: .leading, spacing: isExpanded ? 10 : 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if isExpanded {
+                            isListExpanded = false
+                        }
+                        onToggleExpanded()
                     }
-                    onToggleExpanded()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Text("PAST BATTLES")
-                        .font(FitUpFont.body(11, weight: .heavy))
-                        .fitUpGlobalTitleStyle(weight: .heavy, tracking: 2)
+                } label: {
+                    HStack(spacing: 8) {
+                        NeonPanelTitle(
+                            title: "Past Battles",
+                            style: .compact,
+                            accent: Self.titleAccent
+                        )
 
-                    Spacer(minLength: 0)
+                        Spacer(minLength: 0)
 
-                    if !isLoading, !matches.isEmpty {
-                        Text("\(matches.count)")
-                            .font(FitUpFont.body(11, weight: .semibold))
-                            .foregroundStyle(FitUpColors.Text.secondary)
+                        if !isLoading, !matches.isEmpty {
+                            Text("\(matches.count)")
+                                .font(FitUpFont.mono(11, weight: .bold))
+                                .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.92))
+                        }
+
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(HomePageStyle.muted)
                     }
-
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .homeLiquidGlassCard(.base)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Past battles")
+                .accessibilityValue(
+                    isLoading
+                        ? "Loading"
+                        : (matches.isEmpty ? "No completed battles" : "\(matches.count) completed")
+                )
+                .accessibilityHint(isExpanded ? "Double tap to collapse" : "Double tap to expand past battles")
+
+                if isExpanded {
+                    expandedContent
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Past battles")
-            .accessibilityValue(
-                isLoading
-                    ? "Loading"
-                    : (matches.isEmpty ? "No completed battles" : "\(matches.count) completed")
-            )
-            .accessibilityHint(isExpanded ? "Double tap to collapse" : "Double tap to expand past battles")
+            .padding(.horizontal, 12)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .neonRivalryPanel()
+        }
+    }
 
-            if isExpanded {
-                if isLoading {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                            .tint(FitUpColors.Neon.cyan)
-                        Text("Loading completed battles...")
-                            .font(FitUpFont.body(13, weight: .medium))
-                            .foregroundStyle(FitUpColors.Text.secondary)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 14)
-                    .homeLiquidGlassCard(.base)
-                } else if matches.isEmpty {
-                    Text("No completed battles yet.")
-                        .font(FitUpFont.body(13, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 14)
-                        .homeLiquidGlassCard(.base)
-                } else {
-                    ForEach(displayedMatches) { match in
-                        PastMatchRow(match: match) {
-                            onOpenMatch(match)
-                        }
+    @ViewBuilder
+    private var expandedContent: some View {
+        if isLoading {
+            HStack(spacing: 10) {
+                ProgressView()
+                    .tint(FitUpColors.Neon.cyan)
+                Text("Loading completed battles...")
+                    .font(FitUpFont.body(14, weight: .medium))
+                    .foregroundStyle(HomePageStyle.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 10)
+            .neonRowInsetPlate(accent: Self.titleAccent)
+        } else if matches.isEmpty {
+            Text("No completed battles yet.")
+                .font(FitUpFont.body(14, weight: .medium))
+                .foregroundStyle(HomePageStyle.muted)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 12)
+                .neonRowInsetPlate(accent: Self.titleAccent)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(displayedMatches.enumerated()), id: \.element.id) { index, match in
+                    if index > 0 {
+                        NeonRowSeparator()
                     }
 
-                    if matches.count > Self.collapsedCount {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                isListExpanded.toggle()
-                            }
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: isListExpanded ? "chevron.up" : "chevron.down")
-                                    .font(.system(size: 12, weight: .bold))
-                                Text(isListExpanded ? "Show less" : "Show \(hiddenCount) more")
-                                    .font(FitUpFont.body(13, weight: .semibold))
-                            }
-                            .foregroundStyle(FitUpColors.Text.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .padding(.horizontal, 14)
-                            .homeLiquidGlassCard(.base)
-                        }
-                        .buttonStyle(.plain)
+                    PastMatchRow(match: match, rowIndex: index) {
+                        onOpenMatch(match)
                     }
+                }
+
+                if matches.count > Self.collapsedCount {
+                    NeonRowSeparator()
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isListExpanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: isListExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 11, weight: .bold))
+                            Text(isListExpanded ? "Show less" : "Show \(hiddenCount) more")
+                                .font(FitUpFont.mono(11, weight: .bold))
+                                .tracking(0.4)
+                        }
+                        .foregroundStyle(HomePageStyle.muted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .neonRowInsetPlate(accent: FitUpColors.Neon.blue.opacity(0.65))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }

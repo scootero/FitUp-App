@@ -9,7 +9,7 @@ import SwiftUI
 
 private let useEnergyBeamHomeHero = true
 /// Approximates loaded energy beam hero height (card + beam + chart + day bar) for skeleton parity.
-private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 428
+private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 500
 /// Horizontal inset for the energy beam hero only (slightly tighter than the rest of Home).
 private let homeHeroHorizontalPadding: CGFloat = 15
 
@@ -19,6 +19,7 @@ struct HomeView: View {
     let showOnboardingSearching: Bool
     var onOpenChallenge: (ChallengePrefillOpponent?) -> Void
     var onOpenMatchDetails: (UUID, String) -> Void
+    var onOpenLeaderboard: () -> Void
 
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.scenePhase) private var scenePhase
@@ -36,6 +37,7 @@ struct HomeView: View {
     @State private var handoffOpponentRevealKickoff = UUID()
     @State private var handoffKeepOpponentBlackedOut = false
     @State private var handoffFinishTask: Task<Void, Never>?
+    @State private var showIdleHeroTour = false
 
     var body: some View {
         ZStack {
@@ -79,11 +81,27 @@ struct HomeView: View {
                     Group {
                         heroSummaryLine
                         battleStatusStrip
-                        battleMiniStatsGrid
+                        ActiveBattlesNeonSection(
+                            matches: viewModel.isInitialLoading ? [] : viewModel.sortedActiveMatchesForHome,
+                            summary: viewModel.battleSummaryStats,
+                            leaderboardRankDisplay: viewModel.globalLeaderboardRankDisplay,
+                            onOpenMatch: { match in
+                                onOpenMatchDetails(match.id, match.opponent.displayName)
+                            },
+                            onOpenWinningMatch: {
+                                guard let match = viewModel.primaryWinningMatchForHome else { return }
+                                onOpenMatchDetails(match.id, match.opponent.displayName)
+                            },
+                            onOpenLosingMatch: {
+                                guard let match = viewModel.primaryLosingMatchForHome else { return }
+                                onOpenMatchDetails(match.id, match.opponent.displayName)
+                            },
+                            onOpenLeaderboard: onOpenLeaderboard
+                        )
 
                         if let errorMessage = viewModel.errorMessage, !errorMessage.isEmpty {
                             Text(errorMessage)
-                                .font(FitUpFont.body(12, weight: .semibold))
+                                .font(FitUpFont.body(14, weight: .semibold))
                                 .foregroundStyle(FitUpColors.Neon.pink)
                                 .padding(.horizontal, 2)
                         }
@@ -91,13 +109,6 @@ struct HomeView: View {
                         if viewModel.isInitialLoading {
                             deferredSectionsLoadingSkeleton
                         } else {
-                            ActiveSection(
-                                matches: viewModel.sortedActiveMatchesForHome,
-                                onOpenMatch: { match in
-                                    onOpenMatchDetails(match.id, match.opponent.displayName)
-                                }
-                            )
-
                             pendingAndSearchingSection
 
                             if !viewModel.hasAnyContent, !viewModel.isLoading {
@@ -172,6 +183,14 @@ struct HomeView: View {
             }
 
             friendNotificationTopStack
+
+            if showIdleHeroTour {
+                HomeIdleHeroTourOverlay {
+                    dismissIdleHeroTour()
+                }
+                .zIndex(5)
+                .transition(.opacity)
+            }
         }
         .transaction { transaction in
             transaction.disablesAnimations = true
@@ -196,6 +215,12 @@ struct HomeView: View {
             clearSearchingFlagIfHasMatch()
             viewModel.syncHeroMetricWithActiveMatches()
             startInviteWaitingPulse()
+            evaluateIdleHeroTourPresentation()
+        }
+        .onChange(of: sessionStore.pendingHomeIdleHeroTour) { _, pending in
+            if pending {
+                evaluateIdleHeroTourPresentation()
+            }
         }
         .onChange(of: sessionStore.homeSnapshotRefreshToken) { _, _ in
             Task { await viewModel.reload(force: true) }
@@ -206,6 +231,9 @@ struct HomeView: View {
             homeFirstRenderAt = Date()
         }
         .onChange(of: viewModel.isHeroLoading) { _, isHeroLoading in
+            if !isHeroLoading {
+                evaluateIdleHeroTourPresentation()
+            }
             guard !isHeroLoading, !hasLoggedHeroFirstRender else { return }
             hasLoggedHeroFirstRender = true
             let elapsedMs: Int
@@ -221,6 +249,11 @@ struct HomeView: View {
                 userId: profile?.id,
                 metadata: ["elapsed_ms_from_first_render": "\(elapsedMs)"]
             )
+        }
+        .onChange(of: viewModel.featuredHomeStepMatch?.id) { _, _ in
+            if viewModel.featuredHomeStepMatch != nil {
+                showIdleHeroTour = false
+            }
         }
         .onChange(of: viewModel.isInitialLoading) { _, isInitialLoading in
             guard !isInitialLoading, !hasLoggedFirstDataLoaded else { return }
@@ -297,7 +330,10 @@ struct HomeView: View {
             handoffIntroKickoff: handoffIntroKickoff,
             handoffOpponentRevealKickoff: handoffOpponentRevealKickoff,
             handoffKeepOpponentBlackedOut: handoffKeepOpponentBlackedOut,
-            onStartBattle: onStartBattle
+            onStartBattle: onStartBattle,
+            idleTodaySteps: viewModel.heroIdleTodaySteps,
+            idleUserBattleScore: viewModel.heroIdleUserBattleScore,
+            isSearchInProgress: viewModel.activeSearchCount > 0
         )
     }
 
@@ -535,18 +571,40 @@ struct HomeView: View {
         }
     }
 
+    private func evaluateIdleHeroTourPresentation() {
+        guard useEnergyBeamHomeHero else { return }
+        guard !viewModel.isHeroLoading else { return }
+        guard viewModel.featuredHomeStepMatch == nil else {
+            showIdleHeroTour = false
+            return
+        }
+        guard let profileId = profile?.id else { return }
+        let shouldShow = sessionStore.pendingHomeIdleHeroTour
+            || sessionStore.shouldShowHomeIdleHeroTour(profileId: profileId)
+        showIdleHeroTour = shouldShow
+    }
+
+    private func dismissIdleHeroTour() {
+        showIdleHeroTour = false
+        if let profileId = profile?.id {
+            sessionStore.markHomeIdleHeroTourSeen(profileId: profileId)
+        }
+    }
+
     private var heroSummaryLine: some View {
         Group {
             if let text = viewModel.heroSummaryText {
                 Text(text)
-                    .font(FitUpFont.body(12, weight: .semibold))
+                    .font(FitUpFont.body(14, weight: .semibold))
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [FitUpColors.Text.secondary, FitUpColors.Neon.cyan.opacity(0.86)],
+                            colors: [HomePageStyle.muted, FitUpColors.Neon.cyan.opacity(0.92)],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
                     )
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .multilineTextAlignment(.center)
                     .padding(.horizontal, 2)
             }
         }
@@ -575,8 +633,8 @@ struct HomeView: View {
                 .fill(statusDotColor(for: state))
                 .frame(width: 8, height: 8)
             Text(viewModel.statusStripMessage)
-                .font(FitUpFont.body(12, weight: .semibold))
-                .foregroundStyle(FitUpColors.Text.primary)
+                .font(FitUpFont.body(14, weight: .semibold))
+                .foregroundStyle(HomePageStyle.offWhite)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
             Spacer(minLength: 0)
@@ -623,51 +681,6 @@ struct HomeView: View {
         }
     }
 
-    private var battleMiniStatsGrid: some View {
-        let summary = viewModel.battleSummaryStats
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-            miniStatCard(
-                label: "Winning",
-                value: summary.winningCount.map(String.init) ?? "--",
-                accent: FitUpColors.Neon.green
-            )
-            miniStatCard(
-                label: "Losing",
-                value: summary.losingCount.map(String.init) ?? "--",
-                accent: FitUpColors.Neon.orange
-            )
-            miniStatCard(
-                label: "Closest Lead",
-                value: summary.closestLead.map(formattedSignedMargin) ?? "--",
-                accent: FitUpColors.Neon.cyan
-            )
-            miniStatCard(
-                label: "Closest Deficit",
-                value: summary.closestDeficit.map { abs($0).formatted() } ?? "--",
-                accent: FitUpColors.Neon.red
-            )
-        }
-    }
-
-    private func miniStatCard(label: String, value: String, accent: Color) -> some View {
-        VStack(spacing: 3) {
-            Text(value)
-                .font(FitUpFont.display(15, weight: .black))
-                .foregroundStyle(accent)
-                .lineLimit(1)
-                .minimumScaleFactor(0.65)
-            Text(label.uppercased())
-                .font(FitUpFont.mono(8, weight: .semibold))
-                .foregroundStyle(FitUpColors.Text.tertiary)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .padding(.horizontal, 6)
-        .homeLiquidGlassCard(.base)
-    }
-
     private func statusDotColor(for state: HomeViewModel.StatusStripState) -> Color {
         switch state {
         case .searching:
@@ -698,8 +711,8 @@ struct HomeView: View {
                 .font(FitUpFont.display(24, weight: .black))
             .fitUpGlobalTitleStyle(weight: .black, tracking: 0.25)
             Text("Start a battle to compete today.")
-                .font(FitUpFont.body(14, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.secondary)
+                .font(FitUpFont.body(15, weight: .medium))
+                .foregroundStyle(HomePageStyle.muted)
             Button("New Battle") {
                 onOpenChallenge(nil)
             }

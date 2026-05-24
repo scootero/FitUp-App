@@ -16,6 +16,9 @@ struct LeaderboardView: View {
     var body: some View {
         GeometryReader { scrollGeo in
             ZStack(alignment: .bottom) {
+                LeaderboardArcadeBackground()
+                    .ignoresSafeArea()
+
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         header
@@ -24,24 +27,26 @@ struct LeaderboardView: View {
                             Text(errorMessage)
                                 .font(FitUpFont.body(12, weight: .semibold))
                                 .foregroundStyle(FitUpColors.Neon.pink)
+                                .shadow(color: FitUpColors.Neon.pink.opacity(0.4), radius: 6, x: 0, y: 0)
                                 .padding(.bottom, 8)
                         }
 
                         tabToggle
-                            .padding(.bottom, 18)
+                            .padding(.bottom, 20)
 
                         if viewModel.isLoading {
                             ProgressView()
                                 .tint(FitUpColors.Neon.cyan)
+                                .shadow(color: FitUpColors.Neon.cyan.opacity(0.5), radius: 10, x: 0, y: 0)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 24)
+                                .padding(.vertical, 32)
                         } else if viewModel.tab == .friends && viewModel.friendsHasNoFriends {
                             friendsEmptyState
                         } else if viewModel.podiumRows.isEmpty && viewModel.listRows.isEmpty {
                             emptyLeaderboardState
                         } else {
                             PodiumView(rows: viewModel.podiumRows)
-                                .padding(.bottom, 20)
+                                .padding(.bottom, 22)
 
                             ForEach(viewModel.listRows) { row in
                                 RankedRowView(row: row, scrollGeo: scrollGeo) {
@@ -64,12 +69,12 @@ struct LeaderboardView: View {
                                         )
                                     )
                                 }
-                                .padding(.bottom, 8)
+                                .padding(.bottom, 10)
                             }
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.bottom, viewModel.shouldShowPinnedUserBar ? 88 : 20)
+                    .padding(.bottom, viewModel.shouldShowPinnedUserBar ? 92 : 24)
                 }
                 .scrollIndicators(.hidden)
 
@@ -100,26 +105,25 @@ struct LeaderboardView: View {
 
     private var header: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Weekly Steps")
-                    .font(FitUpFont.display(22, weight: .heavy))
-                    .foregroundStyle(FitUpColors.Text.primary)
+            VStack(alignment: .leading, spacing: 4) {
+                NeonPanelTitle(title: "Weekly Steps", style: .standard, accent: FitUpColors.Neon.pink)
                 Text(viewModel.weekRangeLabel)
-                    .font(FitUpFont.body(11, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .font(FitUpFont.mono(11, weight: .semibold))
+                    .foregroundStyle(HomePageStyle.muted)
             }
             Spacer(minLength: 0)
-            NeonBadge(label: "MON-SUN", color: FitUpColors.Neon.cyan)
+            NeonBadge(label: "MON–SUN", color: FitUpColors.Neon.cyan)
+                .shadow(color: FitUpColors.Neon.cyan.opacity(0.35), radius: 8, x: 0, y: 0)
         }
         .padding(.top, 10)
-        .padding(.bottom, 14)
+        .padding(.bottom, 16)
     }
 
     private var tabToggle: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             ForEach(LeaderboardViewModel.LeaderboardTab.allCases, id: \.self) { tab in
-                LeaderboardTabSegmentButton(
-                    tab: tab,
+                NeonLeaderboardTabSegment(
+                    title: tab.title,
                     isSelected: viewModel.tab == tab
                 ) {
                     viewModel.tab = tab
@@ -129,29 +133,35 @@ struct LeaderboardView: View {
     }
 
     private var friendsEmptyState: some View {
-        Text("Add friends from Profile to see them ranked here for this week.")
-            .font(FitUpFont.body(14, weight: .medium))
-            .foregroundStyle(FitUpColors.Text.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .glassCard(.base)
+        emptyStateCard(
+            "Add friends from Profile to see them ranked here for this week."
+        )
     }
 
     private var emptyLeaderboardState: some View {
-        Text(viewModel.tab == .friends ? "No friends have logged steps this week yet." : "No step totals yet this week.")
+        emptyStateCard(
+            viewModel.tab == .friends
+                ? "No friends have logged steps this week yet."
+                : "No step totals yet this week."
+        )
+    }
+
+    private func emptyStateCard(_ message: String) -> some View {
+        Text(message)
             .font(FitUpFont.body(14, weight: .medium))
-            .foregroundStyle(FitUpColors.Text.secondary)
+            .foregroundStyle(HomePageStyle.muted)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .glassCard(.base)
+            .neonLeaderboardRow()
     }
 
     private func pinnedUserBar(_ row: LeaderboardDisplayRow) -> some View {
         HStack(alignment: .center, spacing: 12) {
             Text("\(row.displayRank)")
-                .font(FitUpFont.body(13, weight: .bold))
+                .font(FitUpFont.mono(13, weight: .bold))
                 .foregroundStyle(FitUpColors.Neon.cyan)
-                .frame(width: 20, alignment: .center)
+                .shadow(color: FitUpColors.Neon.cyan.opacity(0.45), radius: 6, x: 0, y: 0)
+                .frame(width: 22, alignment: .center)
 
             AvatarView(
                 initials: row.initials,
@@ -159,28 +169,46 @@ struct LeaderboardView: View {
                 size: 38,
                 glow: true
             )
+            .overlay {
+                Circle()
+                    .strokeBorder(FitUpColors.Neon.cyan.opacity(0.85), lineWidth: 2)
+                    .frame(width: 44, height: 44)
+                    .shadow(color: FitUpColors.Neon.cyan.opacity(0.4), radius: 8, x: 0, y: 0)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("You")
-                    .font(FitUpFont.body(13, weight: .bold))
-                    .foregroundStyle(FitUpColors.Neon.cyan)
+                HStack(spacing: 6) {
+                    Text("You")
+                        .font(FitUpFont.body(13, weight: .bold))
+                        .foregroundStyle(FitUpColors.Neon.cyan)
+                    Text("ME")
+                        .font(FitUpFont.mono(9, weight: .bold))
+                        .foregroundStyle(FitUpColors.Neon.pink)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background {
+                            Capsule()
+                                .fill(FitUpColors.Neon.pink.opacity(0.16))
+                                .overlay {
+                                    Capsule()
+                                        .strokeBorder(FitUpColors.Neon.pink.opacity(0.45), lineWidth: 1)
+                                }
+                        }
+                }
                 Text("Weekly steps")
                     .font(FitUpFont.body(11, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .foregroundStyle(HomePageStyle.muted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(formatSteps(row.totalSteps))
-                .font(FitUpFont.body(14, weight: .bold))
+                .font(FitUpFont.mono(13, weight: .bold))
                 .foregroundStyle(FitUpColors.Neon.cyan)
+                .shadow(color: FitUpColors.Neon.cyan.opacity(0.35), radius: 6, x: 0, y: 0)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .glassCard(.win)
-        .overlay {
-            RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
-                .strokeBorder(FitUpColors.Neon.cyan.opacity(0.25), lineWidth: 1)
-        }
+        .neonLeaderboardRow(isCurrentUser: true, isPinned: true)
     }
 
     private func formatSteps(_ value: Int) -> String {
@@ -188,37 +216,5 @@ struct LeaderboardView: View {
         f.numberStyle = .decimal
         let formatted = f.string(from: NSNumber(value: value)) ?? "\(value)"
         return "\(formatted) steps"
-    }
-}
-
-// MARK: - Global / Friends segmented control (extracted for faster type-checking)
-
-private struct LeaderboardTabSegmentButton: View {
-    let tab: LeaderboardViewModel.LeaderboardTab
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(tab.title)
-                .font(FitUpFont.body(12, weight: .bold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .foregroundStyle(isSelected ? FitUpColors.Neon.cyan : FitUpColors.Text.secondary)
-                .background {
-                    Capsule()
-                        .fill(isSelected ? FitUpColors.Neon.cyanDim : Color.white.opacity(0.05))
-                        .overlay {
-                            Capsule()
-                                .strokeBorder(
-                                    isSelected
-                                        ? FitUpColors.Neon.cyan.opacity(0.31)
-                                        : Color.white.opacity(0.08),
-                                    lineWidth: 1
-                                )
-                        }
-                }
-        }
-        .buttonStyle(.plain)
     }
 }

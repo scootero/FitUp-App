@@ -105,6 +105,18 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var heroViewerHealthKitStepsReadAt: Date?
     /// Latest opponent intraday tick `recorded_at` from the last successful sparkline fetch (Slice 6).
     @Published private(set) var heroOpponentIntradayLatestTickAt: Date?
+    /// Today's steps for the idle hero when no active step battle (HealthKit).
+    @Published private(set) var heroIdleTodaySteps: Int = 0
+    /// Solo battle score for idle hero (balanced against user's own step goal baseline).
+    var heroIdleUserBattleScore: Int {
+        let baseline = Double(ReadinessGoals.loadFromUserDefaults().stepsGoal)
+        return HomeActiveMatch.battleScore(
+            actualSteps: heroIdleTodaySteps,
+            myBaseline: baseline,
+            theirBaseline: baseline
+        )
+    }
+
     /// Slice 7: non-nil while the “new opponent” handoff overlay blocks the energy hero card.
     @Published private(set) var heroOpponentHandoff: HeroOpponentHandoffOverlayModel?
     @Published private(set) var isHeroLoading = true
@@ -112,6 +124,13 @@ final class HomeViewModel: ObservableObject {
     /// Full rows for the expandable Past Matches card (warmed by stats refresh; lazy-loaded if empty).
     @Published private(set) var completedMatches: [ActivityCompletedMatch] = []
     @Published private(set) var isLoadingCompletedMatches = false
+    /// Global weekly steps rank (Ranks tab RPC); nil until cache or background fetch resolves.
+    @Published private(set) var globalLeaderboardRank: Int?
+
+    var globalLeaderboardRankDisplay: String {
+        guard let globalLeaderboardRank else { return "--" }
+        return "#\(globalLeaderboardRank)"
+    }
 
     var hasAnyContent: Bool {
         !searchingRequests.isEmpty || !activeMatches.isEmpty || !pendingMatches.isEmpty
@@ -134,6 +153,9 @@ final class HomeViewModel: ObservableObject {
     private let friendshipRepository = FriendshipRepository()
     private let snapshotCacheStore = HomeSnapshotCacheStore()
     private let battleStatsCacheStore = HomeBattleStatsCacheStore()
+    private let leaderboardSnapshotCache = LeaderboardSnapshotCacheStore()
+    private let leaderboardRepository = LeaderboardRepository()
+    private var leaderboardRankRefreshTask: Task<Void, Never>?
     private var userId: UUID?
     private var profileTimeZoneIdentifier: String?
     private var myDisplayName: String = "You"
@@ -340,6 +362,16 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
+    /// Closest losing battle for Home stat-card deep link (smallest deficit first).
+    var primaryLosingMatchForHome: HomeActiveMatch? {
+        sortedActiveMatchesForHome.first { $0.comparableMargin < 0 }
+    }
+
+    /// Closest winning battle for Home stat-card deep link (smallest lead / biggest threat first).
+    var primaryWinningMatchForHome: HomeActiveMatch? {
+        sortedActiveMatchesForHome.first { $0.comparableMargin > 0 }
+    }
+
     func start(profile: Profile?, showOnboardingSearching: Bool, sessionStore: SessionStore) {
         guard let profileId = profile?.id else { return }
         self.sessionStore = sessionStore
@@ -367,6 +399,7 @@ final class HomeViewModel: ObservableObject {
             heroSparklineOpponentSeries = nil
             heroViewerHealthKitStepsReadAt = nil
             heroOpponentIntradayLatestTickAt = nil
+            heroIdleTodaySteps = 0
             heroSparklineLoadGeneration &+= 1
             heroOpponentHandoff = nil
             heroLoadStartedAt = Date()
@@ -453,6 +486,9 @@ final class HomeViewModel: ObservableObject {
         statsRefreshTask = nil
         completedMatchesListTask?.cancel()
         completedMatchesListTask = nil
+        leaderboardRankRefreshTask?.cancel()
+        leaderboardRankRefreshTask = nil
+        globalLeaderboardRank = nil
         matchFoundCelebration = nil
         matchActiveCelebration = nil
         deferredMatchActiveCelebration = nil
@@ -526,6 +562,8 @@ final class HomeViewModel: ObservableObject {
         activeMatches = applyHealthKitOverrides(to: snapshot.activeMatches)
         pendingMatches = snapshot.pendingMatches
         discoverUsers = snapshot.discoverUsers
+        applyLeaderboardRankFromCache(profileId: userId)
+        scheduleGlobalLeaderboardRankRefresh(profileId: userId)
         syncHeroMetricWithActiveMatches()
         if isHeroLoading { isHeroLoading = false }
         persistFreshHeroSnapshot(profileId: userId)
@@ -898,6 +936,7 @@ final class HomeViewModel: ObservableObject {
             heroSparklineUserSeries = nil
             heroSparklineOpponentSeries = nil
             heroOpponentIntradayLatestTickAt = nil
+            scheduleIdleHeroSparklineRefresh()
             return
         }
         guard normalizedHeroMetricType(match.metricType) == "steps" else {
@@ -925,6 +964,30 @@ final class HomeViewModel: ObservableObject {
             self.heroSparklineUserSeries = result.userSeries
             self.heroSparklineOpponentSeries = result.opponentSeries
             self.heroOpponentIntradayLatestTickAt = result.opponentLatestTickRecordedAt
+        }
+    }
+
+    private func scheduleIdleHeroSparklineRefresh() {
+        heroSparklineFetchTask?.cancel()
+        guard featuredHomeStepMatch == nil else { return }
+
+        heroSparklineLoadGeneration &+= 1
+        let generation = heroSparklineLoadGeneration
+        let tzId = profileTimeZoneIdentifier
+        let todaySteps = heroIdleTodaySteps
+
+        heroSparklineFetchTask = Task { [weak self] in
+            guard let self else { return }
+            let series = await HomeHeroSparklineLoader.loadIdleUserSparkline(
+                profileTimeZoneIdentifier: tzId,
+                myToday: todaySteps
+            )
+            guard !Task.isCancelled else { return }
+            guard self.heroSparklineLoadGeneration == generation else { return }
+            guard self.featuredHomeStepMatch == nil else { return }
+            self.heroSparklineUserSeries = series
+            self.heroSparklineOpponentSeries = nil
+            self.heroOpponentIntradayLatestTickAt = nil
         }
     }
 
@@ -959,12 +1022,40 @@ final class HomeViewModel: ObservableObject {
 
     private func scheduleHeroHealthKitPatch() {
         guard let userId else { return }
-        guard activeMatches.first != nil else { return }
         heroHealthKitPatchTask?.cancel()
         heroHealthKitPatchTask = Task { [weak self] in
             guard let self else { return }
-            await self.executeHeroHealthKitPatch(userId: userId)
+            if self.activeMatches.first != nil {
+                await self.executeHeroHealthKitPatch(userId: userId)
+            } else if self.featuredHomeStepMatch == nil {
+                await self.executeIdleHeroHealthKitPatch(userId: userId)
+            }
         }
+    }
+
+    private func executeIdleHeroHealthKitPatch(userId: UUID) async {
+        let readStartedAt = Date()
+        let value: Int
+        do {
+            value = try await HealthKitService.fetchTodayStepCount()
+        } catch {
+            scheduleIdleHeroSparklineRefresh()
+            return
+        }
+        guard self.userId == userId else { return }
+        if heroIdleTodaySteps != value {
+            heroIdleTodaySteps = value
+            heroViewerHealthKitStepsReadAt = Date()
+            AppLogger.log(
+                category: "home_perf",
+                level: .info,
+                message: "idle_hero_hk_patch",
+                userId: userId,
+                metadata: ["value": "\(value)"]
+            )
+        }
+        scheduleIdleHeroSparklineRefresh()
+        _ = readStartedAt
     }
 
     private func executeHeroHealthKitPatch(userId: UUID) async {
@@ -1197,6 +1288,67 @@ final class HomeViewModel: ObservableObject {
         )
     }
 
+    // MARK: - Global leaderboard rank (Home stat card)
+
+    private func applyLeaderboardRankFromCache(profileId: UUID) {
+        let weekStart = LeaderboardRepository.weekStartUTC()
+        let weekStartIso = LeaderboardRepository.weekStartISOString(from: weekStart)
+        guard let entries = leaderboardSnapshotCache.load(
+            profileId: profileId,
+            weekStartIso: weekStartIso,
+            tabRaw: LeaderboardRepository.LeaderboardScope.global.rawValue
+        ) else {
+            return
+        }
+        globalLeaderboardRank = Self.rank(for: profileId, in: entries)
+    }
+
+    private func scheduleGlobalLeaderboardRankRefresh(profileId: UUID) {
+        leaderboardRankRefreshTask?.cancel()
+        leaderboardRankRefreshTask = Task { [weak self] in
+            await self?.refreshGlobalLeaderboardRankInBackground(profileId: profileId)
+        }
+    }
+
+    private func refreshGlobalLeaderboardRankInBackground(profileId: UUID) async {
+        let weekStart = LeaderboardRepository.weekStartUTC()
+        let weekStartIso = LeaderboardRepository.weekStartISOString(from: weekStart)
+        let tabRaw = LeaderboardRepository.LeaderboardScope.global.rawValue
+
+        if globalLeaderboardRank == nil,
+           let cached = leaderboardSnapshotCache.load(
+               profileId: profileId,
+               weekStartIso: weekStartIso,
+               tabRaw: tabRaw
+           ),
+           let rank = Self.rank(for: profileId, in: cached) {
+            globalLeaderboardRank = rank
+        }
+
+        guard !Task.isCancelled else { return }
+
+        do {
+            let entries = try await leaderboardRepository.fetchWeeklyStepsLeaderboard(
+                weekStart: weekStart,
+                scope: .global
+            )
+            guard !Task.isCancelled else { return }
+            leaderboardSnapshotCache.save(
+                entries: entries,
+                profileId: profileId,
+                weekStartIso: weekStartIso,
+                tabRaw: tabRaw
+            )
+            globalLeaderboardRank = Self.rank(for: profileId, in: entries)
+        } catch {
+            // Keep cache-derived rank or "--"; do not block Home.
+        }
+    }
+
+    private static func rank(for profileId: UUID, in entries: [WeeklyStepsLeaderboardRecord]) -> Int? {
+        entries.first(where: { $0.userId == profileId })?.rank
+    }
+
     // MARK: - Home Hero Snapshot Cache
 
     private func loadHeroSnapshotFromDisk(profileId: UUID) {
@@ -1221,6 +1373,8 @@ final class HomeViewModel: ObservableObject {
 
         heroMetric = .steps
         activeMatches = applyHealthKitOverrides(to: snapshotCacheStore.toDomain(cached))
+        applyLeaderboardRankFromCache(profileId: profileId)
+        scheduleGlobalLeaderboardRankRefresh(profileId: profileId)
         syncHeroMetricWithActiveMatches()
         isHeroLoading = false
         heroStateResolvedAt = now

@@ -22,6 +22,19 @@ enum MatchDurationCopy {
         return "Day \(c) of \(t)"
     }
 
+    /// Day-wins needed to take the match (3→2, 5→3, 7→4).
+    static func winsTarget(totalDays: Int) -> Int {
+        max((max(totalDays, 1) + 1) / 2, 1)
+    }
+
+    /// Home active battle row (e.g. "Day 3 of 7 (first to 4 wins)").
+    static func dayProgressWithWinsTarget(current: Int, totalDays: Int) -> String {
+        let t = max(totalDays, 1)
+        let c = min(max(current, 1), t)
+        let wins = winsTarget(totalDays: t)
+        return "Day \(c) of \(t) (first to \(wins) wins)"
+    }
+
     /// Under the series progress bar on match details.
     static func daysRemainingToWin(finalizedCount: Int, totalDays: Int) -> String {
         let total = max(totalDays, 1)

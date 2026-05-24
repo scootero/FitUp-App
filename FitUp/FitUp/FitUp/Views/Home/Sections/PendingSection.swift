@@ -98,20 +98,20 @@ private struct PendingMatchRow: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(titleText)
-                            .font(FitUpFont.display(14, weight: .bold))
-                            .foregroundStyle(FitUpColors.Text.primary)
+                            .font(FitUpFont.display(15, weight: .bold))
+                            .foregroundStyle(HomePageStyle.offWhite)
                             .lineLimit(2)
                         HStack(spacing: 5) {
                             Image(systemName: subtitleIconName)
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(subtitleIconColor)
                             Text(subtitleText)
-                                .font(FitUpFont.body(11, weight: .medium))
-                                .foregroundStyle(FitUpColors.Text.secondary)
+                                .font(FitUpFont.body(13, weight: .medium))
+                                .foregroundStyle(HomePageStyle.muted)
                         }
                         Text("\(match.sportLabel) · \(match.seriesLabel)")
-                            .font(FitUpFont.mono(10, weight: .semibold))
-                            .foregroundStyle(FitUpColors.Text.tertiary)
+                            .font(FitUpFont.mono(11, weight: .semibold))
+                            .foregroundStyle(HomePageStyle.faint)
                     }
 
                     Spacer(minLength: 0)
