@@ -30,7 +30,7 @@ struct ChatThreadView: View {
 
     var body: some View {
         ZStack {
-            MessagingArenaBackground()
+            MessagingBackground()
 
             VStack(spacing: 0) {
                 if let err = viewModel.bannerError, !err.isEmpty {
@@ -112,27 +112,39 @@ struct ChatThreadView: View {
             if mine { Spacer(minLength: MessagingLayout.bubbleSideGutter) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
                 Text(msg.body)
-                    .font(FitUpFont.body(16, weight: .semibold))
+                    .font(FitUpFont.body(18, weight: .bold))
                     .foregroundStyle(Color.white)
+                    .shadow(
+                        color: mine
+                            ? FitUpColors.Neon.cyan.opacity(0.55)
+                            : FitUpColors.Neon.orange.opacity(0.45),
+                        radius: 6
+                    )
                     .multilineTextAlignment(mine ? .trailing : .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 14)
                     .background(bubbleFill(mine: mine))
                     .overlay(bubbleStroke(mine: mine))
                     .shadow(
                         color: mine
-                            ? FitUpColors.Neon.cyan.opacity(0.35)
-                            : FitUpColors.Neon.orange.opacity(0.28),
-                        radius: mine ? 10 : 6,
-                        y: 3
+                            ? FitUpColors.Neon.cyan.opacity(0.45)
+                            : FitUpColors.Neon.orange.opacity(0.35),
+                        radius: mine ? 14 : 8,
+                        y: 4
                     )
 
                 Text(msg.createdAt.formatted(date: .omitted, time: .shortened))
-                    .font(FitUpFont.mono(10, weight: .semibold))
+                    .font(FitUpFont.mono(11, weight: .bold))
                     .foregroundStyle(
                         mine
-                            ? FitUpColors.Neon.cyan.opacity(0.9)
-                            : FitUpColors.Neon.orange.opacity(0.75)
+                            ? FitUpColors.Neon.cyan
+                            : FitUpColors.Neon.orange.opacity(0.85)
+                    )
+                    .shadow(
+                        color: mine
+                            ? FitUpColors.Neon.cyan.opacity(0.4)
+                            : FitUpColors.Neon.orange.opacity(0.3),
+                        radius: 4
                     )
             }
             .frame(maxWidth: MessagingLayout.bubbleMaxWidth, alignment: mine ? .trailing : .leading)
@@ -186,8 +198,9 @@ struct ChatThreadView: View {
         HStack(alignment: .bottom, spacing: 12) {
             TextField("Drop a message…", text: $viewModel.draft, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(FitUpFont.body(16, weight: .medium))
+                .font(FitUpFont.body(17, weight: .semibold))
                 .foregroundStyle(Color.white)
+                .shadow(color: FitUpColors.Neon.cyan.opacity(0.25), radius: 4)
                 .lineLimit(1...5)
                 .focused($composerFocused)
                 .padding(.horizontal, 14)
@@ -205,7 +218,7 @@ struct ChatThreadView: View {
                 Task { await viewModel.send() }
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 36, weight: .semibold))
+                    .font(.system(size: 40, weight: .semibold))
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(
                         canSend ? FitUpColors.Neon.cyan : FitUpColors.Text.tertiary,

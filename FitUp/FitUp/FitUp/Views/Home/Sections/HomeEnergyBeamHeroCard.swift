@@ -93,6 +93,10 @@ struct HomeEnergyBeamHeroCard: View {
     var handoffKeepOpponentBlackedOut: Bool = false
     /// Opens the new battle flow when the hero has no active step battle.
     var onStartBattle: (() -> Void)? = nil
+    /// Active step battles for the in-card opponent picker.
+    var heroOpponentPickerMatches: [HomeActiveMatch] = []
+    var selectedHeroMatchId: UUID? = nil
+    var onSelectHeroMatch: ((HomeActiveMatch) -> Void)? = nil
 
     @State private var cardInstanceId = UUID()
     @State private var didLogCardMount = false
@@ -172,7 +176,10 @@ struct HomeEnergyBeamHeroCard: View {
         handoffIntroKickoff: UUID = UUID(),
         handoffOpponentRevealKickoff: UUID = UUID(),
         handoffKeepOpponentBlackedOut: Bool = false,
-        onStartBattle: (() -> Void)? = nil
+        onStartBattle: (() -> Void)? = nil,
+        heroOpponentPickerMatches: [HomeActiveMatch] = [],
+        selectedHeroMatchId: UUID? = nil,
+        onSelectHeroMatch: ((HomeActiveMatch) -> Void)? = nil
     ) {
         self.match = match
         self.profile = profile
@@ -187,6 +194,9 @@ struct HomeEnergyBeamHeroCard: View {
         self.handoffOpponentRevealKickoff = handoffOpponentRevealKickoff
         self.handoffKeepOpponentBlackedOut = handoffKeepOpponentBlackedOut
         self.onStartBattle = onStartBattle
+        self.heroOpponentPickerMatches = heroOpponentPickerMatches
+        self.selectedHeroMatchId = selectedHeroMatchId
+        self.onSelectHeroMatch = onSelectHeroMatch
         let startsWithOpponentBlackedOut = handoffRevealActive || handoffKeepOpponentBlackedOut
         let gateConsumed = HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession
         let initialMargin: Double
@@ -286,7 +296,11 @@ struct HomeEnergyBeamHeroCard: View {
                         hideMarginHeadline: keepHandoffMarginHeadlineHidden,
                         matchHeaderContent: match.neonHeroMatchHeaderContent(
                             userDisplayName: profile?.displayName ?? "You"
-                        )
+                        ),
+                        isBalancedStepsBattle: match.isBalancedStepsBattle,
+                        heroOpponentPickerMatches: heroOpponentPickerMatches,
+                        selectedHeroMatchId: selectedHeroMatchId ?? match.id,
+                        onSelectHeroMatch: onSelectHeroMatch
                     )
                 }
                 .transaction { $0.disablesAnimations = false }

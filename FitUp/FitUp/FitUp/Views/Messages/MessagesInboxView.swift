@@ -49,7 +49,7 @@ struct MessagesInboxView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if items.isEmpty {
                     Text("No messages yet.")
-                        .font(FitUpFont.display(22, weight: .black))
+                        .font(FitUpFont.display(26, weight: .black))
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.orange],
@@ -57,7 +57,8 @@ struct MessagesInboxView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .shadow(color: FitUpColors.Neon.cyan.opacity(0.35), radius: 8)
+                        .shadow(color: FitUpColors.Neon.cyan.opacity(0.5), radius: 12)
+                        .shadow(color: FitUpColors.Neon.orange.opacity(0.3), radius: 6)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
@@ -126,17 +127,18 @@ struct MessagesInboxView: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(title)
-                        .font(FitUpFont.display(unread ? 18 : 17, weight: unread ? .heavy : .bold))
+                        .font(FitUpFont.display(unread ? 20 : 19, weight: unread ? .heavy : .bold))
                         .foregroundStyle(unread ? Color.white : FitUpColors.Text.primary)
                         .lineLimit(1)
-                        .shadow(color: unread ? FitUpColors.Neon.cyan.opacity(0.25) : .clear, radius: 4)
+                        .shadow(color: unread ? FitUpColors.Neon.cyan.opacity(0.45) : .clear, radius: 6)
 
                     Spacer(minLength: 4)
 
                     if let at = row.lastMessageAt {
                         Text(inboxTimestamp(at))
-                            .font(FitUpFont.mono(11, weight: .bold))
+                            .font(FitUpFont.mono(12, weight: .bold))
                             .foregroundStyle(unread ? FitUpColors.Neon.cyan : FitUpColors.Text.secondary)
+                            .shadow(color: unread ? FitUpColors.Neon.cyan.opacity(0.35) : .clear, radius: 4)
                             .lineLimit(1)
                             .minimumScaleFactor(0.85)
                     }
@@ -144,19 +146,21 @@ struct MessagesInboxView: View {
 
                 if let preview = row.lastMessagePreview, !preview.isEmpty {
                     Text(preview)
-                        .font(FitUpFont.body(14, weight: unread ? .bold : .semibold))
+                        .font(FitUpFont.body(16, weight: unread ? .bold : .semibold))
                         .foregroundStyle(unread ? FitUpColors.Neon.yellow : FitUpColors.Text.secondary)
+                        .shadow(color: unread ? FitUpColors.Neon.yellow.opacity(0.35) : .clear, radius: 4)
                         .lineLimit(2)
                 } else {
                     Text("Say hello")
-                        .font(FitUpFont.body(14, weight: .semibold))
+                        .font(FitUpFont.body(16, weight: .semibold))
                         .foregroundStyle(FitUpColors.Text.secondary)
                 }
 
                 if unread {
                     Text("NEW")
-                        .font(FitUpFont.mono(10, weight: .heavy))
+                        .font(FitUpFont.mono(11, weight: .heavy))
                         .foregroundStyle(FitUpColors.Neon.pink)
+                        .shadow(color: FitUpColors.Neon.pink.opacity(0.5), radius: 5)
                         .padding(.top, 2)
                 }
             }

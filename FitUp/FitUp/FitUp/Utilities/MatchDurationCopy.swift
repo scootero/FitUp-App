@@ -15,6 +15,13 @@ enum MatchDurationCopy {
         return "\(d)-day match"
     }
 
+    /// Hero meta pill — days needed to win (e.g. "Win 2 days" for a 3-day match).
+    static func winsTargetBadge(totalDays: Int) -> String {
+        let wins = winsTarget(totalDays: totalDays)
+        if wins == 1 { return "Win 1 day" }
+        return "Win \(wins) days"
+    }
+
     /// Hero / Live Activity progress (e.g. "Day 2 of 3").
     static func dayProgress(current: Int, total: Int) -> String {
         let t = max(total, 1)

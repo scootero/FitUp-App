@@ -28,87 +28,127 @@ struct NeonHeroMatchHeaderContent: Equatable {
     }
 }
 
-// MARK: - Header stack
+// MARK: - Layout (VS row + player columns share insets)
 
-struct NeonHeroMatchHeader: View {
-  let content: NeonHeroMatchHeaderContent
-
-  var body: some View {
-    VStack(spacing: 14) {
-      NeonRetroVersusBanner(
-        userName: content.userDisplayName,
-        opponentName: content.opponentDisplayName
-      )
-
-      NeonHeroMetaPillsRow(pills: content.pills)
-
-      Text(content.dayProgressLabel.uppercased())
-        .font(FitUpFont.mono(13, weight: .heavy))
-        .tracking(2.2)
-        .foregroundStyle(HomePageStyle.offWhite)
-        .shadow(color: FitUpColors.Neon.cyan.opacity(0.35), radius: 8, x: 0, y: 0)
-        .shadow(color: Color.white.opacity(0.18), radius: 4, x: 0, y: 0)
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: .infinity)
-        .lineLimit(1)
-        .minimumScaleFactor(0.75)
-        .allowsTightening(true)
-    }
-    .frame(maxWidth: .infinity)
-  }
+enum NeonHeroVersusLayout {
+    /// Pushes user/opponent columns toward card edges so names sit over each profile stack.
+    static let playerColumnEdgeInset: CGFloat = 26
+    static let playerColumnSpacing: CGFloat = 6
+    /// Keeps avatar → “steps today” gap after removing the in-column name row.
+    static let profileNameBelowAvatarReservedHeight: CGFloat = 24
 }
 
-// MARK: - YOU vs OPPONENT
+// MARK: - Day progress banner (top of card)
 
-private struct NeonRetroVersusBanner: View {
-    let userName: String
-    let opponentName: String
+struct NeonHeroDayProgressBanner: View {
+    let label: String
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            retroPlayerName(userName, accent: FitUpColors.Neon.cyan)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+        Text(label.uppercased())
+            .font(FitUpFont.mono(16, weight: .heavy))
+            .tracking(5.2)
+            .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.92))
+            .shadow(color: FitUpColors.Neon.cyan.opacity(0.35), radius: 10, x: 0, y: 0)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .allowsTightening(true)
+    }
+}
 
-            versusMark
-                .layoutPriority(1)
+// MARK: - Header stack (legacy composite — day + pills only)
 
-            retroPlayerName(opponentName, accent: FitUpColors.Neon.orange)
-                .frame(maxWidth: .infinity, alignment: .leading)
+struct NeonHeroMatchHeader: View {
+    let content: NeonHeroMatchHeaderContent
+
+    var body: some View {
+        VStack(spacing: 16) {
+            NeonHeroDayProgressBanner(label: content.dayProgressLabel)
+            NeonHeroMetaPillsRow(pills: content.pills)
         }
         .frame(maxWidth: .infinity)
     }
+}
 
-    private var versusMark: some View {
-        Text("VS")
-            .font(FitUpFont.display(26, weight: .black))
-            .tracking(1.6)
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [
-                        FitUpColors.Neon.pink,
-                        FitUpColors.Neon.purple,
-                        FitUpColors.Neon.yellow.opacity(0.95),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .shadow(color: FitUpColors.Neon.pink.opacity(0.72), radius: 12, x: 0, y: 0)
-            .shadow(color: FitUpColors.Neon.purple.opacity(0.55), radius: 22, x: 0, y: 0)
-            .shadow(color: Color.white.opacity(0.22), radius: 4, x: 0, y: 0)
-            .accessibilityLabel("Versus")
+// MARK: - Capsule chrome (border + outer glow, faint inner edge)
+
+/// Border-first glow: shadows sit outside the shape; a thin inner rim fades within ~3pt.
+struct NeonGlowCapsuleChrome: View {
+    let accent: Color
+
+    var body: some View {
+        Capsule(style: .continuous)
+            .fill(Color.black.opacity(0.58))
+            .overlay {
+                Capsule(style: .continuous)
+                    .inset(by: 0.5)
+                    .strokeBorder(accent.opacity(0.22), lineWidth: 3)
+                    .blur(radius: 1.4)
+                    .mask {
+                        Capsule(style: .continuous)
+                            .fill(Color.black)
+                    }
+            }
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(accent.opacity(0.9), lineWidth: 1.5)
+            }
+            .shadow(color: accent.opacity(0.52), radius: 6, x: 0, y: 0)
+            .shadow(color: accent.opacity(0.26), radius: 11, x: 0, y: 0)
+            .shadow(color: Color.black.opacity(0.42), radius: 5, x: 0, y: 3)
+    }
+}
+
+// MARK: - Sparky hero name (cheap CPU flicker back to accent)
+
+struct NeonSparkyHeroName: View {
+    let text: String
+    let accent: Color
+    var alignment: HorizontalAlignment = .center
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 14.0)) { timeline in
+            let wall = timeline.date.timeIntervalSinceReferenceDate
+            let spark = sparkIntensity(at: wall)
+            let display = displayName(text)
+
+            Text(display)
+                .font(FitUpFont.display(24, weight: .black))
+                .tracking(1.8)
+                .foregroundStyle(accent)
+                .overlay {
+                    Text(display)
+                        .font(FitUpFont.display(24, weight: .black))
+                        .tracking(1.8)
+                        .foregroundStyle(Color.white.opacity(Double(spark) * 0.55))
+                        .blendMode(.plusLighter)
+                }
+                .shadow(color: accent.opacity(0.55 + spark * 0.35), radius: 6 + spark * 6, x: 0, y: 0)
+                .shadow(color: Color.white.opacity(spark * 0.42), radius: 2 + spark * 5, x: 0, y: 0)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+                .allowsTightening(true)
+                .multilineTextAlignment(alignment == .leading ? .leading : alignment == .trailing ? .trailing : .center)
+                .frame(maxWidth: .infinity, alignment: frameAlignment)
+        }
     }
 
-    private func retroPlayerName(_ name: String, accent: Color) -> some View {
-        Text(displayName(name))
-            .font(FitUpFont.display(15, weight: .heavy))
-            .tracking(0.6)
-            .foregroundStyle(accent)
-            .shadow(color: accent.opacity(0.75), radius: 10, x: 0, y: 0)
-            .shadow(color: accent.opacity(0.35), radius: 20, x: 0, y: 0)
-            .lineLimit(1)
-            .minimumScaleFactor(0.62)
-            .allowsTightening(true)
+    private var frameAlignment: Alignment {
+        switch alignment {
+        case .leading: return .leading
+        case .trailing: return .trailing
+        default: return .center
+        }
+    }
+
+    /// Occasional bright spikes that fall back to the team accent.
+    private func sparkIntensity(at wall: TimeInterval) -> CGFloat {
+        let slow = sin(wall * 6.4) * 0.5 + 0.5
+        let fast = sin(wall * 14.8 + 0.9) * 0.5 + 0.5
+        let spike = sin(wall * 23.5 + 2.1) * 0.5 + 0.5
+        let mix = slow * fast
+        return CGFloat(pow(Double(mix), 2.4) * (0.35 + Double(spike) * 0.65))
     }
 
     private func displayName(_ raw: String) -> String {
@@ -118,9 +158,45 @@ private struct NeonRetroVersusBanner: View {
     }
 }
 
+// MARK: - YOU vs OPPONENT
+
+struct NeonRetroVersusBanner: View {
+    let userName: String
+    let opponentName: String
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: NeonHeroVersusLayout.playerColumnSpacing) {
+            NeonSparkyHeroName(text: userName, accent: FitUpColors.Neon.cyan, alignment: .center)
+                .frame(maxWidth: .infinity)
+                .padding(.leading, NeonHeroVersusLayout.playerColumnEdgeInset)
+
+            versusMark
+                .layoutPriority(1)
+                .padding(.horizontal, 4)
+
+            NeonSparkyHeroName(text: opponentName, accent: FitUpColors.Neon.orange, alignment: .center)
+                .frame(maxWidth: .infinity)
+                .padding(.trailing, NeonHeroVersusLayout.playerColumnEdgeInset)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.leading, 6)
+    }
+
+    private var versusMark: some View {
+        Text("VS")
+            .font(FitUpFont.display(34, weight: .black))
+            .tracking(4.8)
+            .foregroundStyle(Color.white)
+            .scaleEffect(x: 1.18, y: 1)
+            .shadow(color: Color.white.opacity(0.28), radius: 8, x: 0, y: 0)
+            .offset(y: 8)
+            .accessibilityLabel("Versus")
+    }
+}
+
 // MARK: - Meta pills row
 
-private struct NeonHeroMetaPillsRow: View {
+struct NeonHeroMetaPillsRow: View {
     let pills: [NeonHeroMetaPill]
 
     var body: some View {
@@ -150,63 +226,24 @@ struct NeonGlowMetaPill: View {
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity)
             .background {
-                Capsule(style: .continuous)
-                    .fill(Color.black.opacity(0.58))
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .fill(
-                                RadialGradient(
-                                    colors: [
-                                        accent.opacity(0.42),
-                                        accent.opacity(0.18),
-                                        accent.opacity(0.07),
-                                        Color.clear,
-                                    ],
-                                    center: .center,
-                                    startRadius: 0,
-                                    endRadius: 52
-                                )
-                            )
-                    }
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        accent.opacity(0.14),
-                                        Color.clear,
-                                        Color.black.opacity(0.32),
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                    }
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .strokeBorder(accent.opacity(0.88), lineWidth: 1.5)
-                    }
-                    .shadow(color: accent.opacity(0.58), radius: 10, x: 0, y: 0)
-                    .shadow(color: accent.opacity(0.28), radius: 20, x: 0, y: 0)
-                    .shadow(color: Color.black.opacity(0.45), radius: 6, x: 0, y: 4)
+                NeonGlowCapsuleChrome(accent: accent)
             }
     }
 }
 
 #if DEBUG
 #Preview {
-    NeonHeroMatchHeader(
-        content: NeonHeroMatchHeaderContent(
-            userDisplayName: "Scott",
-            opponentDisplayName: "Mike",
+    VStack(spacing: 18) {
+        NeonHeroDayProgressBanner(label: "Day 3 of 3")
+        NeonHeroMetaPillsRow(
             pills: [
                 NeonHeroMetaPill(id: "metric", label: "Steps", accent: FitUpColors.Neon.cyan),
-                NeonHeroMetaPill(id: "duration", label: "3-day match", accent: FitUpColors.Neon.purple),
+                NeonHeroMetaPill(id: "duration", label: "Win 2 days", accent: FitUpColors.Neon.purple),
                 NeonHeroMetaPill(id: "scoring", label: "Raw Battle", accent: FitUpColors.Neon.orange),
-            ],
-            dayProgressLabel: "Day 3 of 3"
+            ]
         )
-    )
+        NeonRetroVersusBanner(userName: "Scott", opponentName: "Mike")
+    }
     .padding()
     .background(FitUpColors.Bg.base)
 }

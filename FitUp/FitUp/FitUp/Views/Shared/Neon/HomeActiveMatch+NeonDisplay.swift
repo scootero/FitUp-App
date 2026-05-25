@@ -58,7 +58,7 @@ extension HomeActiveMatch {
             NeonHeroMetaPill(id: "metric", label: sportLabel, accent: FitUpColors.Neon.cyan),
             NeonHeroMetaPill(
                 id: "duration",
-                label: MatchDurationCopy.competitionLengthBadge(days: durationDays),
+                label: MatchDurationCopy.winsTargetBadge(totalDays: durationDays),
                 accent: FitUpColors.Neon.purple
             ),
         ]

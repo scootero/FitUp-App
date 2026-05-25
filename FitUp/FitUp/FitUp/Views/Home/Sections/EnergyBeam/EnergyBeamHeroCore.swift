@@ -684,18 +684,35 @@ enum EnergyBeamHeroCollisionLayout {
         return "-\(n)"
     }
 
-    /// Punchier battle-status copy for the retro callout above the beam.
+    /// Battle-status copy for the retro callout above the beam.
     static func statusCallout(margin: Int) -> String {
-        let mag = abs(margin)
-        if margin == 0 { return "DEAD HEAT" }
+        if margin == 0 { return "TIED" }
+        if margin > 0 { return "AHEAD" }
+        return "BEHIND"
+    }
+
+    /// Dynamic accent for post-beam margin number — cyan when winning, orange when losing, neutral at center.
+    static func marginAccent(margin: Int, referenceValue: Int) -> Color {
+        if margin == 0 { return HomePageStyle.offWhite }
+        let intensity = min(Double(abs(margin)) / Double(max(referenceValue, 1)), 1)
         if margin > 0 {
-            if mag >= 1_500 { return "ON FIRE" }
-            if mag >= 420 { return "AHEAD BY" }
-            return "NUDGING AHEAD"
+            return Color(
+                red: 0.12 + (1 - intensity) * 0.88,
+                green: 0.72 + (1 - intensity) * 0.28,
+                blue: 0.95 + (1 - intensity) * 0.05
+            )
         }
-        if mag >= 1_500 { return "CHASE MODE" }
-        if mag >= 420 { return "BEHIND BY" }
-        return "TOO CLOSE"
+        return Color(
+            red: 1,
+            green: 0.38 + (1 - intensity) * 0.62,
+            blue: 0.06 + (1 - intensity) * 0.94
+        )
+    }
+
+    static func marginGlowOpacity(margin: Int, referenceValue: Int) -> Double {
+        if margin == 0 { return 0.25 }
+        let intensity = min(Double(abs(margin)) / Double(max(referenceValue, 1)), 1)
+        return 0.28 + intensity * 0.55
     }
 }
 
@@ -706,30 +723,68 @@ private struct EnergyBeamBattleStatusCallout: View {
     private var accent: Color { EnergyBeamHeroCollisionLayout.eyebrowColor(margin: margin) }
     private var label: String { EnergyBeamHeroCollisionLayout.statusCallout(margin: margin) }
 
-    static let reservedHeight: CGFloat = 28
+    static let reservedHeight: CGFloat = 34
 
     var body: some View {
         Text(label)
-            .font(FitUpFont.mono(12, weight: .heavy))
+            .font(FitUpFont.mono(14, weight: .heavy))
             .foregroundStyle(accent)
-            .tracking(3.4)
+            .tracking(5.2)
             .lineLimit(1)
             .minimumScaleFactor(0.62)
             .allowsTightening(true)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(accent.opacity(0.1))
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .strokeBorder(accent.opacity(0.5), lineWidth: 1)
-                    )
-            )
-            .shadow(color: accent.opacity(0.2), radius: 8, y: 0)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 7)
+            .background {
+                NeonGlowCapsuleChrome(accent: accent)
+            }
             .frame(maxWidth: .infinity)
             .animation(.easeInOut(duration: 0.25), value: margin)
             .accessibilityLabel(label)
+    }
+}
+
+/// Margin number + unit row below the beam with animated directional arrow.
+private struct EnergyBeamPostBeamMarginRow: View {
+    let margin: Int
+    let unitLabel: String
+    let referenceValue: Int
+
+    static let reservedHeight: CGFloat = 52
+
+    private var accent: Color {
+        EnergyBeamHeroCollisionLayout.marginAccent(margin: margin, referenceValue: referenceValue)
+    }
+
+    private var glowOpacity: Double {
+        EnergyBeamHeroCollisionLayout.marginGlowOpacity(margin: margin, referenceValue: referenceValue)
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Text(EnergyBeamHeroCollisionLayout.heroNumberText(margin: margin))
+                .font(FitUpFont.display(38, weight: .heavy))
+                .foregroundStyle(accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .allowsTightening(true)
+                .contentTransition(.numericText())
+                .shadow(color: accent.opacity(glowOpacity), radius: 14, y: 0)
+                .shadow(color: accent.opacity(glowOpacity * 0.55), radius: 28, y: 0)
+
+            Text(unitLabel)
+                .font(FitUpFont.body(13, weight: .heavy))
+                .foregroundStyle(HomePageStyle.muted)
+                .tracking(2.4)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .allowsTightening(true)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 10)
+        .frame(height: Self.reservedHeight)
+        .animation(.easeInOut(duration: 0.25), value: margin)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -862,16 +917,9 @@ private struct FitUpMiniLogoPreview: View {
 private enum BattlePlayerRolePreview {
     case user
     case opponent
-
-    var labelText: String {
-        switch self {
-        case .user: return "YOU"
-        case .opponent: return "OPPONENT"
-        }
-    }
 }
 
-/// One player column: glyph, name, steps, divider, battle score text.
+/// One player column: glyph, steps, divider, battle score text.
 private struct PlayerColumnPreview: View {
     let role: BattlePlayerRolePreview
     let accent: Color
@@ -879,30 +927,49 @@ private struct PlayerColumnPreview: View {
     let stepCount: Int
     let battleScore: Int
     let scoreCaption: String
+    let isBalancedStepsBattle: Bool
+
+    @State private var showStepsDisclaimer = false
 
     var body: some View {
-        VStack(spacing: 8) {
-            // TODO(dev): Swap `ProfileGlyphPreview` with real avatar vectors / Photos when wired to prod.
-            ProfileGlyphPreview(accent: accent)
+        VStack(spacing: 6) {
+            HeroProfileAvatarBadge(name: name, accent: accent, role: role)
 
-            Text(role.labelText)
-                .font(FitUpFont.body(10, weight: .heavy))
-                .foregroundStyle(accent)
-                .tracking(2)
+            Color.clear
+                .frame(height: NeonHeroVersusLayout.profileNameBelowAvatarReservedHeight)
 
-            Text(name)
-                .font(FitUpFont.display(17, weight: .semibold))
-                .foregroundStyle(FitUpColors.Text.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .allowsTightening(true)
+            Button {
+                showStepsDisclaimer = true
+            } label: {
+                VStack(spacing: 3) {
+                    Text(stepCountLabel)
+                        .font(FitUpFont.body(13, weight: .semibold))
+                        .foregroundStyle(FitUpColors.Neon.yellow.opacity(0.88))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .allowsTightening(true)
 
-            Text(stepCountLabel)
-                .font(FitUpFont.body(12, weight: .regular))
-                .foregroundStyle(FitUpColors.Text.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .allowsTightening(true)
+                    Capsule(style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    FitUpColors.Neon.yellow.opacity(0.55),
+                                    FitUpColors.Neon.yellow.opacity(0.18),
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(height: 2)
+                        .frame(maxWidth: 88)
+                }
+            }
+            .buttonStyle(.plain)
+            .alert("Actual steps vs Battle Score", isPresented: $showStepsDisclaimer) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(stepsDisclaimerMessage)
+            }
 
             Rectangle()
                 .fill(Color.white.opacity(0.1))
@@ -925,35 +992,50 @@ private struct PlayerColumnPreview: View {
         .frame(maxWidth: .infinity, alignment: role == .user ? .leading : .trailing)
     }
 
-    /// “12,345 steps” string from `stepCount` using `EnergyBeamNumberFormatting.steps`.
+    /// “12,345 steps today” string from `stepCount` using `EnergyBeamNumberFormatting.steps`.
     private var stepCountLabel: String {
         let n = EnergyBeamNumberFormatting.steps.string(from: NSNumber(value: stepCount)) ?? "\(stepCount)"
-        return "\(n) steps"
+        return "\(n) steps today"
+    }
+
+    private var stepsDisclaimerMessage: String {
+        if isBalancedStepsBattle {
+            return "These are your real step counts from HealthKit — not the number used to decide the battle. In a Balanced Battle, Battle Score adjusts for fairness, so steps and score won't match."
+        }
+        return "These are your real step counts from HealthKit. In a Raw Battle, step totals are what count toward your Battle Score."
     }
 }
 
-/// Circular avatar placeholder with accent ring (mock).
-private struct ProfileGlyphPreview: View {
+/// Circular avatar with retro slanted name overlay and accent ring.
+private struct HeroProfileAvatarBadge: View {
+    let name: String
     let accent: Color
+    let role: BattlePlayerRolePreview
+
+    private let diameter: CGFloat = 92
 
     var body: some View {
-        Image(systemName: "person.fill")
-            .font(.system(size: 21, weight: .semibold))
-            .foregroundStyle(accent.opacity(0.92))
-            .shadow(color: accent.opacity(0.45), radius: 10)
-            .frame(width: 56, height: 56)
-            .background(.black.opacity(0.25))
-            .clipShape(Circle())
-            .overlay(
-                Circle()
-                    .strokeBorder(
-                        AngularGradient(colors: [accent.opacity(0.92), accent.opacity(0.5), accent.opacity(0.92)], center: .center),
-                        lineWidth: 3
-                    )
-            )
-            .shadow(color: accent.opacity(0.22), radius: 14, y: 6)
-            .minimumScaleFactor(0.92)
-            .allowsTightening(true)
+        ZStack {
+            Image(systemName: "person.fill")
+                .font(.system(size: 38, weight: .semibold))
+                .foregroundStyle(accent.opacity(0.42))
+                .shadow(color: accent.opacity(0.25), radius: 10)
+        }
+        .frame(width: diameter, height: diameter)
+        .background(.black.opacity(0.32))
+        .clipShape(Circle())
+        .overlay(
+            Circle()
+                .strokeBorder(
+                    AngularGradient(
+                        colors: [accent.opacity(0.95), accent.opacity(0.45), accent.opacity(0.95)],
+                        center: .center
+                    ),
+                    lineWidth: 3.5
+                )
+        )
+        .shadow(color: accent.opacity(0.35), radius: 18, y: 6)
+        .shadow(color: accent.opacity(0.18), radius: 28, y: 10)
     }
 }
 
@@ -2220,6 +2302,8 @@ private struct DayBattleSparklinePreview: View {
                 ZStack {
                     roundedChartBackground()
 
+                    chartTextureOverlay(rect: CGRect(origin: .zero, size: geo.size))
+
                     fadedDistanceGrid(rect: CGRect(origin: .zero, size: geo.size))
 
                     subtleGrid(rect: CGRect(origin: .zero, size: geo.size))
@@ -2227,6 +2311,9 @@ private struct DayBattleSparklinePreview: View {
                     sparkline(points: ptsO, color: FitUpColors.Neon.orange.opacity(0.92), glowMultiplier: 0.85)
 
                     sparkline(points: ptsU, color: FitUpColors.Neon.cyan.opacity(0.95), glowMultiplier: 1.0)
+
+                    lightningForks(along: ptsO, color: FitUpColors.Neon.orange)
+                    lightningForks(along: ptsU, color: FitUpColors.Neon.cyan)
 
                     endpointDots(ptsU: ptsU, ptsO: ptsO)
                 }
@@ -2240,17 +2327,13 @@ private struct DayBattleSparklinePreview: View {
                 Spacer()
                 chartAxisLabel("NOW")
             }
-            .foregroundStyle(Color.white.opacity(0.34))
-            .tracking(2.8)
-            .allowsTightening(true)
-            .minimumScaleFactor(0.94)
             .allowsHitTesting(false)
 
             #if DEBUG
             if showMockTimelineLabel {
                 Text("Mock timeline")
-                    .font(FitUpFont.body(9, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.32))
+                    .font(FitUpFont.body(11, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.42))
                     .frame(maxWidth: .infinity, alignment: .center)
             }
             #endif
@@ -2258,20 +2341,77 @@ private struct DayBattleSparklinePreview: View {
         .padding(14)
         .allowsTightening(true)
         .minimumScaleFactor(0.94)
-        .background(
+        .background {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.09),
+                            Color.white.opacity(0.05),
+                            Color.white.opacity(0.08),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                 )
-        )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    FitUpColors.Neon.cyan.opacity(0.14),
+                                    Color.white.opacity(0.1),
+                                    FitUpColors.Neon.orange.opacity(0.12),
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+        }
+    }
+
+    /// Faint diagonal scan texture for chart sub-card depth.
+    @ViewBuilder
+    private func chartTextureOverlay(rect: CGRect) -> some View {
+        Path { p in
+            let step: CGFloat = 14
+            var x = rect.minX - rect.height
+            while x < rect.maxX + rect.height {
+                p.move(to: CGPoint(x: x, y: rect.maxY))
+                p.addLine(to: CGPoint(x: x + rect.height, y: rect.minY))
+                x += step
+            }
+        }
+        .stroke(Color.white.opacity(0.025), lineWidth: 1)
+        .blendMode(.plusLighter)
+    }
+
+    /// Small lightning forks along a sparkline path.
+    @ViewBuilder
+    private func lightningForks(along points: [CGPoint], color: Color) -> some View {
+        if points.count >= 4 {
+            let indices = [points.count / 4, points.count / 2, (points.count * 3) / 4]
+            ForEach(indices, id: \.self) { i in
+                let pt = points[i]
+                Path { p in
+                    p.move(to: pt)
+                    p.addLine(to: CGPoint(x: pt.x + 6, y: pt.y - 9))
+                    p.move(to: pt)
+                    p.addLine(to: CGPoint(x: pt.x - 5, y: pt.y - 7))
+                }
+                .stroke(color.opacity(0.75), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+                .shadow(color: color.opacity(0.55), radius: 6)
+                .blendMode(.plusLighter)
+            }
+        }
     }
 
     /// Dark rounded plate behind chart paths.
     private func roundedChartBackground() -> some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Color.black.opacity(0.32))
+            .fill(Color.black.opacity(0.22))
     }
 
     /// Wide-spaced faint mesh: few divisions + dim cyan/blue/orange gradient (neon wash, not white graph paper).
@@ -2428,15 +2568,15 @@ private struct DayBattleSparklinePreview: View {
         return path
     }
 
-    /// Small axis caption under the chart (12 AM / NOON / NOW mock).
+    /// Axis caption under the chart (12 AM / NOON / NOW).
     private func chartAxisLabel(_ text: String) -> some View {
         Text(text)
             .lineLimit(1)
             .allowsTightening(true)
             .minimumScaleFactor(0.85)
-            .foregroundStyle(Color.white.opacity(0.34))
-            .font(FitUpFont.body(10, weight: .semibold))
-            .tracking(2.8)
+            .foregroundStyle(Color.white.opacity(0.6))
+            .font(FitUpFont.body(14, weight: .heavy))
+            .tracking(3.2)
     }
 }
 
@@ -2448,7 +2588,7 @@ private struct DayElapsedProgressPreview: View {
     let caption: String
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             GeometryReader { geo in
                 let w = geo.size.width
                 let x = CGFloat.minimum(CGFloat.maximum(fractionElapsed, 0), 1) * w
@@ -2471,7 +2611,7 @@ private struct DayElapsedProgressPreview: View {
 
                     Circle()
                         .fill(Color.white.opacity(0.98))
-                        .frame(width: 15, height: 15)
+                        .frame(width: 17, height: 17)
                         .shadow(color: FitUpColors.Neon.orange.opacity(0.65), radius: 12)
                         .shadow(color: Color.white.opacity(0.35), radius: 10)
                         .position(x: max(13, CGFloat.minimum(CGFloat.maximum(fractionElapsed, 0), 1) * w), y: geo.size.height * 0.5)
@@ -2481,17 +2621,39 @@ private struct DayElapsedProgressPreview: View {
                         .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
                         .blendMode(.plusLighter)
                 }
-                .frame(height: 18)
+                .frame(height: 22)
                 .allowsHitTesting(false)
             }
-            .frame(height: 18)
+            .frame(height: 22)
 
             Text(caption)
-                .font(FitUpFont.body(12, weight: .regular))
-                .foregroundStyle(FitUpColors.Text.secondary)
+                .font(FitUpFont.mono(16, weight: .heavy))
+                .foregroundStyle(HomePageStyle.offWhite)
+                .tracking(1.2)
                 .multilineTextAlignment(.center)
                 .minimumScaleFactor(0.94)
                 .allowsTightening(true)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background {
+                    Capsule(style: .continuous)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [
+                                            FitUpColors.Neon.cyan.opacity(0.35),
+                                            FitUpColors.Neon.orange.opacity(0.35),
+                                        ],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        }
+                }
+                .shadow(color: FitUpColors.Neon.cyan.opacity(0.12), radius: 8, y: 0)
         }
         .frame(maxWidth: .infinity)
     }
@@ -2525,7 +2687,7 @@ private struct EnergyBeamIntradayFreshnessRow: View {
             EmptyView()
         } else {
             TimelineView(.periodic(from: .now, by: 45)) { timeline in
-                HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .center, spacing: 8) {
                     freshnessColumn(
                         title: "YOU",
                         caption: "HealthKit",
@@ -2534,7 +2696,16 @@ private struct EnergyBeamIntradayFreshnessRow: View {
                         accent: FitUpColors.Neon.cyan,
                         alignment: .leading
                     )
-                    Spacer(minLength: 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text("SYNC")
+                        .font(FitUpFont.display(24, weight: .black))
+                        .foregroundStyle(Color.white.opacity(0.96))
+                        .tracking(2.4)
+                        .shadow(color: Color.white.opacity(0.25), radius: 10, y: 0)
+                        .shadow(color: FitUpColors.Neon.cyan.opacity(0.18), radius: 16, y: 0)
+                        .layoutPriority(1)
+
                     freshnessColumn(
                         title: "THEM",
                         caption: "Their day",
@@ -2543,6 +2714,17 @@ private struct EnergyBeamIntradayFreshnessRow: View {
                         accent: FitUpColors.Neon.orange.opacity(0.95),
                         alignment: .trailing
                     )
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 10)
+                .background {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.white.opacity(0.04))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                        }
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(accessibilityLabel(now: timeline.date))
@@ -2559,22 +2741,23 @@ private struct EnergyBeamIntradayFreshnessRow: View {
         alignment: HorizontalAlignment
     ) -> some View {
         let frameAlign: Alignment = alignment == .leading ? .leading : .trailing
-        return VStack(alignment: alignment, spacing: 3) {
+        return VStack(alignment: alignment, spacing: 4) {
             Text(title)
-                .font(FitUpFont.body(8, weight: .heavy))
-                .foregroundStyle(Color.white.opacity(0.28))
-                .tracking(1.4)
+                .font(FitUpFont.body(12, weight: .heavy))
+                .foregroundStyle(Color.white.opacity(0.55))
+                .tracking(2)
             Text(caption)
-                .font(FitUpFont.body(9, weight: .semibold))
-                .foregroundStyle(accent.opacity(0.5))
+                .font(FitUpFont.body(14, weight: .heavy))
+                .foregroundStyle(accent)
+                .shadow(color: accent.opacity(0.35), radius: 8, y: 0)
             if let at {
                 Text(Self.relativeString(for: at, relativeTo: now))
-                    .font(FitUpFont.body(10, weight: .semibold))
-                    .foregroundStyle(FitUpColors.Text.secondary.opacity(0.92))
+                    .font(FitUpFont.body(15, weight: .semibold))
+                    .foregroundStyle(HomePageStyle.muted)
             } else {
                 Text("—")
-                    .font(FitUpFont.body(10, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.22))
+                    .font(FitUpFont.body(15, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.35))
             }
         }
         .frame(maxWidth: .infinity, alignment: frameAlign)
@@ -2642,6 +2825,12 @@ struct EnergyBeamHeroGlassCardView: View {
     var hideMarginHeadline: Bool = false
     /// Retro VS banner, meta pills, and centered day progress at the top of the card (Home featured match).
     var matchHeaderContent: NeonHeroMatchHeaderContent? = nil
+    /// When true, step-count tap disclaimer mentions Balanced Battle scoring.
+    var isBalancedStepsBattle: Bool = false
+    /// Active step battles for the hero opponent picker (shown when count > 1).
+    var heroOpponentPickerMatches: [HomeActiveMatch] = []
+    var selectedHeroMatchId: UUID? = nil
+    var onSelectHeroMatch: ((HomeActiveMatch) -> Void)? = nil
 
     private var narrativeMarginInt: Int { Int(margin.rounded(.towardZero)) }
     private var beamCollisionMarginPrecise: Double {
@@ -2657,8 +2846,6 @@ struct EnergyBeamHeroGlassCardView: View {
         return narrativeMarginInt
     }
 
-    private var momentum: MomentumState { MomentumState.inferred(fromMargin: narrativeMarginInt) }
-
     var body: some View {
         VStack(spacing: 0) {
             if showTopBrandHeader {
@@ -2668,22 +2855,32 @@ struct EnergyBeamHeroGlassCardView: View {
             }
 
             if let matchHeaderContent {
-                NeonHeroMatchHeader(content: matchHeaderContent)
-                    .padding(.horizontal, 16)
-                    .padding(.top, showTopBrandHeader ? 4 : 16)
-                    .padding(.bottom, 12)
+                VStack(spacing: 16) {
+                    NeonHeroDayProgressBanner(label: matchHeaderContent.dayProgressLabel)
+                    NeonHeroMetaPillsRow(pills: matchHeaderContent.pills)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, showTopBrandHeader ? 10 : 22)
+                .padding(.bottom, 16)
+            }
+
+            if let matchHeaderContent {
+                NeonRetroVersusBanner(
+                    userName: matchHeaderContent.userDisplayName,
+                    opponentName: matchHeaderContent.opponentDisplayName
+                )
+                .padding(.horizontal, 10)
+                .padding(.top, 18)
+                .padding(.bottom, 10)
             }
 
             playersRow
-                .padding(.horizontal, 18)
+                .padding(.horizontal, 10)
                 .padding(.top, heroPlayersRowTopPadding)
                 .padding(.bottom, 22)
 
             beamBattleZone
                 .padding(.horizontal, 18)
-                .padding(.bottom, 12)
-
-            momentumChip
                 .padding(.bottom, 16)
 
             DayBattleSparklinePreview(
@@ -2708,10 +2905,22 @@ struct EnergyBeamHeroGlassCardView: View {
         .background {
             ZStack {
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(FitUpColors.Bg.base.opacity(0.92))
+                    .fill(FitUpColors.Bg.base.opacity(0.78))
 
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(.white.opacity(0.04))
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color.clear,
+                                FitUpColors.Bg.base.opacity(0.22),
+                                FitUpColors.Bg.base.opacity(0.72),
+                                FitUpColors.Bg.base.opacity(0.94),
+                            ],
+                            center: .center,
+                            startRadius: 8,
+                            endRadius: 320
+                        )
+                    )
 
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .strokeBorder(
@@ -2727,17 +2936,6 @@ struct EnergyBeamHeroGlassCardView: View {
                         ),
                         lineWidth: 1
                     )
-
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(
-                        RadialGradient(
-                            colors: [.clear, .black.opacity(0.42)],
-                            center: .center,
-                            startRadius: 40,
-                            endRadius: 280
-                        )
-                    )
-                    .blendMode(.multiply)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -2750,7 +2948,7 @@ struct EnergyBeamHeroGlassCardView: View {
     }
 
     private var heroPlayersRowTopPadding: CGFloat {
-        if matchHeaderContent != nil { return 2 }
+        if matchHeaderContent != nil { return 12 }
         return showTopBrandHeader ? 0 : 10
     }
 
@@ -2774,16 +2972,18 @@ struct EnergyBeamHeroGlassCardView: View {
     }
 
     private var playersRow: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: NeonHeroVersusLayout.playerColumnSpacing) {
             PlayerColumnPreview(
                 role: .user,
                 accent: FitUpColors.Neon.cyan,
                 name: userName,
                 stepCount: userSteps,
                 battleScore: userBattleScore,
-                scoreCaption: battleScoreColumnTitle
+                scoreCaption: battleScoreColumnTitle,
+                isBalancedStepsBattle: isBalancedStepsBattle
             )
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, NeonHeroVersusLayout.playerColumnEdgeInset)
 
             ZStack(alignment: .topTrailing) {
                 if opponentContentSuppressed {
@@ -2795,7 +2995,8 @@ struct EnergyBeamHeroGlassCardView: View {
                         name: opponentName,
                         stepCount: opponentSteps,
                         battleScore: opponentBattleScore,
-                        scoreCaption: battleScoreColumnTitle
+                        scoreCaption: battleScoreColumnTitle,
+                        isBalancedStepsBattle: isBalancedStepsBattle
                     )
                     .scaleEffect(0.88 + 0.12 * opponentRevealProgress, anchor: .topTrailing)
                     .opacity(opponentRevealProgress)
@@ -2806,27 +3007,28 @@ struct EnergyBeamHeroGlassCardView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topTrailing)
-            .frame(minHeight: 132)
+            .padding(.trailing, NeonHeroVersusLayout.playerColumnEdgeInset)
+            .frame(minHeight: 168)
             .accessibilityHidden(opponentContentSuppressed || opponentRevealProgress < 0.04)
         }
     }
 
     private var beamMarginDisplayInt: Int { Int(beamCollisionMarginPrecise.rounded(.towardZero)) }
 
-    private static let statusToMarginSpacing: CGFloat = 6
-    private static let marginToBeamSpacing: CGFloat = 6
+    private static let statusToBeamSpacing: CGFloat = 8
+    private static let beamToMarginSpacing: CGFloat = 4
 
     private static var aboveBeamStackReservedHeight: CGFloat {
-        EnergyBeamBattleStatusCallout.reservedHeight
-            + statusToMarginSpacing
-            + EnergyBeamCollisionAlignedMarginHeadline.reservedHeight
-            + marginToBeamSpacing
+        EnergyBeamBattleStatusCallout.reservedHeight + statusToBeamSpacing
     }
 
-    /// Status pill, collision headline, and procedural beam share one collision X each frame.
+    private static var belowBeamStackReservedHeight: CGFloat {
+        EnergyBeamPostBeamMarginRow.reservedHeight + beamToMarginSpacing
+    }
+
+    /// Status pill, procedural beam, and post-beam margin row.
     private var beamBattleZone: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-            let wall = timeline.date.timeIntervalSinceReferenceDate
             let introT = EnergyBeamHeroLayout.beamIntroProgress(
                 at: timeline.date,
                 startedAt: beamIntroStartedAt,
@@ -2842,65 +3044,47 @@ struct EnergyBeamHeroGlassCardView: View {
                 )
                 : beamVisualTuning
 
-            GeometryReader { geo in
-                let w = geo.size.width
-                let collisionX = EnergyBeamHeroCollisionLayout.centerX(
-                    width: w,
+            VStack(spacing: 0) {
+                if !hideMarginHeadline {
+                    EnergyBeamBattleStatusCallout(margin: beamMarginDisplayInt)
+                        .padding(.bottom, Self.statusToBeamSpacing)
+                } else {
+                    Color.clear
+                        .frame(height: Self.aboveBeamStackReservedHeight)
+                }
+
+                ProceduralEnergyBeamView(
                     marginPrecise: beamCollisionMarginPrecise,
                     referenceBattleValue: referenceBattleValue,
-                    tuning: layoutTuning,
-                    pinToCenterDuringIntro: introActive && pinCollisionToCenterDuringIntro,
-                    wall: wall
+                    marginRounded: beamCollisionMarginRounded,
+                    beamVisualTuning: beamVisualTuning,
+                    beamIntroStartedAt: beamIntroStartedAt,
+                    beamIntroHoldGhost: beamIntroHoldGhost,
+                    pinCollisionToCenterDuringIntro: introActive && pinCollisionToCenterDuringIntro,
+                    proceduralMotionScale: proceduralMotionScale,
+                    impactStrengthScale: impactStrengthScale,
+                    proceduralDrawSeed: proceduralDrawSeed,
+                    suppressImpactBursts: suppressImpactBursts
                 )
+                .frame(height: layoutTuning.beamOuterHeight)
 
-                VStack(spacing: 0) {
-                    if !hideMarginHeadline {
-                        EnergyBeamBattleStatusCallout(margin: beamMarginDisplayInt)
-                            .frame(maxWidth: w)
-                            .padding(.bottom, Self.statusToMarginSpacing)
-
-                        EnergyBeamCollisionAlignedMarginHeadline(
-                            collisionX: collisionX,
-                            trackWidth: w,
-                            margin: beamMarginDisplayInt,
-                            unitLabel: unitLabel
-                        )
-                        .padding(.bottom, Self.marginToBeamSpacing)
-                    } else {
-                        Color.clear
-                            .frame(height: Self.aboveBeamStackReservedHeight)
-                    }
-
-                    ProceduralEnergyBeamView(
-                        marginPrecise: beamCollisionMarginPrecise,
-                        referenceBattleValue: referenceBattleValue,
-                        marginRounded: beamCollisionMarginRounded,
-                        beamVisualTuning: beamVisualTuning,
-                        beamIntroStartedAt: beamIntroStartedAt,
-                        beamIntroHoldGhost: beamIntroHoldGhost,
-                        pinCollisionToCenterDuringIntro: pinCollisionToCenterDuringIntro,
-                        proceduralMotionScale: proceduralMotionScale,
-                        impactStrengthScale: impactStrengthScale,
-                        proceduralDrawSeed: proceduralDrawSeed,
-                        suppressImpactBursts: suppressImpactBursts
+                if !hideMarginHeadline {
+                    EnergyBeamPostBeamMarginRow(
+                        margin: beamMarginDisplayInt,
+                        unitLabel: unitLabel,
+                        referenceValue: referenceBattleValue
                     )
-                    .frame(height: layoutTuning.beamOuterHeight)
+                    .padding(.top, Self.beamToMarginSpacing)
+                } else {
+                    Color.clear
+                        .frame(height: Self.belowBeamStackReservedHeight)
                 }
-                .clipped()
             }
+            .clipped()
             .frame(
                 height: layoutTuning.beamOuterHeight
-                    + (hideMarginHeadline ? 0 : Self.aboveBeamStackReservedHeight)
+                    + (hideMarginHeadline ? 0 : Self.aboveBeamStackReservedHeight + Self.belowBeamStackReservedHeight)
             )
-            .clipped()
         }
-    }
-
-    private var momentumChip: some View {
-        MomentumChipView(state: momentum)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 18)
-            .transition(.opacity.combined(with: .scale(scale: 0.94)))
-            .animation(.easeInOut(duration: 0.25), value: momentum)
     }
 }

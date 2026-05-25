@@ -107,6 +107,8 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var heroOpponentIntradayLatestTickAt: Date?
     /// Slice 7: non-nil while the “new opponent” handoff overlay blocks the energy hero card.
     @Published private(set) var heroOpponentHandoff: HeroOpponentHandoffOverlayModel?
+    /// User-selected step battle for the energy hero; persisted locally per profile.
+    @Published private(set) var selectedHeroStepMatchId: UUID?
     @Published private(set) var isHeroLoading = true
     @Published private(set) var isInitialLoading = true
     /// Full rows for the expandable Past Matches card (warmed by stats refresh; lazy-loaded if empty).
@@ -128,9 +130,20 @@ final class HomeViewModel: ObservableObject {
         activeMatches.filter { normalizedHeroMetricType($0.metricType) == HomeBattleHeroCard.HeroMetric.steps.metricType }
     }
 
+    /// Active step battles sorted for Home (closest deficit first).
+    var sortedActiveStepMatchesForHero: [HomeActiveMatch] {
+        sortedActiveMatchesForHome.filter { normalizedHeroMetricType($0.metricType) == "steps" }
+    }
+
     /// Single featured step battle for the home hero, tap target, and comparable-margin summaries (balanced → Battle Score).
     var featuredHomeStepMatch: HomeActiveMatch? {
-        HomeActiveMatch.featuredStepMatch(from: activeStepMatches)
+        let stepMatches = activeStepMatches
+        guard !stepMatches.isEmpty else { return nil }
+        if let selectedHeroStepMatchId,
+           let selected = stepMatches.first(where: { $0.id == selectedHeroStepMatchId }) {
+            return selected
+        }
+        return HomeActiveMatch.featuredStepMatch(from: stepMatches)
     }
 
     /// Same as ``featuredHomeStepMatch``; kept for call sites that still use the older name.
@@ -389,6 +402,7 @@ final class HomeViewModel: ObservableObject {
             heroOpponentIntradayLatestTickAt = nil
             heroSparklineLoadGeneration &+= 1
             heroOpponentHandoff = nil
+            selectedHeroStepMatchId = SelectedHeroStepMatchStore.load(userId: profileId)
             heroLoadStartedAt = Date()
             heroStateResolvedAt = nil
             lastStatsRefreshAt = nil
@@ -549,6 +563,7 @@ final class HomeViewModel: ObservableObject {
         activeMatches = applyHealthKitOverrides(to: snapshot.activeMatches)
         pendingMatches = snapshot.pendingMatches
         discoverUsers = snapshot.discoverUsers
+        reconcileSelectedHeroStepMatch(userId: userId)
         applyLeaderboardRankFromCache(profileId: userId)
         scheduleGlobalLeaderboardRankRefresh(profileId: userId)
         syncHeroMetricWithActiveMatches()
@@ -1307,6 +1322,7 @@ final class HomeViewModel: ObservableObject {
 
         heroMetric = .steps
         activeMatches = applyHealthKitOverrides(to: snapshotCacheStore.toDomain(cached))
+        reconcileSelectedHeroStepMatch(userId: profileId)
         applyLeaderboardRankFromCache(profileId: profileId)
         scheduleGlobalLeaderboardRankRefresh(profileId: profileId)
         syncHeroMetricWithActiveMatches()
@@ -1470,7 +1486,49 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
+    func selectHeroStepMatch(_ match: HomeActiveMatch) {
+        guard normalizedHeroMetricType(match.metricType) == "steps" else { return }
+        guard activeStepMatches.contains(where: { $0.id == match.id }) else { return }
+        guard selectedHeroStepMatchId != match.id else { return }
+
+        selectedHeroStepMatchId = match.id
+        if let userId {
+            SelectedHeroStepMatchStore.save(matchId: match.id, userId: userId)
+            FeaturedOpponentHandoffStore.saveLastOpponent(match.opponent.id, userId: userId)
+        }
+        scheduleHeroSparklineRefresh()
+    }
+
+    private func reconcileSelectedHeroStepMatch(userId: UUID) {
+        guard let selectedHeroStepMatchId else { return }
+        guard activeStepMatches.contains(where: { $0.id == selectedHeroStepMatchId }) else {
+            self.selectedHeroStepMatchId = nil
+            SelectedHeroStepMatchStore.clear(userId: userId)
+            return
+        }
+    }
+
     // MARK: - Featured opponent handoff (Slice 7)
+
+    private enum SelectedHeroStepMatchStore {
+        private static func key(userId: UUID) -> String {
+            "fitup.hero.selectedStepMatchId.\(userId.uuidString)"
+        }
+
+        static func load(userId: UUID) -> UUID? {
+            guard let raw = UserDefaults.standard.string(forKey: key(userId: userId)),
+                  let id = UUID(uuidString: raw) else { return nil }
+            return id
+        }
+
+        static func save(matchId: UUID, userId: UUID) {
+            UserDefaults.standard.set(matchId.uuidString, forKey: key(userId: userId))
+        }
+
+        static func clear(userId: UUID) {
+            UserDefaults.standard.removeObject(forKey: key(userId: userId))
+        }
+    }
 
     private enum FeaturedOpponentHandoffStore {
         private static func key(userId: UUID) -> String {
