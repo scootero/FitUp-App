@@ -78,6 +78,14 @@ private struct HeroActiveOpponentPickerChip: View {
     let opponent: HomeOpponent
     let isSelected: Bool
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
+    private func scaled(_ value: CGFloat) -> CGFloat {
+        HomeHeroCompactLayout.scaled(value, by: compactScale)
+    }
+
+    private var orbSize: CGFloat { scaled(22) }
+
     private var accent: Color {
         ProfileAccentColor.swiftUIColor(hex: opponent.colorHex)
     }
@@ -100,20 +108,20 @@ private struct HeroActiveOpponentPickerChip: View {
     }
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: scaled(7)) {
             avatarOrb
             Text(label)
-                .font(FitUpFont.mono(10, weight: .heavy))
-                .tracking(0.45)
+                .font(FitUpFont.mono(scaled(10), weight: .heavy))
+                .tracking(0.45 * compactScale)
                 .foregroundStyle(isSelected ? FitUpColors.Neon.orange : accent)
-                .shadow(color: (isSelected ? FitUpColors.Neon.orange : accent).opacity(0.82), radius: 8, x: 0, y: 0)
-                .shadow(color: (isSelected ? FitUpColors.Neon.orange : accent).opacity(0.38), radius: 16, x: 0, y: 0)
+                .shadow(color: (isSelected ? FitUpColors.Neon.orange : accent).opacity(0.82), radius: scaled(8), x: 0, y: 0)
+                .shadow(color: (isSelected ? FitUpColors.Neon.orange : accent).opacity(0.38), radius: scaled(16), x: 0, y: 0)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
                 .allowsTightening(true)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, scaled(10))
+        .padding(.vertical, scaled(8))
         .frame(maxWidth: .infinity)
         .background { chipBackground }
     }
@@ -123,31 +131,31 @@ private struct HeroActiveOpponentPickerChip: View {
             if isSelected {
                 Circle()
                     .fill(FitUpColors.Neon.orange.opacity(0.22))
-                    .frame(width: 22, height: 22)
-                    .shadow(color: FitUpColors.Neon.orange.opacity(0.72), radius: 10, x: 0, y: 0)
+                    .frame(width: orbSize, height: orbSize)
+                    .shadow(color: FitUpColors.Neon.orange.opacity(0.72), radius: scaled(10), x: 0, y: 0)
                 Circle()
-                    .strokeBorder(FitUpColors.Neon.orange, lineWidth: 2)
-                    .frame(width: 22, height: 22)
-                    .shadow(color: FitUpColors.Neon.orange.opacity(0.85), radius: 8, x: 0, y: 0)
+                    .strokeBorder(FitUpColors.Neon.orange, lineWidth: max(1, scaled(2)))
+                    .frame(width: orbSize, height: orbSize)
+                    .shadow(color: FitUpColors.Neon.orange.opacity(0.85), radius: scaled(8), x: 0, y: 0)
                 Circle()
                     .fill(FitUpColors.Neon.green)
-                    .frame(width: 12, height: 12)
-                    .shadow(color: FitUpColors.Neon.green.opacity(0.75), radius: 6, x: 0, y: 0)
+                    .frame(width: scaled(12), height: scaled(12))
+                    .shadow(color: FitUpColors.Neon.green.opacity(0.75), radius: scaled(6), x: 0, y: 0)
             } else {
                 Circle()
                     .fill(accent.opacity(0.18))
-                    .frame(width: 20, height: 20)
+                    .frame(width: scaled(20), height: scaled(20))
                 Circle()
-                    .strokeBorder(accent.opacity(0.88), lineWidth: 1.5)
-                    .frame(width: 20, height: 20)
-                    .shadow(color: accent.opacity(0.45), radius: 6, x: 0, y: 0)
+                    .strokeBorder(accent.opacity(0.88), lineWidth: max(1, scaled(1.5)))
+                    .frame(width: scaled(20), height: scaled(20))
+                    .shadow(color: accent.opacity(0.45), radius: scaled(6), x: 0, y: 0)
             }
 
             Text(initials)
-                .font(FitUpFont.mono(7, weight: .heavy))
+                .font(FitUpFont.mono(scaled(7), weight: .heavy))
                 .foregroundStyle(isSelected ? Color.black.opacity(0.82) : Color.white.opacity(0.95))
         }
-        .frame(width: 22, height: 22)
+        .frame(width: orbSize, height: orbSize)
     }
 
     @ViewBuilder

@@ -9,7 +9,7 @@ import SwiftUI
 
 private let useEnergyBeamHomeHero = true
 /// Approximates loaded energy beam hero height (card + beam + chart + day bar) for skeleton parity.
-private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 460
+private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 345
 /// Horizontal inset for the energy beam hero only (slightly tighter than the rest of Home).
 private let homeHeroHorizontalPadding: CGFloat = 15
 
@@ -42,7 +42,7 @@ struct HomeView: View {
             StaticPageGradientBackgroundView()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     if viewModel.isHeroLoading {
                         skeletonBlock(height: homeEnergyBeamHeroSkeletonHeight)
                             .homeLiquidGlassCard(.base)

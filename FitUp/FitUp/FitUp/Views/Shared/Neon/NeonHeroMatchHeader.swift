@@ -43,10 +43,12 @@ enum NeonHeroVersusLayout {
 struct NeonHeroDayProgressBanner: View {
     let label: String
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
     var body: some View {
         Text(label.uppercased())
-            .font(FitUpFont.mono(16, weight: .heavy))
-            .tracking(5.2)
+            .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(16, by: compactScale), weight: .heavy))
+            .tracking(5.2 * compactScale)
             .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.92))
             .shadow(color: FitUpColors.Neon.cyan.opacity(0.35), radius: 10, x: 0, y: 0)
             .multilineTextAlignment(.center)
@@ -107,6 +109,8 @@ struct NeonSparkyHeroName: View {
     let accent: Color
     var alignment: HorizontalAlignment = .center
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 14.0)) { timeline in
             let wall = timeline.date.timeIntervalSinceReferenceDate
@@ -114,13 +118,13 @@ struct NeonSparkyHeroName: View {
             let display = displayName(text)
 
             Text(display)
-                .font(FitUpFont.display(24, weight: .black))
-                .tracking(1.8)
+                .font(FitUpFont.display(HomeHeroCompactLayout.scaled(24, by: compactScale), weight: .black))
+                .tracking(1.8 * compactScale)
                 .foregroundStyle(accent)
                 .overlay {
                     Text(display)
-                        .font(FitUpFont.display(24, weight: .black))
-                        .tracking(1.8)
+                        .font(FitUpFont.display(HomeHeroCompactLayout.scaled(24, by: compactScale), weight: .black))
+                        .tracking(1.8 * compactScale)
                         .foregroundStyle(Color.white.opacity(Double(spark) * 0.55))
                         .blendMode(.plusLighter)
                 }
@@ -164,32 +168,34 @@ struct NeonRetroVersusBanner: View {
     let userName: String
     let opponentName: String
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
     var body: some View {
-        HStack(alignment: .bottom, spacing: NeonHeroVersusLayout.playerColumnSpacing) {
+        HStack(alignment: .bottom, spacing: HomeHeroCompactLayout.scaled(NeonHeroVersusLayout.playerColumnSpacing, by: compactScale)) {
             NeonSparkyHeroName(text: userName, accent: FitUpColors.Neon.cyan, alignment: .center)
                 .frame(maxWidth: .infinity)
-                .padding(.leading, NeonHeroVersusLayout.playerColumnEdgeInset)
+                .padding(.leading, HomeHeroCompactLayout.scaled(NeonHeroVersusLayout.playerColumnEdgeInset, by: compactScale))
 
             versusMark
                 .layoutPriority(1)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, HomeHeroCompactLayout.scaled(4, by: compactScale))
 
             NeonSparkyHeroName(text: opponentName, accent: FitUpColors.Neon.orange, alignment: .center)
                 .frame(maxWidth: .infinity)
-                .padding(.trailing, NeonHeroVersusLayout.playerColumnEdgeInset)
+                .padding(.trailing, HomeHeroCompactLayout.scaled(NeonHeroVersusLayout.playerColumnEdgeInset, by: compactScale))
         }
         .frame(maxWidth: .infinity)
-        .padding(.leading, 6)
+        .padding(.leading, HomeHeroCompactLayout.scaled(6, by: compactScale))
     }
 
     private var versusMark: some View {
         Text("VS")
-            .font(FitUpFont.display(34, weight: .black))
-            .tracking(4.8)
+            .font(FitUpFont.display(HomeHeroCompactLayout.scaled(34, by: compactScale), weight: .black))
+            .tracking(4.8 * compactScale)
             .foregroundStyle(Color.white)
             .scaleEffect(x: 1.18, y: 1)
-            .shadow(color: Color.white.opacity(0.28), radius: 8, x: 0, y: 0)
-            .offset(y: 8)
+            .shadow(color: Color.white.opacity(0.28), radius: HomeHeroCompactLayout.scaled(8, by: compactScale), x: 0, y: 0)
+            .offset(y: HomeHeroCompactLayout.scaled(8, by: compactScale))
             .accessibilityLabel("Versus")
     }
 }
@@ -213,17 +219,19 @@ struct NeonGlowMetaPill: View {
     let label: String
     let accent: Color
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
     var body: some View {
         Text(label.uppercased())
-            .font(FitUpFont.mono(11, weight: .heavy))
-            .tracking(0.55)
+            .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(11, by: compactScale), weight: .heavy))
+            .tracking(0.55 * compactScale)
             .foregroundStyle(accent)
             .lineLimit(1)
             .minimumScaleFactor(0.68)
             .allowsTightening(true)
             .multilineTextAlignment(.center)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
+            .padding(.horizontal, HomeHeroCompactLayout.scaled(8, by: compactScale))
+            .padding(.vertical, HomeHeroCompactLayout.scaled(7, by: compactScale))
             .frame(maxWidth: .infinity)
             .background {
                 NeonGlowCapsuleChrome(accent: accent)

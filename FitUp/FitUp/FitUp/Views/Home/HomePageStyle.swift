@@ -17,3 +17,26 @@ enum HomePageStyle {
   /// Brighter faint labels (was ~27% white).
   static let faint = Color.white.opacity(0.46)
 }
+
+/// Compact layout metrics for the Home energy-beam hero (production Home only).
+enum HomeHeroCompactLayout {
+  /// Target ~75% of current hero sizing on Home only.
+  static let heroScale: CGFloat = 0.75
+  /// Active Battles block: slightly smaller, not full 75%.
+  static let battlesScale: CGFloat = 0.88
+
+  static func scaled(_ value: CGFloat, by scale: CGFloat = heroScale) -> CGFloat {
+    (value * scale).rounded()
+  }
+}
+
+private struct HomeHeroCompactScaleKey: EnvironmentKey {
+  static let defaultValue: CGFloat = 1
+}
+
+extension EnvironmentValues {
+  var homeHeroCompactScale: CGFloat {
+    get { self[HomeHeroCompactScaleKey.self] }
+    set { self[HomeHeroCompactScaleKey.self] = newValue }
+  }
+}

@@ -37,7 +37,8 @@ struct ActiveBattlesNeonSection: View {
                 systemImage: "flag.2.crossed.fill",
                 label: "Active Battles",
                 value: activeCountText,
-                accent: FitUpColors.Neon.cyan
+                accent: FitUpColors.Neon.cyan,
+                compact: true
             )
             tappableStatCard(
                 systemImage: "trophy.fill",
@@ -60,7 +61,8 @@ struct ActiveBattlesNeonSection: View {
                     systemImage: "list.number",
                     label: "Leaderboard",
                     value: leaderboardRankDisplay,
-                    accent: FitUpColors.Neon.pink
+                    accent: FitUpColors.Neon.pink,
+                    compact: true
                 )
             }
             .buttonStyle(.plain)
@@ -82,7 +84,8 @@ struct ActiveBattlesNeonSection: View {
                     systemImage: systemImage,
                     label: label,
                     value: value,
-                    accent: accent
+                    accent: accent,
+                    compact: true
                 )
             }
             .buttonStyle(.plain)
@@ -91,7 +94,8 @@ struct ActiveBattlesNeonSection: View {
                 systemImage: systemImage,
                 label: label,
                 value: value,
-                accent: accent
+                accent: accent,
+                compact: true
             )
         }
     }
@@ -109,7 +113,7 @@ struct ActiveBattlesNeonSection: View {
                 Button {
                     onOpenMatch(match)
                 } label: {
-                    ActiveBattleRowView(match: match)
+                    ActiveBattleRowView(match: match, compact: true)
                 }
                 .buttonStyle(.plain)
             }

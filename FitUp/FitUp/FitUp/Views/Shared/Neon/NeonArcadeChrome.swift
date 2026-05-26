@@ -131,11 +131,12 @@ private struct NeonRivalryPanelModifier: ViewModifier {
 
 private struct NeonCompactBattleCardModifier: ViewModifier {
     let accent: Color
+    var minHeight: CGFloat?
 
     func body(content: Content) -> some View {
         content
             .frame(maxWidth: .infinity)
-            .frame(minHeight: NeonArcadeChrome.battleCardMinHeight)
+            .frame(minHeight: minHeight ?? NeonArcadeChrome.battleCardMinHeight)
             .background {
                 RoundedRectangle(cornerRadius: NeonArcadeChrome.battleCardCornerRadius, style: .continuous)
                     .fill(Color.black.opacity(0.58))
@@ -236,7 +237,7 @@ extension View {
         modifier(NeonRowInsetPlateModifier(accent: accent))
     }
 
-    func neonCompactBattleCard(accent: Color) -> some View {
-        modifier(NeonCompactBattleCardModifier(accent: accent))
+    func neonCompactBattleCard(accent: Color, minHeight: CGFloat? = nil) -> some View {
+        modifier(NeonCompactBattleCardModifier(accent: accent, minHeight: minHeight))
     }
 }

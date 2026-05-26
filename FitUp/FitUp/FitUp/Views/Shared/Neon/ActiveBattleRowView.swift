@@ -9,55 +9,67 @@ import SwiftUI
 
 struct ActiveBattleRowView: View {
     let match: HomeActiveMatch
+    var compact: Bool = false
+
+    private var scale: CGFloat {
+        compact ? HomeHeroCompactLayout.battlesScale : 1
+    }
+
+    private func scaled(_ value: CGFloat) -> CGFloat {
+        HomeHeroCompactLayout.scaled(value, by: scale)
+    }
 
     private var accent: Color {
         match.neonCardAccentColor
     }
 
+    private var avatarSize: CGFloat { scaled(36) }
+    private var ringSize: CGFloat { scaled(42) }
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            VStack(spacing: 6) {
+            VStack(spacing: scaled(6)) {
                 topRow
                 Text(match.neonDayProgressText)
-                    .font(FitUpFont.mono(11, weight: .semibold))
+                    .font(FitUpFont.mono(scaled(11), weight: .semibold))
                     .foregroundStyle(HomePageStyle.muted)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .padding(.bottom, 14)
+            .padding(.horizontal, scaled(12))
+            .padding(.vertical, scaled(10))
+            .padding(.bottom, scaled(14))
 
             Text(match.neonStepDifferenceNowText)
-                .font(FitUpFont.mono(10, weight: .bold))
+                .font(FitUpFont.mono(scaled(10), weight: .bold))
                 .foregroundStyle(match.neonComparableMarginColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
+                .padding(.horizontal, scaled(12))
+                .padding(.bottom, scaled(8))
         }
-        .neonCompactBattleCard(accent: accent)
+        .neonCompactBattleCard(accent: accent, minHeight: compact ? scaled(62) : nil)
     }
 
     private var topRow: some View {
         ZStack {
-            HStack(spacing: 8) {
+            HStack(spacing: scaled(8)) {
                 AvatarView(
                     initials: match.opponent.initials,
                     color: ProfileAccentColor.swiftUIColor(hex: match.opponent.colorHex),
-                    size: 36,
+                    size: avatarSize,
                     glow: true
                 )
                 .overlay {
                     Circle()
-                        .strokeBorder(accent.opacity(0.85), lineWidth: 2)
-                        .frame(width: 42, height: 42)
-                        .shadow(color: accent.opacity(0.4), radius: 6, x: 0, y: 0)
+                        .strokeBorder(accent.opacity(0.85), lineWidth: max(1, scaled(2)))
+                        .frame(width: ringSize, height: ringSize)
+                        .shadow(color: accent.opacity(0.4), radius: scaled(6), x: 0, y: 0)
                 }
 
                 Text(match.opponent.displayName)
-                    .font(FitUpFont.body(15, weight: .bold))
+                    .font(FitUpFont.body(scaled(15), weight: .bold))
                     .foregroundStyle(HomePageStyle.offWhite)
                     .lineLimit(1)
 
@@ -65,9 +77,9 @@ struct ActiveBattleRowView: View {
             }
 
             Text(match.neonDayScoreText)
-                .font(FitUpFont.display(24, weight: .black))
+                .font(FitUpFont.display(scaled(24), weight: .black))
                 .foregroundStyle(HomePageStyle.offWhite)
-                .shadow(color: accent.opacity(0.35), radius: 6, x: 0, y: 0)
+                .shadow(color: accent.opacity(0.35), radius: scaled(6), x: 0, y: 0)
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
         }

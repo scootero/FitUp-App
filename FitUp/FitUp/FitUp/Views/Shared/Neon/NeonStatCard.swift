@@ -12,33 +12,38 @@ struct NeonStatCard: View {
     let label: String
     let value: String
     let accent: Color
+    var compact: Bool = false
+
+    private var scale: CGFloat {
+        compact ? HomeHeroCompactLayout.battlesScale : 1
+    }
 
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: HomeHeroCompactLayout.scaled(5, by: scale)) {
             Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .bold))
+                .font(.system(size: HomeHeroCompactLayout.scaled(18, by: scale), weight: .bold))
                 .foregroundStyle(accent)
-                .shadow(color: accent.opacity(0.75), radius: 8, x: 0, y: 0)
-                .padding(.top, 4)
+                .shadow(color: accent.opacity(0.75), radius: HomeHeroCompactLayout.scaled(8, by: scale), x: 0, y: 0)
+                .padding(.top, HomeHeroCompactLayout.scaled(4, by: scale))
 
             Text(label.uppercased())
-                .font(FitUpFont.mono(9, weight: .bold))
-                .tracking(1.0)
+                .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(9, by: scale), weight: .bold))
+                .tracking(1.0 * scale)
                 .foregroundStyle(HomePageStyle.offWhite.opacity(0.94))
                 .lineLimit(2)
                 .minimumScaleFactor(0.65)
                 .multilineTextAlignment(.center)
 
             Text(value)
-                .font(FitUpFont.display(30, weight: .black))
+                .font(FitUpFont.display(HomeHeroCompactLayout.scaled(30, by: scale), weight: .black))
                 .foregroundStyle(accent)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
-                .shadow(color: accent.opacity(0.62), radius: 10, x: 0, y: 0)
-                .padding(.bottom, 2)
+                .shadow(color: accent.opacity(0.62), radius: HomeHeroCompactLayout.scaled(10, by: scale), x: 0, y: 0)
+                .padding(.bottom, HomeHeroCompactLayout.scaled(2, by: scale))
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
+        .padding(.horizontal, HomeHeroCompactLayout.scaled(4, by: scale))
+        .padding(.vertical, HomeHeroCompactLayout.scaled(6, by: scale))
         .neonOvalStatCard(accent: accent)
     }
 }

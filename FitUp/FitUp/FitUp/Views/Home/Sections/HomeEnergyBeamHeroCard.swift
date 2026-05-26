@@ -302,6 +302,7 @@ struct HomeEnergyBeamHeroCard: View {
                         selectedHeroMatchId: selectedHeroMatchId ?? match.id,
                         onSelectHeroMatch: onSelectHeroMatch
                     )
+                    .environment(\.homeHeroCompactScale, HomeHeroCompactLayout.heroScale)
                 }
                 .transaction { $0.disablesAnimations = false }
                 .onChange(of: handoffRevealActive) { _, active in

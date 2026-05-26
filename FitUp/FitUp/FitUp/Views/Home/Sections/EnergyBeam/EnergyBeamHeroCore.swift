@@ -720,21 +720,25 @@ enum EnergyBeamHeroCollisionLayout {
 private struct EnergyBeamBattleStatusCallout: View {
     let margin: Int
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
     private var accent: Color { EnergyBeamHeroCollisionLayout.eyebrowColor(margin: margin) }
     private var label: String { EnergyBeamHeroCollisionLayout.statusCallout(margin: margin) }
 
-    static let reservedHeight: CGFloat = 34
+    private static let baseReservedHeight: CGFloat = 34
+
+    var reservedHeight: CGFloat { HomeHeroCompactLayout.scaled(Self.baseReservedHeight, by: compactScale) }
 
     var body: some View {
         Text(label)
-            .font(FitUpFont.mono(14, weight: .heavy))
+            .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(14, by: compactScale), weight: .heavy))
             .foregroundStyle(accent)
-            .tracking(5.2)
+            .tracking(5.2 * compactScale)
             .lineLimit(1)
             .minimumScaleFactor(0.62)
             .allowsTightening(true)
-            .padding(.horizontal, 22)
-            .padding(.vertical, 7)
+            .padding(.horizontal, HomeHeroCompactLayout.scaled(22, by: compactScale))
+            .padding(.vertical, HomeHeroCompactLayout.scaled(7, by: compactScale))
             .background {
                 NeonGlowCapsuleChrome(accent: accent)
             }
@@ -750,7 +754,11 @@ private struct EnergyBeamPostBeamMarginRow: View {
     let unitLabel: String
     let referenceValue: Int
 
-    static let reservedHeight: CGFloat = 46
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
+    private static let baseReservedHeight: CGFloat = 46
+
+    var reservedHeight: CGFloat { HomeHeroCompactLayout.scaled(Self.baseReservedHeight, by: compactScale) }
 
     private var accent: Color {
         EnergyBeamHeroCollisionLayout.marginAccent(margin: margin, referenceValue: referenceValue)
@@ -761,28 +769,28 @@ private struct EnergyBeamPostBeamMarginRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: HomeHeroCompactLayout.scaled(8, by: compactScale)) {
             Text(EnergyBeamHeroCollisionLayout.heroNumberText(margin: margin))
-                .font(FitUpFont.display(38, weight: .heavy))
+                .font(FitUpFont.display(HomeHeroCompactLayout.scaled(38, by: compactScale), weight: .heavy))
                 .foregroundStyle(accent)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .allowsTightening(true)
                 .contentTransition(.numericText())
-                .shadow(color: accent.opacity(glowOpacity), radius: 14, y: 0)
-                .shadow(color: accent.opacity(glowOpacity * 0.55), radius: 28, y: 0)
+                .shadow(color: accent.opacity(glowOpacity), radius: HomeHeroCompactLayout.scaled(14, by: compactScale), y: 0)
+                .shadow(color: accent.opacity(glowOpacity * 0.55), radius: HomeHeroCompactLayout.scaled(28, by: compactScale), y: 0)
 
             Text(unitLabel)
-                .font(FitUpFont.body(13, weight: .heavy))
+                .font(FitUpFont.body(HomeHeroCompactLayout.scaled(13, by: compactScale), weight: .heavy))
                 .foregroundStyle(HomePageStyle.muted)
-                .tracking(2.4)
+                .tracking(2.4 * compactScale)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .allowsTightening(true)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 6)
-        .frame(height: Self.reservedHeight)
+        .padding(.top, HomeHeroCompactLayout.scaled(6, by: compactScale))
+        .frame(height: reservedHeight)
         .animation(.easeInOut(duration: 0.25), value: margin)
         .accessibilityElement(children: .combine)
     }
@@ -929,21 +937,22 @@ private struct PlayerColumnPreview: View {
     let scoreCaption: String
     let isBalancedStepsBattle: Bool
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
     @State private var showStepsDisclaimer = false
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: HomeHeroCompactLayout.scaled(4, by: compactScale)) {
             HeroProfileAvatarBadge(name: name, accent: accent, role: role)
 
             Color.clear
-                .frame(height: NeonHeroVersusLayout.profileNameBelowAvatarReservedHeight)
+                .frame(height: HomeHeroCompactLayout.scaled(NeonHeroVersusLayout.profileNameBelowAvatarReservedHeight, by: compactScale))
 
             Button {
                 showStepsDisclaimer = true
             } label: {
-                VStack(spacing: 3) {
+                VStack(spacing: HomeHeroCompactLayout.scaled(3, by: compactScale)) {
                     Text(stepCountLabel)
-                        .font(FitUpFont.body(13, weight: .semibold))
+                        .font(FitUpFont.body(HomeHeroCompactLayout.scaled(13, by: compactScale), weight: .semibold))
                         .foregroundStyle(FitUpColors.Neon.yellow.opacity(0.88))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
@@ -960,8 +969,8 @@ private struct PlayerColumnPreview: View {
                                 endPoint: .trailing
                             )
                         )
-                        .frame(height: 2)
-                        .frame(maxWidth: 88)
+                        .frame(height: max(1, HomeHeroCompactLayout.scaled(2, by: compactScale)))
+                        .frame(maxWidth: HomeHeroCompactLayout.scaled(88, by: compactScale))
                 }
             }
             .buttonStyle(.plain)
@@ -976,14 +985,14 @@ private struct PlayerColumnPreview: View {
                 .frame(height: 1)
 
             Text(scoreCaption)
-                .font(FitUpFont.body(11, weight: .semibold))
+                .font(FitUpFont.body(HomeHeroCompactLayout.scaled(11, by: compactScale), weight: .semibold))
                 .foregroundStyle(accent.opacity(0.85))
-                .tracking(0.35)
+                .tracking(0.35 * compactScale)
 
             Text(EnergyBeamNumberFormatting.score.string(from: NSNumber(value: battleScore)) ?? "\(battleScore)")
-                .font(FitUpFont.display(28, weight: .heavy))
+                .font(FitUpFont.display(HomeHeroCompactLayout.scaled(28, by: compactScale), weight: .heavy))
                 .foregroundStyle(accent.opacity(1))
-                .shadow(color: accent.opacity(0.35), radius: 10)
+                .shadow(color: accent.opacity(0.35), radius: HomeHeroCompactLayout.scaled(10, by: compactScale))
                 .lineLimit(1)
                 .minimumScaleFactor(0.55)
                 .allowsTightening(true)
@@ -1012,14 +1021,16 @@ private struct HeroProfileAvatarBadge: View {
     let accent: Color
     let role: BattlePlayerRolePreview
 
-    private let diameter: CGFloat = 80
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
+    private var diameter: CGFloat { HomeHeroCompactLayout.scaled(80, by: compactScale) }
 
     var body: some View {
         ZStack {
             Image(systemName: "person.fill")
-                .font(.system(size: 32, weight: .semibold))
+                .font(.system(size: HomeHeroCompactLayout.scaled(32, by: compactScale), weight: .semibold))
                 .foregroundStyle(accent.opacity(0.42))
-                .shadow(color: accent.opacity(0.25), radius: 8)
+                .shadow(color: accent.opacity(0.25), radius: HomeHeroCompactLayout.scaled(8, by: compactScale))
         }
         .frame(width: diameter, height: diameter)
         .background(.black.opacity(0.32))
@@ -1031,11 +1042,11 @@ private struct HeroProfileAvatarBadge: View {
                         colors: [accent.opacity(0.95), accent.opacity(0.45), accent.opacity(0.95)],
                         center: .center
                     ),
-                    lineWidth: 3
+                    lineWidth: max(1, HomeHeroCompactLayout.scaled(3, by: compactScale))
                 )
         )
-        .shadow(color: accent.opacity(0.35), radius: 14, y: 5)
-        .shadow(color: accent.opacity(0.18), radius: 22, y: 8)
+        .shadow(color: accent.opacity(0.35), radius: HomeHeroCompactLayout.scaled(14, by: compactScale), y: 5)
+        .shadow(color: accent.opacity(0.18), radius: HomeHeroCompactLayout.scaled(22, by: compactScale), y: 8)
     }
 }
 
@@ -1078,10 +1089,16 @@ private struct ProceduralEnergyBeamView: View {
     /// When true, integer margin changes do not retrigger impact pulses (fluid score catch-up).
     var suppressImpactBursts: Bool = false
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
     /// Wall-clock time of last integer margin change; drives short `impact` pulse in `drawBeam`.
     @State private var lastImpactAtWall: TimeInterval = -1000
 
     private var drawSeed: Int { proceduralDrawSeed ?? marginRounded }
+
+    private func scaledBeamHeight(_ base: CGFloat) -> CGFloat {
+        HomeHeroCompactLayout.scaled(base, by: compactScale)
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -1104,7 +1121,7 @@ private struct ProceduralEnergyBeamView: View {
                         motionScale: motionScale
                     )
                     : scaledProductionTuning(motionScale: motionScale, impactScale: impactStrengthScale)
-                let stripHeight = activeTuning.beamOuterHeight
+                let stripHeight = scaledBeamHeight(activeTuning.beamOuterHeight)
                 let midY = stripHeight * 0.5
                 let wall = timeline.date.timeIntervalSinceReferenceDate
                 let collisionX = resolveCollisionX(
@@ -1131,7 +1148,7 @@ private struct ProceduralEnergyBeamView: View {
                 .frame(maxHeight: .infinity, alignment: .center)
             }
         }
-        .frame(height: beamVisualTuning.beamOuterHeight)
+        .frame(height: scaledBeamHeight(beamVisualTuning.beamOuterHeight))
         .onChange(of: marginRounded) { _, _ in
             guard !suppressImpactBursts else { return }
             lastImpactAtWall = Date().timeIntervalSinceReferenceDate
@@ -2291,8 +2308,12 @@ private struct DayBattleSparklinePreview: View {
     let opponentValues: [CGFloat]
     var showMockTimelineLabel: Bool = false
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
+    private var chartHeight: CGFloat { HomeHeroCompactLayout.scaled(96, by: compactScale) }
+
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: HomeHeroCompactLayout.scaled(6, by: compactScale)) {
             GeometryReader { geo in
                 let w = geo.size.width
                 let h = geo.size.height
@@ -2306,8 +2327,6 @@ private struct DayBattleSparklinePreview: View {
 
                     fadedDistanceGrid(rect: CGRect(origin: .zero, size: geo.size))
 
-                    subtleGrid(rect: CGRect(origin: .zero, size: geo.size))
-
                     sparkline(points: ptsO, color: FitUpColors.Neon.orange.opacity(0.92), glowMultiplier: 0.85)
 
                     sparkline(points: ptsU, color: FitUpColors.Neon.cyan.opacity(0.95), glowMultiplier: 1.0)
@@ -2318,7 +2337,7 @@ private struct DayBattleSparklinePreview: View {
                     endpointDots(ptsU: ptsU, ptsO: ptsO)
                 }
             }
-            .frame(height: 96)
+            .frame(height: chartHeight)
 
             HStack {
                 chartAxisLabel("12 AM")
@@ -2338,11 +2357,11 @@ private struct DayBattleSparklinePreview: View {
             }
             #endif
         }
-        .padding(10)
+        .padding(HomeHeroCompactLayout.scaled(10, by: compactScale))
         .allowsTightening(true)
         .minimumScaleFactor(0.94)
         .background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(18, by: compactScale), style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
@@ -2355,7 +2374,7 @@ private struct DayBattleSparklinePreview: View {
                     )
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(18, by: compactScale), style: .continuous)
                         .strokeBorder(
                             LinearGradient(
                                 colors: [
@@ -2458,33 +2477,6 @@ private struct DayBattleSparklinePreview: View {
         return mesh
     }
 
-    /// Sparse dashed guides on top of the mesh (thirds + mid band); gradient keeps the neon “chart” read subtle.
-    private func subtleGrid(rect: CGRect) -> some View {
-        let pad: CGFloat = 16
-        return Path { p in
-            let cols = [rect.minX + rect.width * (1.0 / 3.0), rect.minX + rect.width * (2.0 / 3.0)]
-            for x in cols {
-                p.move(to: CGPoint(x: x, y: rect.minY + pad))
-                p.addLine(to: CGPoint(x: x, y: rect.maxY - pad))
-            }
-            let midY = rect.minY + rect.height * 0.5
-            p.move(to: CGPoint(x: rect.minX + pad, y: midY))
-            p.addLine(to: CGPoint(x: rect.maxX - pad, y: midY))
-        }
-        .stroke(
-            LinearGradient(
-                colors: [
-                    FitUpColors.Neon.cyan.opacity(0.09),
-                    FitUpColors.Neon.orange.opacity(0.075),
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            ),
-            style: StrokeStyle(lineWidth: 0.85, lineCap: .round, dash: [4, 12])
-        )
-        .blendMode(.plusLighter)
-    }
-
     /// Maps normalized series values into pixel points with padding.
     private func sampledPoints(for values: [CGFloat], in size: CGSize, pad: CGPoint) -> [CGPoint] {
         guard values.count >= 2 else { return [] }
@@ -2575,8 +2567,8 @@ private struct DayBattleSparklinePreview: View {
             .allowsTightening(true)
             .minimumScaleFactor(0.85)
             .foregroundStyle(Color.white.opacity(0.6))
-            .font(FitUpFont.body(14, weight: .heavy))
-            .tracking(3.2)
+            .font(FitUpFont.body(HomeHeroCompactLayout.scaled(14, by: compactScale), weight: .heavy))
+            .tracking(3.2 * compactScale)
     }
 }
 
@@ -2587,11 +2579,18 @@ private struct DayElapsedProgressPreview: View {
     let fractionElapsed: CGFloat
     let caption: String
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
+    private var barHeight: CGFloat { HomeHeroCompactLayout.scaled(22, by: compactScale) }
+    private var thumbDiameter: CGFloat { HomeHeroCompactLayout.scaled(17, by: compactScale) }
+
     var body: some View {
-        VStack(spacing: 8) {
+        HStack(alignment: .center, spacing: HomeHeroCompactLayout.scaled(10, by: compactScale)) {
             GeometryReader { geo in
                 let w = geo.size.width
-                let x = CGFloat.minimum(CGFloat.maximum(fractionElapsed, 0), 1) * w
+                let clamped = CGFloat.minimum(CGFloat.maximum(fractionElapsed, 0), 1)
+                let x = clamped * w
+                let thumbX = max(thumbDiameter * 0.5 + 2, min(w - thumbDiameter * 0.5 - 2, x))
 
                 ZStack(alignment: .leading) {
                     Capsule(style: .continuous)
@@ -2606,54 +2605,34 @@ private struct DayElapsedProgressPreview: View {
                                 endPoint: .trailing
                             )
                         )
-                        .frame(width: max(22, x), alignment: .leading)
+                        .frame(width: max(HomeHeroCompactLayout.scaled(22, by: compactScale), x), alignment: .leading)
                         .mask(Capsule(style: .continuous))
 
                     Circle()
                         .fill(Color.white.opacity(0.98))
-                        .frame(width: 17, height: 17)
-                        .shadow(color: FitUpColors.Neon.orange.opacity(0.65), radius: 12)
-                        .shadow(color: Color.white.opacity(0.35), radius: 10)
-                        .position(x: max(13, CGFloat.minimum(CGFloat.maximum(fractionElapsed, 0), 1) * w), y: geo.size.height * 0.5)
+                        .frame(width: thumbDiameter, height: thumbDiameter)
+                        .shadow(color: FitUpColors.Neon.orange.opacity(0.65), radius: HomeHeroCompactLayout.scaled(12, by: compactScale))
+                        .shadow(color: Color.white.opacity(0.35), radius: HomeHeroCompactLayout.scaled(10, by: compactScale))
+                        .position(x: thumbX, y: geo.size.height * 0.5)
                         .blendMode(.plusLighter)
 
                     Capsule(style: .continuous)
                         .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
                         .blendMode(.plusLighter)
                 }
-                .frame(height: 22)
+                .frame(height: barHeight)
                 .allowsHitTesting(false)
             }
-            .frame(height: 22)
+            .frame(height: barHeight)
 
             Text(caption)
-                .font(FitUpFont.mono(16, weight: .heavy))
-                .foregroundStyle(HomePageStyle.offWhite)
-                .tracking(1.2)
-                .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.94)
+                .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(16, by: compactScale), weight: .heavy))
+                .foregroundStyle(HomePageStyle.offWhite.opacity(0.92))
+                .tracking(1.2 * compactScale)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
                 .allowsTightening(true)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background {
-                    Capsule(style: .continuous)
-                        .fill(Color.white.opacity(0.05))
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .strokeBorder(
-                                    LinearGradient(
-                                        colors: [
-                                            FitUpColors.Neon.cyan.opacity(0.35),
-                                            FitUpColors.Neon.orange.opacity(0.35),
-                                        ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    ),
-                                    lineWidth: 1
-                                )
-                        }
-                }
-                .shadow(color: FitUpColors.Neon.cyan.opacity(0.12), radius: 8, y: 0)
+                .layoutPriority(1)
         }
         .frame(maxWidth: .infinity)
     }
@@ -2682,12 +2661,14 @@ private struct EnergyBeamIntradayFreshnessRow: View {
     let viewerHealthKitAt: Date?
     let opponentTickAt: Date?
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
     var body: some View {
         if viewerHealthKitAt == nil, opponentTickAt == nil {
             EmptyView()
         } else {
             TimelineView(.periodic(from: .now, by: 45)) { timeline in
-                HStack(alignment: .center, spacing: 8) {
+                HStack(alignment: .center, spacing: HomeHeroCompactLayout.scaled(8, by: compactScale)) {
                     freshnessColumn(
                         title: "YOU",
                         caption: "HealthKit",
@@ -2699,11 +2680,11 @@ private struct EnergyBeamIntradayFreshnessRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     Text("SYNC")
-                        .font(FitUpFont.display(24, weight: .black))
+                        .font(FitUpFont.display(HomeHeroCompactLayout.scaled(24, by: compactScale), weight: .black))
                         .foregroundStyle(Color.white.opacity(0.96))
-                        .tracking(2.4)
-                        .shadow(color: Color.white.opacity(0.25), radius: 10, y: 0)
-                        .shadow(color: FitUpColors.Neon.cyan.opacity(0.18), radius: 16, y: 0)
+                        .tracking(2.4 * compactScale)
+                        .shadow(color: Color.white.opacity(0.25), radius: HomeHeroCompactLayout.scaled(10, by: compactScale), y: 0)
+                        .shadow(color: FitUpColors.Neon.cyan.opacity(0.18), radius: HomeHeroCompactLayout.scaled(16, by: compactScale), y: 0)
                         .layoutPriority(1)
 
                     freshnessColumn(
@@ -2716,13 +2697,13 @@ private struct EnergyBeamIntradayFreshnessRow: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .padding(.vertical, 8)
-                .padding(.horizontal, 10)
+                .padding(.vertical, HomeHeroCompactLayout.scaled(8, by: compactScale))
+                .padding(.horizontal, HomeHeroCompactLayout.scaled(10, by: compactScale))
                 .background {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(14, by: compactScale), style: .continuous)
                         .fill(Color.white.opacity(0.04))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(14, by: compactScale), style: .continuous)
                                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
                         }
                 }
@@ -2741,22 +2722,22 @@ private struct EnergyBeamIntradayFreshnessRow: View {
         alignment: HorizontalAlignment
     ) -> some View {
         let frameAlign: Alignment = alignment == .leading ? .leading : .trailing
-        return VStack(alignment: alignment, spacing: 4) {
+        return VStack(alignment: alignment, spacing: HomeHeroCompactLayout.scaled(4, by: compactScale)) {
             Text(title)
-                .font(FitUpFont.body(12, weight: .heavy))
+                .font(FitUpFont.body(HomeHeroCompactLayout.scaled(12, by: compactScale), weight: .heavy))
                 .foregroundStyle(Color.white.opacity(0.55))
-                .tracking(2)
+                .tracking(2 * compactScale)
             Text(caption)
-                .font(FitUpFont.body(14, weight: .heavy))
+                .font(FitUpFont.body(HomeHeroCompactLayout.scaled(14, by: compactScale), weight: .heavy))
                 .foregroundStyle(accent)
-                .shadow(color: accent.opacity(0.35), radius: 8, y: 0)
+                .shadow(color: accent.opacity(0.35), radius: HomeHeroCompactLayout.scaled(8, by: compactScale), y: 0)
             if let at {
                 Text(Self.relativeString(for: at, relativeTo: now))
-                    .font(FitUpFont.body(15, weight: .semibold))
+                    .font(FitUpFont.body(HomeHeroCompactLayout.scaled(15, by: compactScale), weight: .semibold))
                     .foregroundStyle(HomePageStyle.muted)
             } else {
                 Text("—")
-                    .font(FitUpFont.body(15, weight: .semibold))
+                    .font(FitUpFont.body(HomeHeroCompactLayout.scaled(15, by: compactScale), weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.35))
             }
         }
@@ -2832,6 +2813,27 @@ struct EnergyBeamHeroGlassCardView: View {
     var selectedHeroMatchId: UUID? = nil
     var onSelectHeroMatch: ((HomeActiveMatch) -> Void)? = nil
 
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
+    private func scaled(_ value: CGFloat) -> CGFloat {
+        HomeHeroCompactLayout.scaled(value, by: compactScale)
+    }
+
+    private var cardCornerRadius: CGFloat { scaled(28) }
+
+    private var statusCalloutReservedHeight: CGFloat { scaled(34) }
+    private var postBeamMarginReservedHeight: CGFloat { scaled(46) }
+    private var statusToBeamSpacing: CGFloat { scaled(5) }
+    private var beamToMarginSpacing: CGFloat { scaled(2) }
+
+    private var aboveBeamStackReservedHeight: CGFloat {
+        statusCalloutReservedHeight + statusToBeamSpacing
+    }
+
+    private var belowBeamStackReservedHeight: CGFloat {
+        postBeamMarginReservedHeight + beamToMarginSpacing
+    }
+
     private var narrativeMarginInt: Int { Int(margin.rounded(.towardZero)) }
     private var beamCollisionMarginPrecise: Double {
         if let precise = beamCollisionMarginPreciseOverride { return precise }
@@ -2850,18 +2852,18 @@ struct EnergyBeamHeroGlassCardView: View {
         VStack(spacing: 0) {
             if showTopBrandHeader {
                 headerBlock
-                    .padding(.top, 18)
-                    .padding(.bottom, 8)
+                    .padding(.top, scaled(18))
+                    .padding(.bottom, scaled(8))
             }
 
             if let matchHeaderContent {
-                VStack(spacing: 10) {
+                VStack(spacing: scaled(10)) {
                     NeonHeroDayProgressBanner(label: matchHeaderContent.dayProgressLabel)
                     NeonHeroMetaPillsRow(pills: matchHeaderContent.pills)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, showTopBrandHeader ? 8 : 14)
-                .padding(.bottom, 10)
+                .padding(.horizontal, scaled(16))
+                .padding(.top, showTopBrandHeader ? scaled(8) : scaled(14))
+                .padding(.bottom, scaled(10))
             }
 
             if let matchHeaderContent {
@@ -2869,45 +2871,45 @@ struct EnergyBeamHeroGlassCardView: View {
                     userName: matchHeaderContent.userDisplayName,
                     opponentName: matchHeaderContent.opponentDisplayName
                 )
-                .padding(.horizontal, 10)
-                .padding(.top, 12)
-                .padding(.bottom, 6)
+                .padding(.horizontal, scaled(10))
+                .padding(.top, scaled(12))
+                .padding(.bottom, scaled(6))
             }
 
             playersRow
-                .padding(.horizontal, 10)
-                .padding(.top, heroPlayersRowTopPadding)
-                .padding(.bottom, 12)
+                .padding(.horizontal, scaled(10))
+                .padding(.top, scaled(heroPlayersRowTopPadding))
+                .padding(.bottom, scaled(12))
 
             beamBattleZone
-                .padding(.horizontal, 18)
-                .padding(.bottom, 10)
+                .padding(.horizontal, scaled(18))
+                .padding(.bottom, scaled(10))
 
             DayBattleSparklinePreview(
                 userValues: sparklineUserValues,
                 opponentValues: sparklineOpponentValues,
                 showMockTimelineLabel: showMockTimelineDebugLabel
             )
-            .padding(.horizontal, 14)
-            .padding(.bottom, 4)
+            .padding(.horizontal, scaled(14))
+            .padding(.bottom, scaled(4))
 
             EnergyBeamIntradayFreshnessRow(
                 viewerHealthKitAt: viewerIntradayHealthKitSyncedAt,
                 opponentTickAt: opponentIntradayLatestTickAt
             )
-            .padding(.horizontal, 14)
-            .padding(.bottom, 8)
+            .padding(.horizontal, scaled(14))
+            .padding(.bottom, scaled(8))
 
             DayElapsedProgressPreview(fractionElapsed: dayElapsedFraction, caption: dayProgressCaption)
-                .padding(.horizontal, 18)
-                .padding(.bottom, 14)
+                .padding(.horizontal, scaled(18))
+                .padding(.bottom, scaled(14))
         }
         .background {
             ZStack {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                     .fill(FitUpColors.Bg.base.opacity(0.78))
 
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                     .fill(
                         RadialGradient(
                             colors: [
@@ -2922,7 +2924,7 @@ struct EnergyBeamHeroGlassCardView: View {
                         )
                     )
 
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                     .strokeBorder(
                         LinearGradient(
                             colors: [
@@ -2938,9 +2940,9 @@ struct EnergyBeamHeroGlassCardView: View {
                     )
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: FitUpColors.Neon.cyan.opacity(0.12), radius: 28, y: 10)
-        .shadow(color: .black.opacity(0.65), radius: 18, y: 10)
+        .clipShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
+        .shadow(color: FitUpColors.Neon.cyan.opacity(0.12), radius: scaled(28), y: scaled(10))
+        .shadow(color: .black.opacity(0.65), radius: scaled(18), y: scaled(10))
         .animation(
             EnergyBeamHeroLayout.marginTransitionAnimation(duration: EnergyBeamHeroLayout.marginDrivenAnimationSeconds),
             value: beamCollisionMarginPrecise
@@ -2950,6 +2952,10 @@ struct EnergyBeamHeroGlassCardView: View {
     private var heroPlayersRowTopPadding: CGFloat {
         if matchHeaderContent != nil { return 8 }
         return showTopBrandHeader ? 0 : 8
+    }
+
+    private func scaledBeamOuterHeight(_ tuning: EnergyBeamVisualTuning) -> CGFloat {
+        scaled(tuning.beamOuterHeight)
     }
 
     private var headerBlock: some View {
@@ -2983,7 +2989,7 @@ struct EnergyBeamHeroGlassCardView: View {
                 isBalancedStepsBattle: isBalancedStepsBattle
             )
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, NeonHeroVersusLayout.playerColumnEdgeInset)
+            .padding(.leading, scaled(NeonHeroVersusLayout.playerColumnEdgeInset))
 
             ZStack(alignment: .topTrailing) {
                 if opponentContentSuppressed {
@@ -3007,24 +3013,13 @@ struct EnergyBeamHeroGlassCardView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topTrailing)
-            .padding(.trailing, NeonHeroVersusLayout.playerColumnEdgeInset)
-            .frame(minHeight: 148)
+            .padding(.trailing, scaled(NeonHeroVersusLayout.playerColumnEdgeInset))
+            .frame(minHeight: scaled(148))
             .accessibilityHidden(opponentContentSuppressed || opponentRevealProgress < 0.04)
         }
     }
 
     private var beamMarginDisplayInt: Int { Int(beamCollisionMarginPrecise.rounded(.towardZero)) }
-
-    private static let statusToBeamSpacing: CGFloat = 5
-    private static let beamToMarginSpacing: CGFloat = 2
-
-    private static var aboveBeamStackReservedHeight: CGFloat {
-        EnergyBeamBattleStatusCallout.reservedHeight + statusToBeamSpacing
-    }
-
-    private static var belowBeamStackReservedHeight: CGFloat {
-        EnergyBeamPostBeamMarginRow.reservedHeight + beamToMarginSpacing
-    }
 
     /// Status pill, procedural beam, and post-beam margin row.
     private var beamBattleZone: some View {
@@ -3047,10 +3042,10 @@ struct EnergyBeamHeroGlassCardView: View {
             VStack(spacing: 0) {
                 if !hideMarginHeadline {
                     EnergyBeamBattleStatusCallout(margin: beamMarginDisplayInt)
-                        .padding(.bottom, Self.statusToBeamSpacing)
+                        .padding(.bottom, statusToBeamSpacing)
                 } else {
                     Color.clear
-                        .frame(height: Self.aboveBeamStackReservedHeight)
+                        .frame(height: aboveBeamStackReservedHeight)
                 }
 
                 ProceduralEnergyBeamView(
@@ -3066,7 +3061,7 @@ struct EnergyBeamHeroGlassCardView: View {
                     proceduralDrawSeed: proceduralDrawSeed,
                     suppressImpactBursts: suppressImpactBursts
                 )
-                .frame(height: layoutTuning.beamOuterHeight)
+                .frame(height: scaledBeamOuterHeight(layoutTuning))
 
                 if !hideMarginHeadline {
                     EnergyBeamPostBeamMarginRow(
@@ -3074,16 +3069,16 @@ struct EnergyBeamHeroGlassCardView: View {
                         unitLabel: unitLabel,
                         referenceValue: referenceBattleValue
                     )
-                    .padding(.top, Self.beamToMarginSpacing)
+                    .padding(.top, beamToMarginSpacing)
                 } else {
                     Color.clear
-                        .frame(height: Self.belowBeamStackReservedHeight)
+                        .frame(height: belowBeamStackReservedHeight)
                 }
             }
             .clipped()
             .frame(
-                height: layoutTuning.beamOuterHeight
-                    + (hideMarginHeadline ? 0 : Self.aboveBeamStackReservedHeight + Self.belowBeamStackReservedHeight)
+                height: scaledBeamOuterHeight(layoutTuning)
+                    + (hideMarginHeadline ? 0 : aboveBeamStackReservedHeight + belowBeamStackReservedHeight)
             )
         }
     }

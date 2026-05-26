@@ -40,6 +40,13 @@ struct StatsArcadeSliceOneView: View {
     private static let battleImpactPositiveTint = Color(red: 0, green: 0.86, blue: 1)
     private static let battleImpactNegativeTint = Color(red: 1, green: 0.84, blue: 0)
 
+    private static let unresolvedPlaceholder = "—"
+
+    private static let statsSectionTitle: CGFloat = 18
+    private static let statsCardTitle: CGFloat = 16
+    private static let statsGlassCardTitle: CGFloat = 14
+    private static let opponentProfileAccent = Color(red: 1, green: 0.55, blue: 0.13)
+
     private var topRivals: [HomeRivalStat] {
         rivalStats.sorted {
             if $0.finalizedDaysCompeted != $1.finalizedDaysCompeted {
@@ -141,16 +148,18 @@ struct StatsArcadeSliceOneView: View {
                         .font(.system(size: 14, weight: .bold))
                         .tracking(1.2)
                         .foregroundStyle(Color.white.opacity(0.93))
-                    Text(signedValue(deltaSteps))
+                    Text(hasImpactData ? signedValue(deltaSteps) : Self.unresolvedPlaceholder)
                         .font(.system(size: 30, weight: .black, design: .monospaced))
                         .tracking(1.5)
                         .foregroundStyle(heroTint)
                         .shadow(color: heroTint.opacity(0.6), radius: 8)
-                    Text(isPositiveDelta ? "more steps than usual!" : "fewer steps than usual!")
-                        .font(.system(size: 12, weight: .semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(Color.white.opacity(0.78))
-                        .multilineTextAlignment(.center)
+                    if hasImpactData {
+                        Text(isPositiveDelta ? "more steps than usual!" : "fewer steps than usual!")
+                            .font(.system(size: 12, weight: .semibold))
+                            .tracking(1.1)
+                            .foregroundStyle(Color.white.opacity(0.78))
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
@@ -163,7 +172,9 @@ struct StatsArcadeSliceOneView: View {
 
                 HStack(spacing: 8) {
                     comparisonTile(
-                        value: (impact?.normalDayAverageSteps ?? 0).formatted(),
+                        value: hasImpactData
+                            ? (impact?.normalDayAverageSteps ?? 0).formatted()
+                            : Self.unresolvedPlaceholder,
                         title: "NORMAL DAY",
                         subtitle: "AVERAGE",
                         tint: Color(red: 1, green: 0.55, blue: 0),
@@ -173,7 +184,9 @@ struct StatsArcadeSliceOneView: View {
                         .font(.system(size: 14, weight: .black))
                         .foregroundStyle(Color.white.opacity(0.32))
                     comparisonTile(
-                        value: (impact?.battleDayAverageSteps ?? 0).formatted(),
+                        value: hasImpactData
+                            ? (impact?.battleDayAverageSteps ?? 0).formatted()
+                            : Self.unresolvedPlaceholder,
                         title: "BATTLE DAY",
                         subtitle: "AVERAGE",
                         tint: Self.battleImpactPositiveTint,
@@ -181,11 +194,11 @@ struct StatsArcadeSliceOneView: View {
                     )
                 }
 
-                if boostPercent > 0 {
+                if hasImpactData, boostPercent > 0 {
                     battleBoostSummaryRow(boostPercent: boostPercent)
                 }
 
-                if !isPositiveDelta {
+                if hasImpactData, !isPositiveDelta {
                     Text("You need to step it up when battling someone! Let's go!")
                         .font(.system(size: 12, weight: .semibold))
                         .tracking(1.1)
@@ -196,7 +209,7 @@ struct StatsArcadeSliceOneView: View {
                 }
 
                 if !hasImpactData {
-                    unresolvedPill("UNRESOLVED IN SLICE 3B · EXACT BASELINE VS BATTLE-DAY AVERAGES")
+                    unresolvedPill("NEEDS MORE DATA")
                 }
             }
         }
@@ -205,7 +218,7 @@ struct StatsArcadeSliceOneView: View {
     private var opponentsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("YOUR OPPONENTS")
-                .font(.system(size: 21, weight: .black))
+                .font(.system(size: Self.statsSectionTitle, weight: .black))
                 .tracking(2.2)
                 .foregroundStyle(Color(red: 1, green: 0.5, blue: 0.13))
                 .shadow(color: Color(red: 1, green: 0.5, blue: 0.13).opacity(0.5), radius: 8)
@@ -292,29 +305,21 @@ struct StatsArcadeSliceOneView: View {
         opponentsGlassCard(
             title: "MOST WANTED",
             tint: mostWantedTint,
-            cornerLabel: "MOST BATTLED\nOPPONENT"
+            cornerLabel: "MOST BATTLED\nOPPONENT",
+            compact: true
         ) {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(alignment: .center, spacing: 10) {
-                    if let rival = mostWanted {
-                        avatarBadge(for: rival, size: 42)
-                        Text(rival.opponentDisplayName)
-                            .font(.system(size: 34, weight: .black))
-                            .foregroundStyle(mostWantedTint)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                        Spacer(minLength: 8)
-                        Text("\(rival.matchWins + rival.matchLosses + rival.matchTies) BATTLES")
-                            .font(.system(size: 11, weight: .black))
-                            .tracking(2.2)
-                            .foregroundStyle(Color.white.opacity(0.72))
-                            .multilineTextAlignment(.trailing)
-                            .padding(.trailing, 10)
-                    } else {
-                        Text("No rival stats available yet.")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.72))
-                    }
+            VStack(alignment: .leading, spacing: 7) {
+                if let rival = mostWanted {
+                    centeredOpponentProfile(
+                        rival: rival,
+                        avatarSize: 36,
+                        battlesSubtitle: "\(rival.matchWins + rival.matchLosses + rival.matchTies) BATTLES"
+                    )
+                } else {
+                    Text("No rival stats available yet.")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.72))
+                        .frame(maxWidth: .infinity)
                 }
 
                 HStack(spacing: 4) {
@@ -330,10 +335,15 @@ struct StatsArcadeSliceOneView: View {
                 }
 
                 if let rival = mostWanted {
-                    HStack(spacing: 7) {
-                        statCell(value: "\(rival.matchWins)", label: "WINS", color: .green)
-                        statCell(value: "\(rival.matchLosses)", label: "LOSSES", color: .red)
-                        statCell(value: "\(rival.winPercentage)%", label: "WIN RATE", color: Color(red: 1, green: 0.7, blue: 0))
+                    HStack(spacing: 6) {
+                        opponentStatCell(value: "\(rival.matchWins)", label: "WINS", valueColor: .green, glowTint: mostWantedTint)
+                        opponentStatCell(value: "\(rival.matchLosses)", label: "LOSSES", valueColor: .red, glowTint: mostWantedTint)
+                        opponentStatCell(
+                            value: "\(rival.winPercentage)%",
+                            label: "WIN RATE",
+                            valueColor: Color(red: 1, green: 0.7, blue: 0),
+                            glowTint: mostWantedTint
+                        )
                     }
                 }
 
@@ -348,7 +358,7 @@ struct StatsArcadeSliceOneView: View {
                 }
 
                 if mostWantedRecentSeriesResults == nil {
-                    unresolvedPill("UNRESOLVED IN SLICE 3A · LAST-5 SERIES RESULTS")
+                    unresolvedPill("BUILDING HISTORY")
                 }
             }
         }
@@ -393,7 +403,8 @@ struct StatsArcadeSliceOneView: View {
         opponentsGlassCard(
             title: title,
             tint: tint,
-            cornerLabel: cornerLabel
+            cornerLabel: cornerLabel,
+            compact: true
         ) {
             if let rival {
                 let totalSeries = rival.matchWins + rival.matchLosses + rival.matchTies
@@ -411,72 +422,64 @@ struct StatsArcadeSliceOneView: View {
                     && rival.daysWonByOpponent != nil
                     && (rival.avgMarginOnOpponentWinDays != nil || rival.avgMarginOnViewerWinDays != nil)
 
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 10) {
-                        avatarBadge(for: rival, size: 40)
-                        Text(rival.opponentDisplayName)
-                            .font(.system(size: 34, weight: .black))
-                            .foregroundStyle(tint)
-                        Spacer()
-                    }
+                VStack(alignment: .leading, spacing: 7) {
+                    centeredOpponentProfile(rival: rival, avatarSize: 36)
 
-                    VStack(spacing: 10) {
+                    VStack(spacing: 6) {
                         Text(marginHeadline)
-                            .font(.system(size: 16, weight: .black))
-                            .tracking(1.3)
+                            .font(.system(size: 13, weight: .black))
+                            .tracking(0.6)
                             .multilineTextAlignment(.center)
                             .foregroundStyle(Color.white.opacity(0.92))
                             .frame(maxWidth: .infinity)
 
-                        HStack(alignment: .firstTextBaseline, spacing: 14) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Spacer(minLength: 0)
                             Text(signedValue(marginSteps))
-                                .font(.system(size: 34, weight: .black, design: .monospaced))
-                                .tracking(2)
+                                .font(.system(size: 26, weight: .black, design: .monospaced))
+                                .tracking(0.8)
                                 .foregroundStyle(tint)
                             Text("steps")
-                                .font(.system(size: 15, weight: .bold))
-                                .tracking(2.4)
+                                .font(.system(size: 12, weight: .bold))
+                                .tracking(0.5)
                                 .foregroundStyle(Color.white.opacity(0.78))
                             Spacer(minLength: 0)
                         }
                     }
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 4)
 
                     HStack(spacing: 6) {
-                        statCell(value: "\(totalSeries)", label: "TOTAL BATTLES", color: .white)
-                        statCell(value: "\(winsByThem)", label: "BATTLES WON BY THEM", color: .red)
+                        opponentStatCell(value: "\(totalSeries)", label: "TOTAL BATTLES", valueColor: .white, glowTint: tint)
+                        opponentStatCell(value: "\(winsByThem)", label: "BATTLES WON BY THEM", valueColor: .red, glowTint: tint)
                     }
 
                     HStack(spacing: 6) {
-                        statCell(value: "\(battleDays)", label: "BATTLE DAYS", color: .white)
-                        statCell(value: "\(theyWonDays)", label: "DAYS THEY WON", color: .red)
-                        statCell(value: "\(youWonDays)", label: "DAYS YOU WON", color: .green)
+                        opponentStatCell(value: "\(battleDays)", label: "BATTLE DAYS", valueColor: .white, glowTint: tint)
+                        opponentStatCell(value: "\(theyWonDays)", label: "DAYS THEY WON", valueColor: .red, glowTint: tint)
+                        opponentStatCell(value: "\(youWonDays)", label: "DAYS YOU WON", valueColor: .green, glowTint: tint)
                     }
 
-                    VStack(spacing: 3) {
-                        Text("AVG WINNING MARGIN · SERIES")
-                            .font(.system(size: 10, weight: .bold))
-                            .tracking(0.9)
-                            .foregroundStyle(Color.white.opacity(0.82))
-                        Text(signedValue(avgWinningMargin))
-                            .font(.system(size: 24, weight: .black))
-                            .foregroundStyle(tint)
-                        Text("steps on days won")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.78))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.35))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(tint.opacity(0.4), lineWidth: 1.2)
+                    opponentLightSubcellPanel(glowTint: tint) {
+                        VStack(spacing: 3) {
+                            Text("AVG WINNING MARGIN · SERIES")
+                                .font(.system(size: 9, weight: .bold))
+                                .tracking(0.4)
+                                .foregroundStyle(.white)
+                            Text(signedValue(avgWinningMargin))
+                                .font(.system(size: 20, weight: .black, design: .monospaced))
+                                .tracking(0.6)
+                                .foregroundStyle(tint)
+                            Text("steps on days won")
+                                .font(.system(size: 11, weight: .semibold))
+                                .tracking(0.3)
+                                .foregroundStyle(Color.white.opacity(0.78))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                     }
 
                     if !hasSlice3ADetail {
-                        unresolvedPill("UNRESOLVED IN SLICE 3A · DAY-LEVEL WIN MARGINS")
+                        unresolvedPill("NEEDS MORE DATA")
                     }
 
                     opponentPastMatchesSection(
@@ -545,7 +548,7 @@ struct StatsArcadeSliceOneView: View {
                 }
 
                 if streakTimelineDots == nil {
-                    unresolvedPill("UNRESOLVED IN SLICE 2 · BATTLE-DAY TIMELINE DOTS")
+                    unresolvedPill("BUILDING HISTORY")
                 }
             }
             .frame(maxWidth: .infinity)
@@ -564,7 +567,7 @@ struct StatsArcadeSliceOneView: View {
                 Image(systemName: "trophy.fill")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(Color(red: 1, green: 0.84, blue: 0))
-                Text(signedValue(monthly?.bonusSteps ?? 0))
+                Text(hasMonthlyData ? signedValue(monthly?.bonusSteps ?? 0) : Self.unresolvedPlaceholder)
                     .font(.system(size: 31, weight: .black, design: .monospaced))
                     .foregroundStyle(Color(red: 1, green: 0.84, blue: 0))
                     .shadow(color: Color(red: 1, green: 0.84, blue: 0).opacity(0.5), radius: 8)
@@ -572,11 +575,15 @@ struct StatsArcadeSliceOneView: View {
                     .font(.system(size: 11, weight: .black))
                     .tracking(1.1)
                     .foregroundStyle(Color(red: 1, green: 0.84, blue: 0).opacity(0.9))
-                Text("~\((monthly?.approxMiles ?? 0).formatted()) extra miles because of your rivals")
+                Text(
+                    hasMonthlyData
+                        ? "~\((monthly?.approxMiles ?? 0).formatted()) extra miles because of your rivals"
+                        : "\(Self.unresolvedPlaceholder) extra miles because of your rivals"
+                )
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.62))
                 if !hasMonthlyData {
-                    unresolvedPill("UNRESOLVED IN SLICE 3B · CURRENT-MONTH BATTLE-DAY STEP ROLLUP")
+                    unresolvedPill("NEEDS MORE DATA")
                 }
             }
             .frame(maxWidth: .infinity)
@@ -595,7 +602,7 @@ struct StatsArcadeSliceOneView: View {
                 Image(systemName: "person.2.fill")
                     .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(Color(red: 0.75, green: 0.38, blue: 1))
-                Text((rollups?.lifetimeSteps ?? 0).formatted())
+                Text(hasRollups ? (rollups?.lifetimeSteps ?? 0).formatted() : Self.unresolvedPlaceholder)
                     .font(.system(size: 31, weight: .black, design: .monospaced))
                     .foregroundStyle(Color(red: 0.75, green: 0.38, blue: 1))
                     .shadow(color: Color(red: 0.75, green: 0.38, blue: 1).opacity(0.5), radius: 8)
@@ -613,7 +620,7 @@ struct StatsArcadeSliceOneView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.7))
                 if !hasRollups {
-                    unresolvedPill("UNRESOLVED IN SLICE 2 · OPPONENT TOTAL STEP ROLLUP")
+                    unresolvedPill("NEEDS MORE DATA")
                 }
             }
             .frame(maxWidth: .infinity)
@@ -626,16 +633,16 @@ struct StatsArcadeSliceOneView: View {
         showsInfo: Bool = false,
         @ViewBuilder content: () -> some View
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: 18, weight: .black))
+                .font(.system(size: Self.statsCardTitle, weight: .black))
                 .tracking(2)
                 .foregroundStyle(tint)
                 .padding(.trailing, showsInfo ? 44 : 0)
 
             content()
         }
-        .padding(14)
+        .padding(12)
         .background(Color(red: 0.02, green: 0.03, blue: 0.06))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
@@ -680,14 +687,14 @@ struct StatsArcadeSliceOneView: View {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: 14, weight: .bold))
                 Text("REMATCH \(mostWanted?.opponentDisplayName.uppercased() ?? "RIVAL")")
-                    .font(.system(size: 15, weight: .black))
-                    .tracking(1.8)
+                    .font(.system(size: 13, weight: .black))
+                    .tracking(1.2)
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: 13, weight: .bold))
             }
             .foregroundStyle(Color.black.opacity(0.88))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 11)
             .background(
                 LinearGradient(
                     colors: [
@@ -714,12 +721,13 @@ struct StatsArcadeSliceOneView: View {
         title: String,
         tint: Color,
         cornerLabel: String? = nil,
+        compact: Bool = false,
         @ViewBuilder content: () -> some View
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: compact ? 7 : 8) {
             HStack(alignment: .top) {
                 Text(title)
-                    .font(.system(size: 16, weight: .black))
+                    .font(.system(size: Self.statsGlassCardTitle, weight: .black))
                     .tracking(1.3)
                     .foregroundStyle(tint)
                 Spacer()
@@ -734,7 +742,7 @@ struct StatsArcadeSliceOneView: View {
             }
             content()
         }
-        .padding(12)
+        .padding(10)
         .background(tint.opacity(0.15))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
@@ -800,6 +808,83 @@ struct StatsArcadeSliceOneView: View {
         .padding(.horizontal, 4)
         .background(Color.black.opacity(0.35))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func centeredOpponentProfile(
+        rival: HomeRivalStat,
+        avatarSize: CGFloat = 36,
+        battlesSubtitle: String? = nil
+    ) -> some View {
+        VStack(spacing: 6) {
+            avatarBadge(for: rival, size: avatarSize, themeColor: Self.opponentProfileAccent)
+            Text(rival.opponentDisplayName)
+                .font(.system(size: 23, weight: .black))
+                .foregroundStyle(Self.opponentProfileAccent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .multilineTextAlignment(.center)
+            if let battlesSubtitle {
+                Text(battlesSubtitle)
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(0.4)
+                    .foregroundStyle(Color.white.opacity(0.72))
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func opponentStatCell(
+        value: String,
+        label: String,
+        valueColor: Color,
+        glowTint: Color
+    ) -> some View {
+        opponentLightSubcellPanel(glowTint: glowTint) {
+            VStack(spacing: 6) {
+                Text(label)
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.4)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .foregroundStyle(.white)
+                Text(value)
+                    .font(.system(size: 23, weight: .black, design: .monospaced))
+                    .tracking(0.6)
+                    .foregroundStyle(valueColor)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 4)
+        }
+    }
+
+    private func opponentLightSubcellPanel<Content: View>(
+        glowTint: Color,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.88, green: 0.92, blue: 0.98).opacity(0.14),
+                                Color(red: 0.72, green: 0.82, blue: 0.95).opacity(0.08),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.22), lineWidth: 0.8)
+            }
+            .shadow(color: Color.black.opacity(0.35), radius: 4, x: 2, y: 3)
+            .shadow(color: glowTint.opacity(0.12), radius: 6)
     }
 
     private func unresolvedPill(_ text: String) -> some View {

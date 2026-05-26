@@ -17,9 +17,7 @@ struct HealthView: View {
     @Environment(\.openURL) private var openURL
     @State private var statsMetricExplainer: StatsMetricExplainerKind?
     #if DEBUG
-    private let showLegacyStats = true
-    #else
-    private let showLegacyStats = true
+    @State private var isLegacyStatsExpanded = false
     #endif
 
     var body: some View {
@@ -45,10 +43,13 @@ struct HealthView: View {
                 )
                     .padding(.bottom, 10)
 
-                if showLegacyStats {
+                #if DEBUG
+                DisclosureGroup("Legacy Stats", isExpanded: $isLegacyStatsExpanded) {
                     legacyStatsSection
                         .padding(.bottom, 8)
                 }
+                .padding(.bottom, 8)
+                #endif
             }
             .padding(.horizontal, 16)
         }
