@@ -750,7 +750,7 @@ private struct EnergyBeamPostBeamMarginRow: View {
     let unitLabel: String
     let referenceValue: Int
 
-    static let reservedHeight: CGFloat = 52
+    static let reservedHeight: CGFloat = 46
 
     private var accent: Color {
         EnergyBeamHeroCollisionLayout.marginAccent(margin: margin, referenceValue: referenceValue)
@@ -781,7 +781,7 @@ private struct EnergyBeamPostBeamMarginRow: View {
                 .allowsTightening(true)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 10)
+        .padding(.top, 6)
         .frame(height: Self.reservedHeight)
         .animation(.easeInOut(duration: 0.25), value: margin)
         .accessibilityElement(children: .combine)
@@ -932,7 +932,7 @@ private struct PlayerColumnPreview: View {
     @State private var showStepsDisclaimer = false
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             HeroProfileAvatarBadge(name: name, accent: accent, role: role)
 
             Color.clear
@@ -981,7 +981,7 @@ private struct PlayerColumnPreview: View {
                 .tracking(0.35)
 
             Text(EnergyBeamNumberFormatting.score.string(from: NSNumber(value: battleScore)) ?? "\(battleScore)")
-                .font(FitUpFont.display(31, weight: .heavy))
+                .font(FitUpFont.display(28, weight: .heavy))
                 .foregroundStyle(accent.opacity(1))
                 .shadow(color: accent.opacity(0.35), radius: 10)
                 .lineLimit(1)
@@ -1012,14 +1012,14 @@ private struct HeroProfileAvatarBadge: View {
     let accent: Color
     let role: BattlePlayerRolePreview
 
-    private let diameter: CGFloat = 92
+    private let diameter: CGFloat = 80
 
     var body: some View {
         ZStack {
             Image(systemName: "person.fill")
-                .font(.system(size: 38, weight: .semibold))
+                .font(.system(size: 32, weight: .semibold))
                 .foregroundStyle(accent.opacity(0.42))
-                .shadow(color: accent.opacity(0.25), radius: 10)
+                .shadow(color: accent.opacity(0.25), radius: 8)
         }
         .frame(width: diameter, height: diameter)
         .background(.black.opacity(0.32))
@@ -1031,11 +1031,11 @@ private struct HeroProfileAvatarBadge: View {
                         colors: [accent.opacity(0.95), accent.opacity(0.45), accent.opacity(0.95)],
                         center: .center
                     ),
-                    lineWidth: 3.5
+                    lineWidth: 3
                 )
         )
-        .shadow(color: accent.opacity(0.35), radius: 18, y: 6)
-        .shadow(color: accent.opacity(0.18), radius: 28, y: 10)
+        .shadow(color: accent.opacity(0.35), radius: 14, y: 5)
+        .shadow(color: accent.opacity(0.18), radius: 22, y: 8)
     }
 }
 
@@ -2292,7 +2292,7 @@ private struct DayBattleSparklinePreview: View {
     var showMockTimelineLabel: Bool = false
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             GeometryReader { geo in
                 let w = geo.size.width
                 let h = geo.size.height
@@ -2318,7 +2318,7 @@ private struct DayBattleSparklinePreview: View {
                     endpointDots(ptsU: ptsU, ptsO: ptsO)
                 }
             }
-            .frame(height: 112)
+            .frame(height: 96)
 
             HStack {
                 chartAxisLabel("12 AM")
@@ -2338,7 +2338,7 @@ private struct DayBattleSparklinePreview: View {
             }
             #endif
         }
-        .padding(14)
+        .padding(10)
         .allowsTightening(true)
         .minimumScaleFactor(0.94)
         .background {
@@ -2588,7 +2588,7 @@ private struct DayElapsedProgressPreview: View {
     let caption: String
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 8) {
             GeometryReader { geo in
                 let w = geo.size.width
                 let x = CGFloat.minimum(CGFloat.maximum(fractionElapsed, 0), 1) * w
@@ -2716,7 +2716,7 @@ private struct EnergyBeamIntradayFreshnessRow: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, 8)
                 .padding(.horizontal, 10)
                 .background {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -2855,13 +2855,13 @@ struct EnergyBeamHeroGlassCardView: View {
             }
 
             if let matchHeaderContent {
-                VStack(spacing: 16) {
+                VStack(spacing: 10) {
                     NeonHeroDayProgressBanner(label: matchHeaderContent.dayProgressLabel)
                     NeonHeroMetaPillsRow(pills: matchHeaderContent.pills)
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, showTopBrandHeader ? 10 : 22)
-                .padding(.bottom, 16)
+                .padding(.top, showTopBrandHeader ? 8 : 14)
+                .padding(.bottom, 10)
             }
 
             if let matchHeaderContent {
@@ -2870,18 +2870,18 @@ struct EnergyBeamHeroGlassCardView: View {
                     opponentName: matchHeaderContent.opponentDisplayName
                 )
                 .padding(.horizontal, 10)
-                .padding(.top, 18)
-                .padding(.bottom, 10)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
             }
 
             playersRow
                 .padding(.horizontal, 10)
                 .padding(.top, heroPlayersRowTopPadding)
-                .padding(.bottom, 22)
+                .padding(.bottom, 12)
 
             beamBattleZone
                 .padding(.horizontal, 18)
-                .padding(.bottom, 16)
+                .padding(.bottom, 10)
 
             DayBattleSparklinePreview(
                 userValues: sparklineUserValues,
@@ -2889,18 +2889,18 @@ struct EnergyBeamHeroGlassCardView: View {
                 showMockTimelineLabel: showMockTimelineDebugLabel
             )
             .padding(.horizontal, 14)
-            .padding(.bottom, 8)
+            .padding(.bottom, 4)
 
             EnergyBeamIntradayFreshnessRow(
                 viewerHealthKitAt: viewerIntradayHealthKitSyncedAt,
                 opponentTickAt: opponentIntradayLatestTickAt
             )
             .padding(.horizontal, 14)
-            .padding(.bottom, 12)
+            .padding(.bottom, 8)
 
             DayElapsedProgressPreview(fractionElapsed: dayElapsedFraction, caption: dayProgressCaption)
                 .padding(.horizontal, 18)
-                .padding(.bottom, 22)
+                .padding(.bottom, 14)
         }
         .background {
             ZStack {
@@ -2948,8 +2948,8 @@ struct EnergyBeamHeroGlassCardView: View {
     }
 
     private var heroPlayersRowTopPadding: CGFloat {
-        if matchHeaderContent != nil { return 12 }
-        return showTopBrandHeader ? 0 : 10
+        if matchHeaderContent != nil { return 8 }
+        return showTopBrandHeader ? 0 : 8
     }
 
     private var headerBlock: some View {
@@ -3008,15 +3008,15 @@ struct EnergyBeamHeroGlassCardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .topTrailing)
             .padding(.trailing, NeonHeroVersusLayout.playerColumnEdgeInset)
-            .frame(minHeight: 168)
+            .frame(minHeight: 148)
             .accessibilityHidden(opponentContentSuppressed || opponentRevealProgress < 0.04)
         }
     }
 
     private var beamMarginDisplayInt: Int { Int(beamCollisionMarginPrecise.rounded(.towardZero)) }
 
-    private static let statusToBeamSpacing: CGFloat = 8
-    private static let beamToMarginSpacing: CGFloat = 4
+    private static let statusToBeamSpacing: CGFloat = 5
+    private static let beamToMarginSpacing: CGFloat = 2
 
     private static var aboveBeamStackReservedHeight: CGFloat {
         EnergyBeamBattleStatusCallout.reservedHeight + statusToBeamSpacing

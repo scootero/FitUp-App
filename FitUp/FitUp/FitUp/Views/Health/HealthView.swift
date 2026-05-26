@@ -14,67 +14,28 @@ struct HealthView: View {
     @StateObject private var viewModel = HealthViewModel()
     @Environment(\.openURL) private var openURL
     @State private var statsMetricExplainer: StatsMetricExplainerKind?
+    #if DEBUG
+    private let showLegacyStats = true
+    #else
+    private let showLegacyStats = true
+    #endif
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if viewModel.showHealthAccessBanner {
-                    healthAccessBanner
-                        .padding(.bottom, 10)
-                }
-
-                if let err = viewModel.errorMessage {
-                    Text(err)
-                        .font(FitUpFont.body(12))
-                        .foregroundStyle(FitUpColors.Neon.pink)
-                        .padding(.bottom, 10)
-                }
-
-                StatsMockShellView(
+                StatsArcadeSliceOneView(
                     calendarUserId: profile?.id,
                     profileTimeZoneIdentifier: profile?.timezone,
-                    selectedRange: viewModel.statsSelectedRange,
-                    effectiveRange: viewModel.statsEffectiveRange,
-                    onSelectRange: { range in
-                        Task { await viewModel.setStatsRange(range) }
-                    },
-                    dateChipText: viewModel.statsRangeDateChipText,
-                    rangeScopeNote: viewModel.statsRangeScopeNote,
-                    previousPeriodPercent: viewModel.statsPreviousPeriodPercent,
-                    battleStatsScopeLabel: viewModel.statsBattleStatsScopeLabel,
-                    rangeMargins: viewModel.statsRangeMargins,
-                    isRangeMarginsLoading: viewModel.isStatsRangeMarginsRefreshing,
-                    statsSnapshotSavedAt: viewModel.statsSnapshotSavedAt,
                     battleStats: viewModel.battleStats,
-                    weekSteps: viewModel.weekSteps,
-                    activeMatchEdges: viewModel.activeMatchEdges,
                     rivalStats: viewModel.rivalStats,
-                    isRivalStatsLoading: viewModel.isRivalStatsLoading,
-                    hasLoadedRivalStats: viewModel.hasLoadedRivalStats,
-                    oneDayHourlySteps: viewModel.oneDayHourlySteps,
-                    isOneDayHourlyLoading: viewModel.isOneDayHourlyLoading,
-                    stepsToday: viewModel.stepsTodayValue,
-                    activeExplainer: $statsMetricExplainer
+                    rangeMargins: viewModel.statsRangeMargins
                 )
                     .padding(.bottom, 10)
 
-                healthSectionLabel("Your Stats")
-                WeekChartCard(
-                    statsTab: $viewModel.statsTab,
-                    weekSteps: viewModel.weekSteps,
-                    weekCalories: viewModel.weekCalories,
-                    stepsGoal: viewModel.goals.stepsGoal,
-                    caloriesGoal: viewModel.goals.calsGoal,
-                    todaySteps: viewModel.stepsTodayValue,
-                    todayCalories: viewModel.caloriesTodayValue
-                )
-                .padding(.bottom, 14)
-
-                WeekComparisonCard(comparison: viewModel.selectedWeekComparison)
-                    .padding(.bottom, 14)
-
-                ConsistencyCard(consistency: viewModel.goalConsistency)
-                    .padding(.bottom, 14)
+                if showLegacyStats {
+                    legacyStatsSection
+                        .padding(.bottom, 8)
+                }
             }
             .padding(.horizontal, 16)
         }
@@ -106,6 +67,71 @@ struct HealthView: View {
         }
         .onChange(of: profile?.id) { _, _ in
             viewModel.start(profile: profile)
+        }
+    }
+
+    private var legacyStatsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            healthSectionLabel("Legacy Stats")
+                .padding(.top, 4)
+
+            if viewModel.showHealthAccessBanner {
+                healthAccessBanner
+                    .padding(.bottom, 10)
+            }
+
+            if let err = viewModel.errorMessage {
+                Text(err)
+                    .font(FitUpFont.body(12))
+                    .foregroundStyle(FitUpColors.Neon.pink)
+                    .padding(.bottom, 10)
+            }
+
+            StatsMockShellView(
+                calendarUserId: profile?.id,
+                profileTimeZoneIdentifier: profile?.timezone,
+                selectedRange: viewModel.statsSelectedRange,
+                effectiveRange: viewModel.statsEffectiveRange,
+                onSelectRange: { range in
+                    Task { await viewModel.setStatsRange(range) }
+                },
+                dateChipText: viewModel.statsRangeDateChipText,
+                rangeScopeNote: viewModel.statsRangeScopeNote,
+                previousPeriodPercent: viewModel.statsPreviousPeriodPercent,
+                battleStatsScopeLabel: viewModel.statsBattleStatsScopeLabel,
+                rangeMargins: viewModel.statsRangeMargins,
+                isRangeMarginsLoading: viewModel.isStatsRangeMarginsRefreshing,
+                statsSnapshotSavedAt: viewModel.statsSnapshotSavedAt,
+                battleStats: viewModel.battleStats,
+                weekSteps: viewModel.weekSteps,
+                activeMatchEdges: viewModel.activeMatchEdges,
+                rivalStats: viewModel.rivalStats,
+                isRivalStatsLoading: viewModel.isRivalStatsLoading,
+                hasLoadedRivalStats: viewModel.hasLoadedRivalStats,
+                oneDayHourlySteps: viewModel.oneDayHourlySteps,
+                isOneDayHourlyLoading: viewModel.isOneDayHourlyLoading,
+                stepsToday: viewModel.stepsTodayValue,
+                activeExplainer: $statsMetricExplainer
+            )
+                .padding(.bottom, 10)
+
+            healthSectionLabel("Your Stats")
+            WeekChartCard(
+                statsTab: $viewModel.statsTab,
+                weekSteps: viewModel.weekSteps,
+                weekCalories: viewModel.weekCalories,
+                stepsGoal: viewModel.goals.stepsGoal,
+                caloriesGoal: viewModel.goals.calsGoal,
+                todaySteps: viewModel.stepsTodayValue,
+                todayCalories: viewModel.caloriesTodayValue
+            )
+            .padding(.bottom, 14)
+
+            WeekComparisonCard(comparison: viewModel.selectedWeekComparison)
+                .padding(.bottom, 14)
+
+            ConsistencyCard(consistency: viewModel.goalConsistency)
+                .padding(.bottom, 14)
         }
     }
 

@@ -19,7 +19,7 @@ struct ActiveBattlesNeonSection: View {
     private let gridSpacing: CGFloat = 5
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 6) {
             statsGrid
 
             if !matches.isEmpty {

@@ -16,9 +16,18 @@ enum CalendarDayRingStyle: Equatable {
 struct CalendarDayRingView: View {
     let style: CalendarDayRingStyle
     var size: CGFloat = 26
+    var layout: ActivityCalendarLayout = .compact
 
     private var lineWidth: CGFloat { max(2, size * 0.12) }
     private var innerDiameter: CGFloat { size - lineWidth }
+
+    private var stepLabelFontScale: CGFloat {
+        layout == .expanded ? 0.46 : 0.28
+    }
+
+    private var battleDotScale: CGFloat {
+        layout == .expanded ? 0.88 : 0.72
+    }
 
     var body: some View {
         switch style {
@@ -45,13 +54,13 @@ struct CalendarDayRingView: View {
         case .wonAny:
             Circle()
                 .fill(FitUpColors.Neon.green)
-                .frame(width: innerDiameter * 0.72, height: innerDiameter * 0.72)
-                .shadow(color: FitUpColors.Neon.green.opacity(0.45), radius: 4)
+                .frame(width: innerDiameter * battleDotScale, height: innerDiameter * battleDotScale)
+                .shadow(color: FitUpColors.Neon.green.opacity(0.45), radius: layout == .expanded ? 6 : 4)
         case .lostAll:
             Circle()
                 .fill(FitUpColors.Neon.red)
-                .frame(width: innerDiameter * 0.72, height: innerDiameter * 0.72)
-                .shadow(color: FitUpColors.Neon.red.opacity(0.4), radius: 4)
+                .frame(width: innerDiameter * battleDotScale, height: innerDiameter * battleDotScale)
+                .shadow(color: FitUpColors.Neon.red.opacity(0.4), radius: layout == .expanded ? 6 : 4)
         case .inProgress:
             ZStack {
                 ghostRing
@@ -77,25 +86,40 @@ struct CalendarDayRingView: View {
             let ringColor = state.goalMet ? FitUpColors.Neon.green : FitUpColors.Neon.cyan
             let progress = state.progress
 
-            ZStack {
-                Circle()
-                    .stroke(Color.white.opacity(0.1), lineWidth: lineWidth)
-                    .frame(width: innerDiameter, height: innerDiameter)
+            if state.goalMet {
+                ZStack {
+                    Circle()
+                        .fill(ringColor)
+                        .frame(width: innerDiameter * 0.92, height: innerDiameter * 0.92)
+                        .shadow(color: ringColor.opacity(0.45), radius: layout == .expanded ? 6 : 4)
 
-                Circle()
-                    .trim(from: 0, to: CGFloat(progress))
-                    .stroke(
-                        ringColor,
-                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
-                    )
-                    .frame(width: innerDiameter, height: innerDiameter)
-                    .rotationEffect(.degrees(-90))
+                    Text(state.abbreviatedStepsLabel)
+                        .font(FitUpFont.mono(size * stepLabelFontScale, weight: .black))
+                        .foregroundStyle(Color.black.opacity(0.88))
+                        .minimumScaleFactor(0.55)
+                        .lineLimit(1)
+                }
+            } else {
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.1), lineWidth: lineWidth)
+                        .frame(width: innerDiameter, height: innerDiameter)
 
-                Text(state.abbreviatedStepsLabel)
-                    .font(FitUpFont.mono(size * 0.28, weight: .bold))
-                    .foregroundStyle(ringColor)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
+                    Circle()
+                        .trim(from: 0, to: CGFloat(progress))
+                        .stroke(
+                            ringColor,
+                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                        )
+                        .frame(width: innerDiameter, height: innerDiameter)
+                        .rotationEffect(.degrees(-90))
+
+                    Text(state.abbreviatedStepsLabel)
+                        .font(FitUpFont.mono(size * stepLabelFontScale, weight: .bold))
+                        .foregroundStyle(ringColor)
+                        .minimumScaleFactor(0.55)
+                        .lineLimit(1)
+                }
             }
         } else {
             ghostRing

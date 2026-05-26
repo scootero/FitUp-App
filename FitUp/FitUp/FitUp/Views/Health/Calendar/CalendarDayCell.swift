@@ -10,27 +10,30 @@ import SwiftUI
 struct CalendarDayCell: View {
     let item: CalendarDayItem
     let mode: ActivityCalendarMode
+    var layout: ActivityCalendarLayout = .compact
     let battleState: CalendarDayBattleState
     let stepsState: CalendarDayStepsState?
     let isSelected: Bool
     let onTap: () -> Void
 
+    private var ringSize: CGFloat { layout.ringSize }
+
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: layout == .expanded ? 4 : 5) {
             Text("\(item.dayNumber)")
-                .font(FitUpFont.mono(12, weight: item.isToday ? .bold : .semibold))
+                .font(FitUpFont.mono(layout.dayNumberFontSize, weight: item.isToday ? .bold : .semibold))
                 .foregroundStyle(dayNumberColor)
-                .frame(height: 14)
+                .frame(height: layout == .expanded ? 16 : 14)
 
             if item.isWithinDisplayedMonth {
                 ringView
             } else {
                 Color.clear
-                    .frame(width: 26, height: 26)
+                    .frame(width: ringSize, height: ringSize)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
+        .padding(.vertical, layout.cellVerticalPadding)
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -66,11 +69,11 @@ struct CalendarDayCell: View {
         Group {
             switch mode {
             case .battles:
-                CalendarDayRingView(style: .battle(battleState))
+                CalendarDayRingView(style: .battle(battleState), size: ringSize, layout: layout)
             case .steps:
-                CalendarDayRingView(style: .steps(stepsState))
+                CalendarDayRingView(style: .steps(stepsState), size: ringSize, layout: layout)
             }
         }
-        .frame(width: 26, height: 26)
+        .frame(width: ringSize, height: ringSize)
     }
 }

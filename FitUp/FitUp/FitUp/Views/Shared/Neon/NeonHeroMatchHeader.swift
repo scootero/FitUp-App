@@ -35,7 +35,7 @@ enum NeonHeroVersusLayout {
     static let playerColumnEdgeInset: CGFloat = 26
     static let playerColumnSpacing: CGFloat = 6
     /// Keeps avatar → “steps today” gap after removing the in-column name row.
-    static let profileNameBelowAvatarReservedHeight: CGFloat = 24
+    static let profileNameBelowAvatarReservedHeight: CGFloat = 12
 }
 
 // MARK: - Day progress banner (top of card)
@@ -63,7 +63,7 @@ struct NeonHeroMatchHeader: View {
     let content: NeonHeroMatchHeaderContent
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 10) {
             NeonHeroDayProgressBanner(label: content.dayProgressLabel)
             NeonHeroMetaPillsRow(pills: content.pills)
         }

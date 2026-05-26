@@ -249,10 +249,6 @@ struct StatsMockShellView: View {
                                 .padding(.top, 2)
                         }
                     }
-
-                    Spacer(minLength: 0)
-
-                    metricInfoButton(kind: isOneDayMode ? .stepsToday : .battleMargin)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -296,8 +292,14 @@ struct StatsMockShellView: View {
             }
             .frame(width: 118, alignment: .leading)
         }
+        .padding(.top, 6)
+        .padding(.trailing, 44)
         .padding(12)
         .glassCard(.base)
+        .overlay(alignment: .topTrailing) {
+            metricInfoButton(kind: isOneDayMode ? .stepsToday : .battleMargin)
+                .padding(6)
+        }
     }
 
     private var marginChartCard: some View {
@@ -310,6 +312,7 @@ struct StatsMockShellView: View {
                 }
                 .pickerStyle(.segmented)
                 .tint(marginMode == .net ? FitUpColors.Neon.green.opacity(0.95) : FitUpColors.Neon.cyan.opacity(0.95))
+                .padding(.trailing, 44)
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -326,7 +329,7 @@ struct StatsMockShellView: View {
                 Text(currentChartTrailingText)
                     .font(FitUpFont.body(15, weight: .heavy))
                     .foregroundStyle(isOneDayMode ? FitUpColors.Neon.cyan : (marginMode == .net ? FitUpColors.Neon.green : FitUpColors.Neon.cyan))
-                metricInfoButton(kind: isOneDayMode ? .stepsToday : .battleMargin)
+                    .padding(.trailing, 44)
             }
 
             if isOneDayMode {
@@ -371,6 +374,10 @@ struct StatsMockShellView: View {
         }
         .padding(12)
         .glassCard(.base)
+        .overlay(alignment: .topTrailing) {
+            metricInfoButton(kind: isOneDayMode ? .stepsToday : .battleMargin)
+                .padding(6)
+        }
     }
 
     private var isOneDayMode: Bool {
@@ -432,21 +439,9 @@ struct StatsMockShellView: View {
     }
 
     private func metricInfoButton(kind: StatsMetricExplainerKind) -> some View {
-        Button {
+        StatsCardInfoButton(accessibilityTitle: kind.accessibilityTitle) {
             activeExplainer = kind
-        } label: {
-            Image(systemName: "info.circle")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(FitUpColors.Text.secondary.opacity(0.92))
-                .frame(width: 28, height: 28)
-                .background(Color.white.opacity(0.05))
-                .clipShape(Circle())
-                .overlay {
-                    Circle().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.8)
-                }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("What is \(kind.accessibilityTitle)?")
     }
 
     private func modeLabel(for mode: MarginMode) -> String {
@@ -1706,6 +1701,26 @@ private struct PersonalBestItem: Identifiable {
     let iconName: String
     let accentColor: Color
     var id: String { title }
+}
+
+// MARK: - Card info affordance
+
+struct StatsCardInfoButton: View {
+    var accessibilityTitle: String = "this metric"
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "info.circle.fill")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("What is \(accessibilityTitle)?")
+    }
 }
 
 // MARK: - Metric explainers

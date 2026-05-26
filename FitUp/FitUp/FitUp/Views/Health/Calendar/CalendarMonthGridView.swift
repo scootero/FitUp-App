@@ -10,6 +10,7 @@ import SwiftUI
 struct CalendarMonthGridView: View {
     let items: [CalendarDayItem]
     let mode: ActivityCalendarMode
+    var layout: ActivityCalendarLayout = .compact
     let selectedDayId: String?
     let battleState: (String) -> CalendarDayBattleState
     let stepsState: (String) -> CalendarDayStepsState?
@@ -17,7 +18,9 @@ struct CalendarMonthGridView: View {
 
     private let weekdaySymbols = ["M", "T", "W", "T", "F", "S", "S"]
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: layout.gridColumnSpacing), count: 7)
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -30,11 +33,12 @@ struct CalendarMonthGridView: View {
                 }
             }
 
-            LazyVGrid(columns: columns, spacing: 2) {
+            LazyVGrid(columns: columns, spacing: layout.gridRowSpacing) {
                 ForEach(items) { item in
                     CalendarDayCell(
                         item: item,
                         mode: mode,
+                        layout: layout,
                         battleState: battleState(item.id),
                         stepsState: stepsState(item.id),
                         isSelected: selectedDayId == item.id,

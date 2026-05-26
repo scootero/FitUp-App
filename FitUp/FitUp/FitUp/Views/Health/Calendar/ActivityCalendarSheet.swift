@@ -38,49 +38,10 @@ struct ActivityCalendarSheet: View {
                     .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        CalendarModePillSwitcher(mode: $viewModel.mode)
-                            .frame(maxWidth: .infinity)
-
-                        CalendarMonthHeaderView(
-                            monthTitle: viewModel.monthTitle,
-                            onPrevious: {
-                                viewModel.dismissDayDetail()
-                                viewModel.goToPreviousMonth()
-                            },
-                            onNext: {
-                                viewModel.dismissDayDetail()
-                                viewModel.goToNextMonth()
-                            },
-                            onToday: {
-                                viewModel.dismissDayDetail()
-                                viewModel.goToToday()
-                            }
-                        )
-
-                        if viewModel.showHealthAccessBanner, viewModel.mode == .steps {
-                            healthAccessBanner
-                        }
-
-                        if let err = viewModel.errorMessage {
-                            Text(err)
-                                .font(FitUpFont.body(12))
-                                .foregroundStyle(FitUpColors.Neon.pink)
-                        }
-
-                        CalendarMonthGridView(
-                            items: viewModel.gridItems,
-                            mode: viewModel.mode,
-                            selectedDayId: viewModel.selectedDayItem?.id,
-                            battleState: { viewModel.battleState(for: $0) },
-                            stepsState: { viewModel.stepsState(for: $0) },
-                            onSelectDay: { viewModel.selectDay($0) }
-                        )
-                        .opacity(viewModel.isLoading ? 0.65 : 1)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, showsDayDock ? 320 : 24)
+                    ActivityCalendarScrollContent(viewModel: viewModel)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, showsDayDock ? 320 : 24)
                 }
                 .scrollIndicators(.hidden)
                 .refreshable {
@@ -144,12 +105,4 @@ struct ActivityCalendarSheet: View {
         )
     }
 
-    private var healthAccessBanner: some View {
-        Text("Apple Health access is off. Enable Steps read access in Settings to see daily step rings.")
-            .font(FitUpFont.body(12))
-            .foregroundStyle(FitUpColors.Text.secondary)
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .glassCard(.base)
-    }
 }
