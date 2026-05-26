@@ -14,6 +14,10 @@ struct StatsArcadeSliceOneView: View {
     let battleStats: HealthBattleStats
     let rivalStats: [HomeRivalStat]
     let rangeMargins: [DailyBattleMargin]
+    let battleImpactMetric: StatsBattleImpactMetric?
+    let monthlyBattleBonusMetric: StatsMonthlyBattleBonusMetric?
+    let opponentStepsRollups: StatsOpponentStepsRollups?
+    let streakTimelineDots: [StatsArcadeStreakDot]?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var headerVisible = false
@@ -99,7 +103,9 @@ struct StatsArcadeSliceOneView: View {
     }
 
     private var battleImpactCard: some View {
-        themedCard(
+        let impact = battleImpactMetric
+        let hasImpactData = impact?.hasEnoughSample == true
+        return themedCard(
             title: "BATTLE IMPACT",
             tint: Color(red: 0, green: 0.86, blue: 1),
             showsInfo: true
@@ -111,7 +117,7 @@ struct StatsArcadeSliceOneView: View {
                         .tracking(1.2)
                         .foregroundStyle(Color.white.opacity(0.93))
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("+2,670")
+                        Text(signedValue(impact?.deltaSteps ?? 0))
                             .font(.system(size: 30, weight: .black, design: .monospaced))
                             .tracking(1.5)
                             .foregroundStyle(Color(red: 0, green: 0.86, blue: 1))
@@ -137,7 +143,7 @@ struct StatsArcadeSliceOneView: View {
 
                 HStack(spacing: 8) {
                     comparisonTile(
-                        value: "3,820",
+                        value: (impact?.normalDayAverageSteps ?? 0).formatted(),
                         title: "NORMAL DAY",
                         subtitle: "90-day avg",
                         tint: Color(red: 1, green: 0.55, blue: 0),
@@ -147,7 +153,7 @@ struct StatsArcadeSliceOneView: View {
                         .font(.system(size: 14, weight: .black))
                         .foregroundStyle(Color.white.opacity(0.32))
                     comparisonTile(
-                        value: "6,490",
+                        value: (impact?.battleDayAverageSteps ?? 0).formatted(),
                         title: "BATTLE DAY",
                         subtitle: "Active matches",
                         tint: Color(red: 0, green: 0.86, blue: 1),
@@ -155,9 +161,11 @@ struct StatsArcadeSliceOneView: View {
                     )
                 }
 
-                battleBoostSummaryRow
+                battleBoostSummaryRow(boostPercent: impact?.boostPercent ?? 0)
 
-                unresolvedPill("UNRESOLVED IN SLICE 2 · EXACT BASELINE VS BATTLE-DAY AVERAGES")
+                if !hasImpactData {
+                    unresolvedPill("UNRESOLVED IN SLICE 3B · EXACT BASELINE VS BATTLE-DAY AVERAGES")
+                }
             }
         }
     }
@@ -273,12 +281,12 @@ struct StatsArcadeSliceOneView: View {
                 }
 
                 HStack(spacing: 4) {
-                    ForEach(Array(Self.lastFivePlaceholder.enumerated()), id: \.offset) { _, isWin in
-                        Text(isWin ? "W" : "L")
+                    ForEach(Array((mostWantedRecentSeriesResults ?? []).enumerated()), id: \.offset) { _, result in
+                        Text(result)
                             .font(.system(size: 7, weight: .black))
-                            .foregroundStyle(isWin ? Color.green : Color.red)
+                            .foregroundStyle(colorForSeriesResult(result))
                             .frame(width: 14, height: 14)
-                            .background((isWin ? Color.green : Color.red).opacity(0.16))
+                            .background(colorForSeriesResult(result).opacity(0.16))
                             .clipShape(Circle())
                     }
                     Spacer()
@@ -294,7 +302,9 @@ struct StatsArcadeSliceOneView: View {
 
                 rematchButton
 
-                unresolvedPill("UNRESOLVED IN SLICE 2 · LAST-5 + TOTAL BATTLE COUNT")
+                if mostWantedRecentSeriesResults == nil {
+                    unresolvedPill("UNRESOLVED IN SLICE 3A · LAST-5 SERIES RESULTS")
+                }
             }
         }
     }
@@ -344,9 +354,18 @@ struct StatsArcadeSliceOneView: View {
             if let rival {
                 let totalSeries = rival.matchWins + rival.matchLosses + rival.matchTies
                 let marginSteps = abs(Int((rival.avgFinalizedDailyMargin ?? 0).rounded()))
-                let unresolvedBattleDays = max(rival.finalizedDaysCompeted, 1)
-                let unresolvedTheyWonDays = max(1, unresolvedBattleDays / 2)
-                let unresolvedYouWonDays = max(1, unresolvedBattleDays - unresolvedTheyWonDays)
+                let battleDays = max(0, rival.finalizedDaysCompeted)
+                let theyWonDays = max(0, rival.daysWonByOpponent ?? 0)
+                let youWonDays = max(0, rival.daysWonByViewer ?? 0)
+                let avgWinningMargin: Int = {
+                    if title == "TOUGHEST OPPONENT" {
+                        return max(0, Int((rival.avgMarginOnOpponentWinDays ?? 0).rounded()))
+                    }
+                    return max(0, Int((rival.avgMarginOnViewerWinDays ?? 0).rounded()))
+                }()
+                let hasSlice3ADetail = rival.daysWonByViewer != nil
+                    && rival.daysWonByOpponent != nil
+                    && (rival.avgMarginOnOpponentWinDays != nil || rival.avgMarginOnViewerWinDays != nil)
 
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {
@@ -386,9 +405,9 @@ struct StatsArcadeSliceOneView: View {
                     }
 
                     HStack(spacing: 6) {
-                        statCell(value: "\(unresolvedBattleDays)", label: "BATTLE DAYS", color: .white)
-                        statCell(value: "\(unresolvedTheyWonDays)", label: "DAYS THEY WON", color: .red)
-                        statCell(value: "\(unresolvedYouWonDays)", label: "DAYS YOU WON", color: .green)
+                        statCell(value: "\(battleDays)", label: "BATTLE DAYS", color: .white)
+                        statCell(value: "\(theyWonDays)", label: "DAYS THEY WON", color: .red)
+                        statCell(value: "\(youWonDays)", label: "DAYS YOU WON", color: .green)
                     }
 
                     VStack(spacing: 3) {
@@ -396,10 +415,10 @@ struct StatsArcadeSliceOneView: View {
                             .font(.system(size: 10, weight: .bold))
                             .tracking(0.9)
                             .foregroundStyle(Color.white.opacity(0.82))
-                        Text(String(format: "%.1f", Double(winsByYou - winsByThem)))
+                        Text(signedValue(avgWinningMargin))
                             .font(.system(size: 24, weight: .black))
                             .foregroundStyle(tint)
-                        Text("days per battle (placeholder)")
+                        Text("steps on days won")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.white.opacity(0.78))
                     }
@@ -412,7 +431,9 @@ struct StatsArcadeSliceOneView: View {
                             .strokeBorder(tint.opacity(0.4), lineWidth: 1.2)
                     }
 
-                    unresolvedPill("UNRESOLVED IN SLICE 2 · BATTLE-DAY GRIDS + DAY-LEVEL MARGINS")
+                    if !hasSlice3ADetail {
+                        unresolvedPill("UNRESOLVED IN SLICE 3A · DAY-LEVEL WIN MARGINS")
+                    }
                 }
             } else {
                 unresolvedPill("No rival stats available yet.")
@@ -438,20 +459,26 @@ struct StatsArcadeSliceOneView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.76))
 
-                HStack(spacing: 6) {
-                    ForEach(Array(Self.streakPlaceholder.enumerated()), id: \.offset) { _, state in
-                        streakDot(state: state)
+                if let dots = streakTimelineDots, !dots.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(Array(dots.enumerated()), id: \.offset) { _, state in
+                            streakDot(state: state)
+                        }
                     }
                 }
 
-                unresolvedPill("UNRESOLVED IN SLICE 2 · BATTLE-DAY TIMELINE DOTS")
+                if streakTimelineDots == nil {
+                    unresolvedPill("UNRESOLVED IN SLICE 2 · BATTLE-DAY TIMELINE DOTS")
+                }
             }
             .frame(maxWidth: .infinity)
         }
     }
 
     private var stepsDuringBattlesCard: some View {
-        themedCard(
+        let monthly = monthlyBattleBonusMetric
+        let hasMonthlyData = monthly?.hasData == true
+        return themedCard(
             title: "STEPS DURING BATTLES",
             tint: Color(red: 1, green: 0.84, blue: 0),
             showsInfo: true
@@ -460,7 +487,7 @@ struct StatsArcadeSliceOneView: View {
                 Image(systemName: "trophy.fill")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(Color(red: 1, green: 0.84, blue: 0))
-                Text("+24,847")
+                Text(signedValue(monthly?.bonusSteps ?? 0))
                     .font(.system(size: 31, weight: .black, design: .monospaced))
                     .foregroundStyle(Color(red: 1, green: 0.84, blue: 0))
                     .shadow(color: Color(red: 1, green: 0.84, blue: 0).opacity(0.5), radius: 8)
@@ -468,17 +495,21 @@ struct StatsArcadeSliceOneView: View {
                     .font(.system(size: 11, weight: .black))
                     .tracking(1.1)
                     .foregroundStyle(Color(red: 1, green: 0.84, blue: 0).opacity(0.9))
-                Text("~11 extra miles because of your rivals")
+                Text("~\((monthly?.approxMiles ?? 0).formatted()) extra miles because of your rivals")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.62))
-                unresolvedPill("UNRESOLVED IN SLICE 2 · CURRENT-MONTH BATTLE-DAY STEP ROLLUP")
+                if !hasMonthlyData {
+                    unresolvedPill("UNRESOLVED IN SLICE 3B · CURRENT-MONTH BATTLE-DAY STEP ROLLUP")
+                }
             }
             .frame(maxWidth: .infinity)
         }
     }
 
     private var opponentsVsYouCard: some View {
-        themedCard(
+        let rollups = opponentStepsRollups
+        let hasRollups = rollups != nil
+        return themedCard(
             title: "OPPONENTS VS YOU",
             tint: Color(red: 0.75, green: 0.38, blue: 1),
             showsInfo: true
@@ -487,10 +518,15 @@ struct StatsArcadeSliceOneView: View {
                 Image(systemName: "person.2.fill")
                     .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(Color(red: 0.75, green: 0.38, blue: 1))
-                Text("31,204")
+                Text((rollups?.lifetimeSteps ?? 0).formatted())
                     .font(.system(size: 31, weight: .black, design: .monospaced))
                     .foregroundStyle(Color(red: 0.75, green: 0.38, blue: 1))
                     .shadow(color: Color(red: 0.75, green: 0.38, blue: 1).opacity(0.5), radius: 8)
+                if let monthSteps = rollups?.currentMonthSteps, monthSteps > 0 {
+                    Text("MTD: \(monthSteps.formatted())")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.72))
+                }
                 Text("STEPS YOUR OPPONENTS HAVE TAKEN AGAINST YOU")
                     .font(.system(size: 11, weight: .black))
                     .tracking(1.1)
@@ -499,10 +535,9 @@ struct StatsArcadeSliceOneView: View {
                 Text("Your rivals are grinding hard — stay ahead")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.7))
-                Text("Est. by AI based on rival activity vs their baseline patterns")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.3))
-                unresolvedPill("UNRESOLVED IN SLICE 2 · OPPONENT TOTAL STEP ROLLUP")
+                if !hasRollups {
+                    unresolvedPill("UNRESOLVED IN SLICE 2 · OPPONENT TOTAL STEP ROLLUP")
+                }
             }
             .frame(maxWidth: .infinity)
         }
@@ -538,12 +573,12 @@ struct StatsArcadeSliceOneView: View {
         }
     }
 
-    private var battleBoostSummaryRow: some View {
+    private func battleBoostSummaryRow(boostPercent: Int) -> some View {
         let boostTint = Color(red: 0, green: 0.86, blue: 1)
         return VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 10) {
                 neonRetroEqualsSign(tint: boostTint)
-                Text("+70% MORE STEPS WHEN BATTLING")
+                Text("\(signedValue(boostPercent))% MORE STEPS WHEN BATTLING")
                     .font(.system(size: 14, weight: .black))
                     .tracking(2.2)
                     .foregroundStyle(boostTint)
@@ -772,7 +807,7 @@ struct StatsArcadeSliceOneView: View {
         return value > 0 ? "+\(value.formatted())" : "-\(abs(value).formatted())"
     }
 
-    private func streakDot(state: StreakDotState) -> some View {
+    private func streakDot(state: StatsArcadeStreakDot) -> some View {
         let baseColor: Color
         switch state {
         case .win:
@@ -799,14 +834,42 @@ struct StatsArcadeSliceOneView: View {
             }
     }
 
-    private static let lastFivePlaceholder: [Bool] = [true, false, true, false, false]
-    private static let streakPlaceholder: [StreakDotState] = [.loss, .win, .win, .loss, .win, .today]
-}
+    private var mostWantedRecentSeriesResults: [String]? {
+        guard let rival = mostWanted else { return nil }
+        guard let values = rival.recentSeriesResults else { return nil }
+        let cleaned = values
+            .map { normalizeSeriesResult($0) }
+            .filter { ["W", "L", "T"].contains($0) }
+        guard !cleaned.isEmpty else { return nil }
+        return Array(cleaned.prefix(5))
+    }
 
-private enum StreakDotState {
-    case win
-    case loss
-    case today
+    private func normalizeSeriesResult(_ value: String) -> String {
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+        case "W", "WIN":
+            return "W"
+        case "L", "LOSS":
+            return "L"
+        case "T", "TIE":
+            return "T"
+        default:
+            return ""
+        }
+    }
+
+    private func colorForSeriesResult(_ result: String) -> Color {
+        switch result {
+        case "W":
+            return .green
+        case "L":
+            return .red
+        case "T":
+            return Color(red: 1, green: 0.72, blue: 0)
+        default:
+            return Color.white.opacity(0.6)
+        }
+    }
+
 }
 
 #Preview {
@@ -816,7 +879,11 @@ private enum StreakDotState {
             profileTimeZoneIdentifier: nil,
             battleStats: .empty,
             rivalStats: [],
-            rangeMargins: []
+            rangeMargins: [],
+            battleImpactMetric: nil,
+            monthlyBattleBonusMetric: nil,
+            opponentStepsRollups: nil,
+            streakTimelineDots: nil
         )
         .padding(.horizontal, 16)
     }

@@ -72,6 +72,137 @@ final class CalendarRepository {
         }
     }
 
+    /// Steps-only battle states for the inclusive date range (`nil` when the fetch fails).
+    func fetchStepsBattleStates(
+        currentUserId: UUID,
+        startDateKey: String,
+        endDateKey: String
+    ) async -> [String: CalendarDayBattleState]? {
+        guard let client = SupabaseProvider.client else { return nil }
+        guard startDateKey <= endDateKey else { return [:] }
+
+        do {
+            let participantResponse = try await client
+                .from("match_participants")
+                .select("match_id")
+                .eq("user_id", value: currentUserId.uuidString)
+                .execute()
+
+            let allMatchIds = Set(jsonRows(from: participantResponse.data).compactMap { uuid(from: $0["match_id"]) })
+            guard !allMatchIds.isEmpty else { return [:] }
+
+            let stepsMatchResponse = try await client
+                .from("matches")
+                .select("id")
+                .in("id", values: Array(allMatchIds))
+                .eq("metric_type", value: "steps")
+                .in("state", values: ["active", "completed"])
+                .execute()
+
+            let stepMatchIds = Set(jsonRows(from: stepsMatchResponse.data).compactMap { uuid(from: $0["id"]) })
+            guard !stepMatchIds.isEmpty else { return [:] }
+
+            let dayRowsResponse = try await client
+                .from("match_days")
+                .select("calendar_date, status, winner_user_id, is_void")
+                .in("match_id", values: Array(stepMatchIds))
+                .gte("calendar_date", value: startDateKey)
+                .lte("calendar_date", value: endDateKey)
+                .execute()
+
+            var rowsByDate: [String: [CalendarMatchDayRow]] = [:]
+            for row in jsonRows(from: dayRowsResponse.data) {
+                guard let dateKey = string(from: row["calendar_date"]), !dateKey.isEmpty else { continue }
+                let matchDay = CalendarMatchDayRow(
+                    calendarDate: dateKey,
+                    status: string(from: row["status"]) ?? "pending",
+                    isVoid: bool(from: row["is_void"]) == true,
+                    winnerUserId: uuid(from: row["winner_user_id"])
+                )
+                rowsByDate[dateKey, default: []].append(matchDay)
+            }
+
+            var result: [String: CalendarDayBattleState] = [:]
+            for (dateKey, dayRows) in rowsByDate {
+                result[dateKey] = CalendarDayBattleState.aggregate(dayRows: dayRows, userId: currentUserId)
+            }
+            return result
+        } catch {
+            if error is CancellationError { return nil }
+            AppLogger.log(
+                category: "match_state",
+                level: .warning,
+                message: "calendar steps battle states load failed",
+                userId: currentUserId,
+                metadata: [
+                    "error": error.localizedDescription,
+                    "start": startDateKey,
+                    "end": endDateKey,
+                ]
+            )
+            return nil
+        }
+    }
+
+    /// Returns finalized, non-void `steps` battle day keys (`yyyy-MM-dd`) where the current user participated.
+    func fetchFinalizedStepsBattleDateKeys(
+        currentUserId: UUID,
+        startDateKey: String,
+        endDateKey: String
+    ) async -> Set<String> {
+        guard let client = SupabaseProvider.client else { return [] }
+        guard startDateKey <= endDateKey else { return [] }
+
+        do {
+            let participantResponse = try await client
+                .from("match_participants")
+                .select("match_id")
+                .eq("user_id", value: currentUserId.uuidString)
+                .execute()
+
+            let allMatchIds = Set(jsonRows(from: participantResponse.data).compactMap { uuid(from: $0["match_id"]) })
+            guard !allMatchIds.isEmpty else { return [] }
+
+            let stepsMatchResponse = try await client
+                .from("matches")
+                .select("id")
+                .in("id", values: Array(allMatchIds))
+                .eq("metric_type", value: "steps")
+                .in("state", values: ["active", "completed"])
+                .execute()
+
+            let stepMatchIds = Set(jsonRows(from: stepsMatchResponse.data).compactMap { uuid(from: $0["id"]) })
+            guard !stepMatchIds.isEmpty else { return [] }
+
+            let dayRowsResponse = try await client
+                .from("match_days")
+                .select("calendar_date")
+                .in("match_id", values: Array(stepMatchIds))
+                .eq("status", value: "finalized")
+                .eq("is_void", value: false)
+                .gte("calendar_date", value: startDateKey)
+                .lte("calendar_date", value: endDateKey)
+                .execute()
+
+            let keys = jsonRows(from: dayRowsResponse.data).compactMap { string(from: $0["calendar_date"]) }
+            return Set(keys.filter { !$0.isEmpty })
+        } catch {
+            if error is CancellationError { return [] }
+            AppLogger.log(
+                category: "match_state",
+                level: .warning,
+                message: "calendar finalized steps day keys load failed",
+                userId: currentUserId,
+                metadata: [
+                    "error": error.localizedDescription,
+                    "start": startDateKey,
+                    "end": endDateKey,
+                ]
+            )
+            return []
+        }
+    }
+
     /// Full battle breakdown for one calendar date (all matches that day).
     func fetchDayBattleDetail(currentUserId: UUID, dateKey: String) async -> CalendarDayBattleDetail? {
         guard let client = SupabaseProvider.client else { return nil }

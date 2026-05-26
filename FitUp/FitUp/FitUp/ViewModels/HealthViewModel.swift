@@ -121,6 +121,11 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var rivalStats: [HomeRivalStat] = []
     @Published private(set) var isRivalStatsLoading = false
     @Published private(set) var hasLoadedRivalStats = false
+    @Published private(set) var statsBattleImpactMetric: StatsBattleImpactMetric?
+    @Published private(set) var statsMonthlyBattleBonusMetric: StatsMonthlyBattleBonusMetric?
+    @Published private(set) var statsOpponentStepsRollups: StatsOpponentStepsRollups?
+    /// `nil` = timeline fetch failed; `[]` = loaded with no qualifying battle days.
+    @Published private(set) var statsArcadeStreakTimeline: [StatsArcadeStreakDot]?
 
     @Published private(set) var lastLoadFinishedAt: Date?
     @Published private(set) var statsSnapshotSavedAt: Date?
@@ -130,6 +135,7 @@ final class HealthViewModel: ObservableObject {
 
     private let battleStatsRepository = BattleStatsRepository()
     private let homeRepository = HomeRepository()
+    private let calendarRepository = CalendarRepository()
     private let statsSnapshotCacheStore = StatsPageSnapshotCacheStore()
     private let statsSnapshotSoftTTL: TimeInterval = 60 * 5
 
@@ -169,6 +175,10 @@ final class HealthViewModel: ObservableObject {
             statsSnapshotSavedAt = nil
             oneDayHourlySteps = []
             isOneDayHourlyLoading = false
+            statsBattleImpactMetric = nil
+            statsMonthlyBattleBonusMetric = nil
+            statsOpponentStepsRollups = nil
+            statsArcadeStreakTimeline = nil
         }
         profileId = newProfileId
         profileTimeZoneIdentifier = profile?.timezone
@@ -341,7 +351,14 @@ final class HealthViewModel: ObservableObject {
         let forceStatsRefresh = source == "pull_refresh"
         await refreshStatsRangeMargins(source: source, forceNetworkRefresh: forceStatsRefresh)
         await refreshOneDayHourlyStepsIfNeeded()
-        await loadRivalStats(force: source == "pull_refresh")
+        async let opponentRollups = homeRepository.fetchOpponentStepsRollups()
+        async let rivalStatsLoad = loadRivalStats(force: source == "pull_refresh")
+        async let arcadeImpact = refreshArcadeImpactMetrics(userId: userId)
+        async let arcadeStreak = refreshArcadeStreakTimeline(userId: userId)
+        await rivalStatsLoad
+        await arcadeImpact
+        statsOpponentStepsRollups = await opponentRollups
+        await arcadeStreak
         saveStatsSnapshotIfPossible()
 
         lastLoadFinishedAt = Date()
@@ -387,7 +404,7 @@ final class HealthViewModel: ObservableObject {
         rivalStatsTask?.cancel()
         rivalStatsTask = Task { [weak self] in
             guard let self else { return }
-            let rows = await homeRepository.fetchMyRivalStats(limit: 3)
+            let rows = await homeRepository.fetchMyRivalStats(limit: 50)
             guard !Task.isCancelled else { return }
             guard self.profileId == requestedProfileId else { return }
             self.rivalStats = rows
@@ -409,6 +426,10 @@ final class HealthViewModel: ObservableObject {
         rivalStats = []
         isRivalStatsLoading = false
         hasLoadedRivalStats = false
+        statsBattleImpactMetric = nil
+        statsMonthlyBattleBonusMetric = nil
+        statsOpponentStepsRollups = nil
+        statsArcadeStreakTimeline = nil
         statsRangeMargins = []
         isStatsRangeMarginsRefreshing = false
         statsRangeScopeNote = nil
@@ -473,6 +494,125 @@ final class HealthViewModel: ObservableObject {
             ]
         )
         statsSnapshotSavedAt = Date()
+    }
+
+    private func refreshArcadeImpactMetrics(userId: UUID) async {
+        let tz = profileTimeZoneIdentifier.flatMap(TimeZone.init(identifier:)) ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = tz
+        let today = calendar.startOfDay(for: Date())
+
+        guard
+            let start90 = calendar.date(byAdding: .day, value: -89, to: today),
+            let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: today))
+        else {
+            statsBattleImpactMetric = nil
+            statsMonthlyBattleBonusMetric = nil
+            return
+        }
+
+        let start90Key = Self.calendarDateKey(for: start90, calendar: calendar, timeZone: tz)
+        let todayKey = Self.calendarDateKey(for: today, calendar: calendar, timeZone: tz)
+        let monthStartKey = Self.calendarDateKey(for: monthStart, calendar: calendar, timeZone: tz)
+
+        let dailySteps: [String: Int]
+        do {
+            dailySteps = try await healthKitRead("stats_arcade_daily_steps_90d", userId: userId) {
+                try await HealthKitService.fetchDailyStepsByCalendarDate(
+                    startCalendarDateKey: start90Key,
+                    endCalendarDateKey: todayKey,
+                    profileTimeZoneIdentifier: profileTimeZoneIdentifier
+                )
+            }
+        } catch {
+            statsBattleImpactMetric = nil
+            statsMonthlyBattleBonusMetric = nil
+            return
+        }
+
+        let finalizedBattleKeys = await calendarRepository.fetchFinalizedStepsBattleDateKeys(
+            currentUserId: userId,
+            startDateKey: start90Key,
+            endDateKey: todayKey
+        )
+
+        let battleDays = dailySteps.filter { finalizedBattleKeys.contains($0.key) }
+        let normalDays = dailySteps.filter { !finalizedBattleKeys.contains($0.key) }
+
+        let battleCount = battleDays.count
+        let normalCount = normalDays.count
+        let battleAvg = battleCount > 0 ? Int((Double(battleDays.map(\.value).reduce(0, +)) / Double(battleCount)).rounded()) : 0
+        let normalAvg = normalCount > 0 ? Int((Double(normalDays.map(\.value).reduce(0, +)) / Double(normalCount)).rounded()) : 0
+        let delta = battleAvg - normalAvg
+        let boostPercent = normalAvg > 0
+            ? Int((Double(delta) / Double(normalAvg) * 100).rounded())
+            : 0
+
+        statsBattleImpactMetric = StatsBattleImpactMetric(
+            lookbackDays: 90,
+            normalDayAverageSteps: max(0, normalAvg),
+            battleDayAverageSteps: max(0, battleAvg),
+            deltaSteps: delta,
+            boostPercent: boostPercent,
+            normalDaySampleCount: normalCount,
+            battleDaySampleCount: battleCount
+        )
+
+        let monthBattleTotals = dailySteps.filter { entry in
+            entry.key >= monthStartKey && entry.key <= todayKey && finalizedBattleKeys.contains(entry.key)
+        }
+        let monthBattleTotalSteps = monthBattleTotals.map(\.value).reduce(0, +)
+        let monthBattleDayCount = monthBattleTotals.count
+        let monthExpectedFromBaseline = normalAvg * monthBattleDayCount
+        let monthBonus = monthBattleTotalSteps - monthExpectedFromBaseline
+        let clampedBonus = max(0, monthBonus)
+
+        statsMonthlyBattleBonusMetric = StatsMonthlyBattleBonusMetric(
+            monthBattleDayCount: monthBattleDayCount,
+            monthBattleDayTotalSteps: monthBattleTotalSteps,
+            bonusSteps: clampedBonus,
+            approxMiles: Int((Double(clampedBonus) / 2000.0).rounded())
+        )
+    }
+
+    private func refreshArcadeStreakTimeline(userId: UUID) async {
+        let tz = profileTimeZoneIdentifier.flatMap(TimeZone.init(identifier:)) ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = tz
+        let today = calendar.startOfDay(for: Date())
+
+        guard let start90 = calendar.date(byAdding: .day, value: -89, to: today) else {
+            statsArcadeStreakTimeline = nil
+            return
+        }
+
+        let start90Key = Self.calendarDateKey(for: start90, calendar: calendar, timeZone: tz)
+        let todayKey = Self.calendarDateKey(for: today, calendar: calendar, timeZone: tz)
+
+        guard let states = await calendarRepository.fetchStepsBattleStates(
+            currentUserId: userId,
+            startDateKey: start90Key,
+            endDateKey: todayKey
+        ) else {
+            statsArcadeStreakTimeline = nil
+            return
+        }
+
+        var candidates: [(dateKey: String, dot: StatsArcadeStreakDot)] = []
+        for (dateKey, state) in states.sorted(by: { $0.key < $1.key }) {
+            switch state {
+            case .wonAny:
+                candidates.append((dateKey, .win))
+            case .lostAll:
+                candidates.append((dateKey, .loss))
+            case .inProgress where dateKey == todayKey:
+                candidates.append((dateKey, .today))
+            case .none, .voidOnly, .inProgress:
+                continue
+            }
+        }
+
+        statsArcadeStreakTimeline = Array(candidates.suffix(6).map(\.dot))
     }
 
     private func updateStatsDateChipText(now: Date = Date()) {
@@ -604,6 +744,17 @@ final class HealthViewModel: ObservableObject {
             "week_steps_csv": weekSteps.map(String.init).joined(separator: ","),
             "week_cal_csv": weekCalories.map(String.init).joined(separator: ","),
         ]
+    }
+
+    private static func calendarDateKey(for date: Date, calendar: Calendar, timeZone: TimeZone) -> String {
+        var cal = calendar
+        cal.timeZone = timeZone
+        let formatter = DateFormatter()
+        formatter.calendar = cal
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     private func buildWeekComparisons() async -> (steps: HealthWeekComparison?, calories: HealthWeekComparison?) {

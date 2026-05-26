@@ -249,6 +249,11 @@ struct HomeRivalStat: Identifiable, Equatable, Sendable {
     let winPercentage: Int
     let avgFinalizedDailyMargin: Double?
     let lastPlayedOn: Date?
+    let daysWonByViewer: Int?
+    let daysWonByOpponent: Int?
+    let avgMarginOnViewerWinDays: Double?
+    let avgMarginOnOpponentWinDays: Double?
+    let recentSeriesResults: [String]?
     let activeMatchId: UUID?
     let computedAt: Date?
 
@@ -327,6 +332,25 @@ final class HomeRepository {
                 metadata: ["error": error.localizedDescription, "limit": "\(limit)"]
             )
             return []
+        }
+    }
+
+    func fetchOpponentStepsRollups() async -> StatsOpponentStepsRollups? {
+        guard let client = SupabaseProvider.client else { return nil }
+        do {
+            let response: PostgrestResponse<StatsOpponentStepsRollupsRPCResult> = try await client
+                .rpc("get_stats_opponent_steps_rollups")
+                .execute()
+            return response.value.toDomain()
+        } catch {
+            if error is CancellationError { return nil }
+            AppLogger.log(
+                category: "matchmaking",
+                level: .warning,
+                message: "get_stats_opponent_steps_rollups rpc failed",
+                metadata: ["error": error.localizedDescription]
+            )
+            return nil
         }
     }
 
@@ -1236,6 +1260,11 @@ private struct HomeMyRivalStatsRPCRow: Decodable, Sendable {
     let win_percentage: Int
     let avg_finalized_daily_margin: Double?
     let last_played_on: Date?
+    let days_won_by_viewer: Int?
+    let days_won_by_opponent: Int?
+    let avg_margin_on_viewer_win_days: Double?
+    let avg_margin_on_opponent_win_days: Double?
+    let recent_series_results: [String]?
     let active_match_id: UUID?
     let computed_at: Date?
 
@@ -1251,6 +1280,11 @@ private struct HomeMyRivalStatsRPCRow: Decodable, Sendable {
         case win_percentage
         case avg_finalized_daily_margin
         case last_played_on
+        case days_won_by_viewer
+        case days_won_by_opponent
+        case avg_margin_on_viewer_win_days
+        case avg_margin_on_opponent_win_days
+        case recent_series_results
         case active_match_id
         case computed_at
     }
@@ -1268,6 +1302,11 @@ private struct HomeMyRivalStatsRPCRow: Decodable, Sendable {
         win_percentage = Self.decodeInt(c, key: .win_percentage)
         avg_finalized_daily_margin = Self.decodeOptionalNumericDouble(c, key: .avg_finalized_daily_margin)
         last_played_on = Self.decodeOptionalPostgresDate(c, key: .last_played_on)
+        days_won_by_viewer = Self.decodeOptionalInt(c, key: .days_won_by_viewer)
+        days_won_by_opponent = Self.decodeOptionalInt(c, key: .days_won_by_opponent)
+        avg_margin_on_viewer_win_days = Self.decodeOptionalNumericDouble(c, key: .avg_margin_on_viewer_win_days)
+        avg_margin_on_opponent_win_days = Self.decodeOptionalNumericDouble(c, key: .avg_margin_on_opponent_win_days)
+        recent_series_results = Self.decodeOptionalStringArray(c, key: .recent_series_results)
         active_match_id = try c.decodeIfPresent(UUID.self, forKey: .active_match_id)
         computed_at = try c.decodeIfPresent(Date.self, forKey: .computed_at)
     }
@@ -1285,6 +1324,34 @@ private struct HomeMyRivalStatsRPCRow: Decodable, Sendable {
         if let v = try? c.decode(Double.self, forKey: key) { return v }
         if let v = try? c.decode(Int.self, forKey: key) { return Double(v) }
         if let s = try? c.decode(String.self, forKey: key), let v = Double(s) { return v }
+        return nil
+    }
+
+    private static func decodeOptionalInt(_ c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Int? {
+        guard c.contains(key) else { return nil }
+        if (try? c.decodeNil(forKey: key)) == true { return nil }
+        if let v = try? c.decode(Int.self, forKey: key) { return v }
+        if let d = try? c.decode(Double.self, forKey: key) { return Int(d.rounded()) }
+        if let s = try? c.decode(String.self, forKey: key), let v = Int(s) { return v }
+        return nil
+    }
+
+    private static func decodeOptionalStringArray(_ c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> [String]? {
+        guard c.contains(key) else { return nil }
+        if (try? c.decodeNil(forKey: key)) == true { return nil }
+        if let arr = try? c.decode([String].self, forKey: key) {
+            return arr
+        }
+        if let raw = try? c.decode(String.self, forKey: key) {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.hasPrefix("{"), trimmed.hasSuffix("}") else { return nil }
+            let content = String(trimmed.dropFirst().dropLast())
+            if content.isEmpty { return [] }
+            return content
+                .split(separator: ",")
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\"", with: "") }
+                .filter { !$0.isEmpty }
+        }
         return nil
     }
 
@@ -1314,7 +1381,51 @@ private struct HomeMyRivalStatsRPCRow: Decodable, Sendable {
             winPercentage: max(0, min(100, win_percentage)),
             avgFinalizedDailyMargin: avg_finalized_daily_margin,
             lastPlayedOn: last_played_on,
+            daysWonByViewer: days_won_by_viewer.map { max(0, $0) },
+            daysWonByOpponent: days_won_by_opponent.map { max(0, $0) },
+            avgMarginOnViewerWinDays: avg_margin_on_viewer_win_days,
+            avgMarginOnOpponentWinDays: avg_margin_on_opponent_win_days,
+            recentSeriesResults: recent_series_results,
             activeMatchId: active_match_id,
+            computedAt: computed_at
+        )
+    }
+}
+
+private struct StatsOpponentStepsRollupsRPCResult: Decodable, Sendable {
+    let lifetime_steps: Int64
+    let rolling_365d_steps: Int64
+    let current_month_steps: Int64
+    let computed_at: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case lifetime_steps
+        case rolling_365d_steps
+        case current_month_steps
+        case computed_at
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        lifetime_steps = Self.decodeInt64(c, key: .lifetime_steps)
+        rolling_365d_steps = Self.decodeInt64(c, key: .rolling_365d_steps)
+        current_month_steps = Self.decodeInt64(c, key: .current_month_steps)
+        computed_at = try c.decodeIfPresent(Date.self, forKey: .computed_at)
+    }
+
+    private static func decodeInt64(_ c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Int64 {
+        if let v = try? c.decode(Int64.self, forKey: key) { return v }
+        if let v = try? c.decode(Int.self, forKey: key) { return Int64(v) }
+        if let d = try? c.decode(Double.self, forKey: key) { return Int64(d.rounded()) }
+        if let s = try? c.decode(String.self, forKey: key), let v = Int64(s) { return v }
+        return 0
+    }
+
+    func toDomain() -> StatsOpponentStepsRollups {
+        StatsOpponentStepsRollups(
+            lifetimeSteps: HomeRepository.safeInt(from: lifetime_steps),
+            rolling365dSteps: HomeRepository.safeInt(from: rolling_365d_steps),
+            currentMonthSteps: HomeRepository.safeInt(from: current_month_steps),
             computedAt: computed_at
         )
     }

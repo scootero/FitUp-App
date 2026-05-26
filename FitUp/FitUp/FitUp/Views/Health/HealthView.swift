@@ -28,7 +28,11 @@ struct HealthView: View {
                     profileTimeZoneIdentifier: profile?.timezone,
                     battleStats: viewModel.battleStats,
                     rivalStats: viewModel.rivalStats,
-                    rangeMargins: viewModel.statsRangeMargins
+                    rangeMargins: viewModel.statsRangeMargins,
+                    battleImpactMetric: viewModel.statsBattleImpactMetric,
+                    monthlyBattleBonusMetric: viewModel.statsMonthlyBattleBonusMetric,
+                    opponentStepsRollups: viewModel.statsOpponentStepsRollups,
+                    streakTimelineDots: viewModel.statsArcadeStreakTimeline
                 )
                     .padding(.bottom, 10)
 
