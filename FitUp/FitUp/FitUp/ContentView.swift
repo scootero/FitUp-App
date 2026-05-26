@@ -271,8 +271,16 @@ private struct RootShellView: View {
             )
             .trackProductScreen("home", userId: sessionStore.currentProfile?.id)
         case .health:
-            HealthView(profile: profile)
-                .trackProductScreen("health", userId: sessionStore.currentProfile?.id)
+            HealthView(
+                profile: profile,
+                onOpenChallenge: { opponent in
+                    challengeLaunchContext = .prefilled(opponent: opponent)
+                },
+                onOpenMatchDetails: { matchId, _ in
+                    matchDetailsContext = MatchDetailsContext(matchId: matchId)
+                }
+            )
+            .trackProductScreen("health", userId: sessionStore.currentProfile?.id)
         case .profile:
             ProfileView(
                 profile: profile,

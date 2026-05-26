@@ -10,6 +10,8 @@ import UIKit
 
 struct HealthView: View {
     let profile: Profile?
+    var onOpenChallenge: (ChallengePrefillOpponent) -> Void = { _ in }
+    var onOpenMatchDetails: (UUID, String) -> Void = { _, _ in }
 
     @StateObject private var viewModel = HealthViewModel()
     @Environment(\.openURL) private var openURL
@@ -32,7 +34,14 @@ struct HealthView: View {
                     battleImpactMetric: viewModel.statsBattleImpactMetric,
                     monthlyBattleBonusMetric: viewModel.statsMonthlyBattleBonusMetric,
                     opponentStepsRollups: viewModel.statsOpponentStepsRollups,
-                    streakTimelineDots: viewModel.statsArcadeStreakTimeline
+                    streakTimelineDots: viewModel.statsArcadeStreakTimeline,
+                    completedMatches: viewModel.completedMatches,
+                    isLoadingCompletedMatches: viewModel.isLoadingCompletedMatches,
+                    onLoadCompletedMatches: {
+                        Task { await viewModel.loadCompletedMatchesIfNeeded() }
+                    },
+                    onOpenMatchDetails: onOpenMatchDetails,
+                    onOpenChallenge: onOpenChallenge
                 )
                     .padding(.bottom, 10)
 

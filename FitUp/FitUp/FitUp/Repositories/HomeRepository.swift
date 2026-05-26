@@ -258,6 +258,16 @@ struct HomeRivalStat: Identifiable, Equatable, Sendable {
     let computedAt: Date?
 
     var id: UUID { opponentProfileId }
+
+    /// Same opponent shape as Match Details rematch → Challenge flow Duration step.
+    func challengePrefillOpponent() -> ChallengePrefillOpponent {
+        ChallengePrefillOpponent(
+            id: opponentProfileId,
+            displayName: opponentDisplayName,
+            initials: opponentInitials,
+            colorHex: ProfileAccentColor.hex(for: opponentProfileId)
+        )
+    }
 }
 
 final class HomeRepository {

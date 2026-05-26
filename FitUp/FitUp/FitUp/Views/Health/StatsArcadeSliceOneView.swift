@@ -18,9 +18,27 @@ struct StatsArcadeSliceOneView: View {
     let monthlyBattleBonusMetric: StatsMonthlyBattleBonusMetric?
     let opponentStepsRollups: StatsOpponentStepsRollups?
     let streakTimelineDots: [StatsArcadeStreakDot]?
+    let completedMatches: [ActivityCompletedMatch]
+    let isLoadingCompletedMatches: Bool
+    var onLoadCompletedMatches: () -> Void
+    var onOpenMatchDetails: (UUID, String) -> Void
+    var onOpenChallenge: (ChallengePrefillOpponent) -> Void = { _ in }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var headerVisible = false
+    @State private var isAllRivalsSheetPresented = false
+    @State private var isMostWantedPastMatchesExpanded = false
+    @State private var isToughestPastMatchesExpanded = false
+    @State private var isDominatedPastMatchesExpanded = false
+
+    private static let rivalThemeColors: [Color] = [
+        Color(red: 0, green: 0.86, blue: 1),
+        Color(red: 1, green: 0.55, blue: 0),
+        Color(red: 0.75, green: 0.38, blue: 1),
+    ]
+
+    private static let battleImpactPositiveTint = Color(red: 0, green: 0.86, blue: 1)
+    private static let battleImpactNegativeTint = Color(red: 1, green: 0.84, blue: 0)
 
     private var topRivals: [HomeRivalStat] {
         rivalStats.sorted {
@@ -75,6 +93,9 @@ struct StatsArcadeSliceOneView: View {
                 headerVisible = true
             }
         }
+        .sheet(isPresented: $isAllRivalsSheetPresented) {
+            StatsArcadeAllRivalsSheet(rivals: topRivals)
+        }
     }
 
     private var header: some View {
@@ -105,32 +126,31 @@ struct StatsArcadeSliceOneView: View {
     private var battleImpactCard: some View {
         let impact = battleImpactMetric
         let hasImpactData = impact?.hasEnoughSample == true
+        let deltaSteps = impact?.deltaSteps ?? 0
+        let isPositiveDelta = deltaSteps >= 0
+        let heroTint = isPositiveDelta ? Self.battleImpactPositiveTint : Self.battleImpactNegativeTint
+        let boostPercent = impact?.boostPercent ?? 0
         return themedCard(
             title: "BATTLE IMPACT",
-            tint: Color(red: 0, green: 0.86, blue: 1),
+            tint: Self.battleImpactPositiveTint,
             showsInfo: true
         ) {
             VStack(spacing: 10) {
                 VStack(spacing: 6) {
-                    Text("When battling you make")
+                    Text("On battle days, you take")
                         .font(.system(size: 14, weight: .bold))
                         .tracking(1.2)
                         .foregroundStyle(Color.white.opacity(0.93))
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(signedValue(impact?.deltaSteps ?? 0))
-                            .font(.system(size: 30, weight: .black, design: .monospaced))
-                            .tracking(1.5)
-                            .foregroundStyle(Color(red: 0, green: 0.86, blue: 1))
-                            .shadow(color: Color(red: 0, green: 0.86, blue: 1).opacity(0.6), radius: 8)
-                        Text("more steps")
-                            .font(.system(size: 14, weight: .bold))
-                            .tracking(1.4)
-                            .foregroundStyle(Color.white.opacity(0.88))
-                    }
-                    Text("than when you're not battling")
+                    Text(signedValue(deltaSteps))
+                        .font(.system(size: 30, weight: .black, design: .monospaced))
+                        .tracking(1.5)
+                        .foregroundStyle(heroTint)
+                        .shadow(color: heroTint.opacity(0.6), radius: 8)
+                    Text(isPositiveDelta ? "more steps than usual!" : "fewer steps than usual!")
                         .font(.system(size: 12, weight: .semibold))
                         .tracking(1.1)
                         .foregroundStyle(Color.white.opacity(0.78))
+                        .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
@@ -138,14 +158,14 @@ struct StatsArcadeSliceOneView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color(red: 0, green: 0.86, blue: 1).opacity(0.2), lineWidth: 1)
+                        .strokeBorder(heroTint.opacity(0.2), lineWidth: 1)
                 }
 
                 HStack(spacing: 8) {
                     comparisonTile(
                         value: (impact?.normalDayAverageSteps ?? 0).formatted(),
                         title: "NORMAL DAY",
-                        subtitle: "90-day avg",
+                        subtitle: "AVERAGE",
                         tint: Color(red: 1, green: 0.55, blue: 0),
                         emphasized: false
                     )
@@ -155,13 +175,25 @@ struct StatsArcadeSliceOneView: View {
                     comparisonTile(
                         value: (impact?.battleDayAverageSteps ?? 0).formatted(),
                         title: "BATTLE DAY",
-                        subtitle: "Active matches",
-                        tint: Color(red: 0, green: 0.86, blue: 1),
+                        subtitle: "AVERAGE",
+                        tint: Self.battleImpactPositiveTint,
                         emphasized: true
                     )
                 }
 
-                battleBoostSummaryRow(boostPercent: impact?.boostPercent ?? 0)
+                if boostPercent > 0 {
+                    battleBoostSummaryRow(boostPercent: boostPercent)
+                }
+
+                if !isPositiveDelta {
+                    Text("You need to step it up when battling someone! Let's go!")
+                        .font(.system(size: 12, weight: .semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(Self.battleImpactNegativeTint.opacity(0.95))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
 
                 if !hasImpactData {
                     unresolvedPill("UNRESOLVED IN SLICE 3B · EXACT BASELINE VS BATTLE-DAY AVERAGES")
@@ -202,7 +234,7 @@ struct StatsArcadeSliceOneView: View {
                 HStack(spacing: 0) {
                     Text("RIVAL")
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("FINALIZED\nDAYS")
+                    Text("TOTAL BATTLE\nDAYS")
                         .multilineTextAlignment(.center)
                         .frame(width: 72, alignment: .center)
                         .padding(.trailing, 6)
@@ -218,17 +250,17 @@ struct StatsArcadeSliceOneView: View {
                     unresolvedPill("No rival stats available yet.")
                 } else {
                     ForEach(Array(topRivals.prefix(3).enumerated()), id: \.element.id) { idx, rival in
+                        let themeColor = rivalThemeColor(at: idx)
                         HStack(spacing: 8) {
-                            avatarBadge(for: rival)
+                            avatarBadge(for: rival, themeColor: themeColor)
                             Text("\(idx + 1). \(rival.opponentDisplayName)")
                                 .font(.system(size: 15, weight: .bold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(themeColor)
                             Spacer(minLength: 4)
                             Text("\(rival.finalizedDaysCompeted)")
                                 .font(.system(size: 15, weight: .black))
-                                .foregroundStyle(Color(red: 0.75, green: 0.38, blue: 1))
+                                .foregroundStyle(themeColor)
                                 .frame(width: 72, alignment: .center)
-                                .shadow(color: Color.green.opacity(0.35), radius: 6)
                             Text(rivalSeriesRecord(rival))
                                 .font(.system(size: 15, weight: .black))
                                 .foregroundStyle(rival.matchWins >= rival.matchLosses ? Color.green : Color.red)
@@ -239,12 +271,18 @@ struct StatsArcadeSliceOneView: View {
                             Divider().overlay(Color.white.opacity(0.14))
                         }
                     }
-                    Text("VIEW ALL RIVALS →")
-                        .font(.system(size: 11, weight: .bold))
-                        .tracking(1.2)
-                        .foregroundStyle(Color.white.opacity(0.42))
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 4)
+                    Button {
+                        isAllRivalsSheetPresented = true
+                    } label: {
+                        Text("VIEW ALL RIVALS →")
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(1.2)
+                            .foregroundStyle(Color.white.opacity(topRivals.isEmpty ? 0.28 : 0.42))
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.top, 4)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(topRivals.isEmpty)
                 }
             }
         }
@@ -254,8 +292,7 @@ struct StatsArcadeSliceOneView: View {
         opponentsGlassCard(
             title: "MOST WANTED",
             tint: mostWantedTint,
-            cornerLabel: "MOST BATTLED\nOPPONENT",
-            cornerLabelScale: 2.6
+            cornerLabel: "MOST BATTLED\nOPPONENT"
         ) {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .center, spacing: 10) {
@@ -302,6 +339,14 @@ struct StatsArcadeSliceOneView: View {
 
                 rematchButton
 
+                if let rival = mostWanted {
+                    opponentPastMatchesSection(
+                        rival: rival,
+                        tint: mostWantedTint,
+                        isExpanded: $isMostWantedPastMatchesExpanded
+                    )
+                }
+
                 if mostWantedRecentSeriesResults == nil {
                     unresolvedPill("UNRESOLVED IN SLICE 3A · LAST-5 SERIES RESULTS")
                 }
@@ -313,8 +358,8 @@ struct StatsArcadeSliceOneView: View {
         opponentsDetailCard(
             title: "TOUGHEST OPPONENT",
             tint: Color(red: 1, green: 0.31, blue: 0.31),
-            cornerLabel: "MOST BATTLES\nWON VS YOU",
-            cornerLabelScale: 2.6,
+            cornerLabel: "BATTLES\nAGAINST YOU",
+            pastMatchesExpanded: $isToughestPastMatchesExpanded,
             rival: toughestRival,
             winsByThem: toughestRival?.matchLosses ?? 0,
             winsByYou: toughestRival?.matchWins ?? 0,
@@ -327,7 +372,7 @@ struct StatsArcadeSliceOneView: View {
             title: "MOST DOMINATED",
             tint: Color(red: 0, green: 0.86, blue: 0.78),
             cornerLabel: "MOST BATTLES\nWON BY YOU",
-            cornerLabelScale: 2.6,
+            pastMatchesExpanded: $isDominatedPastMatchesExpanded,
             rival: dominatedRival,
             winsByThem: dominatedRival?.matchLosses ?? 0,
             winsByYou: dominatedRival?.matchWins ?? 0,
@@ -339,7 +384,7 @@ struct StatsArcadeSliceOneView: View {
         title: String,
         tint: Color,
         cornerLabel: String,
-        cornerLabelScale: CGFloat = 1,
+        pastMatchesExpanded: Binding<Bool>,
         rival: HomeRivalStat?,
         winsByThem: Int,
         winsByYou: Int,
@@ -348,8 +393,7 @@ struct StatsArcadeSliceOneView: View {
         opponentsGlassCard(
             title: title,
             tint: tint,
-            cornerLabel: cornerLabel,
-            cornerLabelScale: cornerLabelScale
+            cornerLabel: cornerLabel
         ) {
             if let rival {
                 let totalSeries = rival.matchWins + rival.matchLosses + rival.matchTies
@@ -434,11 +478,44 @@ struct StatsArcadeSliceOneView: View {
                     if !hasSlice3ADetail {
                         unresolvedPill("UNRESOLVED IN SLICE 3A · DAY-LEVEL WIN MARGINS")
                     }
+
+                    opponentPastMatchesSection(
+                        rival: rival,
+                        tint: tint,
+                        isExpanded: pastMatchesExpanded
+                    )
                 }
             } else {
                 unresolvedPill("No rival stats available yet.")
             }
         }
+    }
+
+    private func opponentPastMatchesSection(
+        rival: HomeRivalStat,
+        tint: Color,
+        isExpanded: Binding<Bool>
+    ) -> some View {
+        let filtered = completedMatches.filter { $0.opponentProfileId == rival.opponentProfileId }
+        return PastMatchesExpandableList(
+            title: "Past matches",
+            matches: filtered,
+            isExpanded: isExpanded.wrappedValue,
+            isLoading: isLoadingCompletedMatches,
+            style: .embedded,
+            accent: tint,
+            emptyMessage: "No past matches with \(rival.opponentDisplayName) yet.",
+            onToggle: {
+                let willExpand = !isExpanded.wrappedValue
+                isExpanded.wrappedValue = willExpand
+                if willExpand {
+                    onLoadCompletedMatches()
+                }
+            },
+            onOpenMatch: { match in
+                onOpenMatchDetails(match.id, match.opponentName)
+            }
+        )
     }
 
     private var currentStreakCard: some View {
@@ -574,43 +651,30 @@ struct StatsArcadeSliceOneView: View {
     }
 
     private func battleBoostSummaryRow(boostPercent: Int) -> some View {
-        let boostTint = Color(red: 0, green: 0.86, blue: 1)
-        return VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 10) {
-                neonRetroEqualsSign(tint: boostTint)
-                Text("\(signedValue(boostPercent))% MORE STEPS WHEN BATTLING")
-                    .font(.system(size: 14, weight: .black))
-                    .tracking(2.2)
-                    .foregroundStyle(boostTint)
-                    .shadow(color: boostTint.opacity(0.75), radius: 10)
-                    .shadow(color: boostTint.opacity(0.35), radius: 18)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        let boostTint = Self.battleImpactPositiveTint
+        return Text("\(boostPercent)% MORE STEPS WHEN BATTLING")
+            .font(.system(size: 14, weight: .black))
+            .tracking(2.2)
+            .foregroundStyle(boostTint)
+            .shadow(color: boostTint.opacity(0.75), radius: 10)
+            .shadow(color: boostTint.opacity(0.35), radius: 18)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
+            .frame(minHeight: 52)
+            .background(boostTint.opacity(0.07))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(boostTint.opacity(0.22), lineWidth: 1)
             }
-            .padding(.top, 12)
-            .padding(.horizontal, 12)
-
-            Text("Competition literally makes you move more")
-                .font(.system(size: 11, weight: .medium))
-                .tracking(3.2)
-                .foregroundStyle(Color.white.opacity(0.58))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 10)
-                .padding(.top, 18)
-                .padding(.bottom, 14)
-        }
-        .frame(maxWidth: .infinity, minHeight: 88)
-        .background(boostTint.opacity(0.07))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(boostTint.opacity(0.22), lineWidth: 1)
-        }
     }
 
     private var rematchButton: some View {
         Button {
-            // Slice 2: wire rematch navigation
+            guard let rival = mostWanted else { return }
+            onOpenChallenge(rival.challengePrefillOpponent())
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "bolt.fill")
@@ -642,37 +706,17 @@ struct StatsArcadeSliceOneView: View {
             .shadow(color: rematchButtonTint.opacity(0.55), radius: 12, y: 2)
         }
         .buttonStyle(.plain)
-    }
-
-    private func neonRetroEqualsSign(tint: Color) -> some View {
-        VStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(tint)
-                .frame(width: 18, height: 3)
-                .shadow(color: tint.opacity(0.8), radius: 6)
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(tint)
-                .frame(width: 18, height: 3)
-                .shadow(color: tint.opacity(0.8), radius: 6)
-        }
-        .padding(6)
-        .background(tint.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(tint.opacity(0.45), lineWidth: 1)
-        }
+        .disabled(mostWanted == nil)
+        .opacity(mostWanted == nil ? 0.45 : 1)
     }
 
     private func opponentsGlassCard(
         title: String,
         tint: Color,
         cornerLabel: String? = nil,
-        cornerLabelScale: CGFloat = 1,
         @ViewBuilder content: () -> some View
     ) -> some View {
-        let cornerFontSize = 8 * cornerLabelScale
-        return VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 Text(title)
                     .font(.system(size: 16, weight: .black))
@@ -681,13 +725,11 @@ struct StatsArcadeSliceOneView: View {
                 Spacer()
                 if let cornerLabel {
                     Text(cornerLabel)
-                        .font(.system(size: cornerFontSize, weight: .black))
-                        .tracking(cornerLabelScale > 1 ? 1.6 : 1)
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(1.4)
                         .multilineTextAlignment(.trailing)
                         .lineLimit(2)
-                        .minimumScaleFactor(0.65)
-                        .foregroundStyle(tint.opacity(0.92))
-                        .shadow(color: tint.opacity(0.45), radius: 8)
+                        .foregroundStyle(Color.white.opacity(0.46))
                 }
             }
             content()
@@ -774,12 +816,26 @@ struct StatsArcadeSliceOneView: View {
             }
     }
 
-    private func avatarBadge(for rival: HomeRivalStat, size: CGFloat = 30) -> some View {
-        ZStack {
+    private func rivalThemeColor(at index: Int) -> Color {
+        Self.rivalThemeColors[index % Self.rivalThemeColors.count]
+    }
+
+    private func avatarBadge(
+        for rival: HomeRivalStat,
+        size: CGFloat = 30,
+        themeColor: Color? = nil
+    ) -> some View {
+        let stroke = themeColor ?? Color.white.opacity(0.22)
+        return ZStack {
             Circle()
                 .fill(Color.black.opacity(0.35))
                 .overlay {
-                    Circle().strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
+                    if let themeColor {
+                        Circle().fill(themeColor.opacity(0.12))
+                    }
+                }
+                .overlay {
+                    Circle().strokeBorder(stroke.opacity(themeColor == nil ? 1 : 0.55), lineWidth: 1)
                 }
             Text(initials(for: rival))
                 .font(.system(size: max(10, size * 0.35), weight: .heavy))
@@ -883,7 +939,12 @@ struct StatsArcadeSliceOneView: View {
             battleImpactMetric: nil,
             monthlyBattleBonusMetric: nil,
             opponentStepsRollups: nil,
-            streakTimelineDots: nil
+            streakTimelineDots: nil,
+            completedMatches: [],
+            isLoadingCompletedMatches: false,
+            onLoadCompletedMatches: {},
+            onOpenMatchDetails: { _, _ in },
+            onOpenChallenge: { _ in }
         )
         .padding(.horizontal, 16)
     }

@@ -127,6 +127,9 @@ final class HealthViewModel: ObservableObject {
     /// `nil` = timeline fetch failed; `[]` = loaded with no qualifying battle days.
     @Published private(set) var statsArcadeStreakTimeline: [StatsArcadeStreakDot]?
 
+    @Published private(set) var completedMatches: [ActivityCompletedMatch] = []
+    @Published private(set) var isLoadingCompletedMatches = false
+
     @Published private(set) var lastLoadFinishedAt: Date?
     @Published private(set) var statsSnapshotSavedAt: Date?
 
@@ -135,6 +138,7 @@ final class HealthViewModel: ObservableObject {
 
     private let battleStatsRepository = BattleStatsRepository()
     private let homeRepository = HomeRepository()
+    private let activityRepository = ActivityRepository()
     private let calendarRepository = CalendarRepository()
     private let statsSnapshotCacheStore = StatsPageSnapshotCacheStore()
     private let statsSnapshotSoftTTL: TimeInterval = 60 * 5
@@ -142,6 +146,7 @@ final class HealthViewModel: ObservableObject {
     private var profileId: UUID?
     private var profileTimeZoneIdentifier: String?
     private var rivalStatsTask: Task<Void, Never>?
+    private var completedMatchesListTask: Task<Void, Never>?
 
     var selectedWeekComparison: HealthWeekComparison? {
         statsTab == .steps ? weekComparisonSteps : weekComparisonCalories
@@ -179,6 +184,10 @@ final class HealthViewModel: ObservableObject {
             statsMonthlyBattleBonusMetric = nil
             statsOpponentStepsRollups = nil
             statsArcadeStreakTimeline = nil
+            completedMatches = []
+            completedMatchesListTask?.cancel()
+            completedMatchesListTask = nil
+            isLoadingCompletedMatches = false
         }
         profileId = newProfileId
         profileTimeZoneIdentifier = profile?.timezone
@@ -879,6 +888,24 @@ final class HealthViewModel: ObservableObject {
             return ints + Array(repeating: 0, count: 7 - ints.count)
         }
         return Array(ints.prefix(7))
+    }
+
+    /// Loads completed match rows for stats opponent cards if the list is still empty.
+    func loadCompletedMatchesIfNeeded() async {
+        guard let profileId else { return }
+        if !completedMatches.isEmpty { return }
+        if isLoadingCompletedMatches { return }
+        isLoadingCompletedMatches = true
+        defer { isLoadingCompletedMatches = false }
+        completedMatchesListTask?.cancel()
+        completedMatchesListTask = Task { [weak self] in
+            guard let self else { return }
+            let rows = await activityRepository.loadCompletedMatches(currentUserId: profileId)
+            guard !Task.isCancelled else { return }
+            guard self.profileId == profileId else { return }
+            self.completedMatches = rows
+        }
+        await completedMatchesListTask?.value
     }
 
 }
