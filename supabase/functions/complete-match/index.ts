@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
-import { invokeInternalFunction, supabaseAdmin } from "../_shared/supabase.ts";
+import { invokeEdgeFunctionAsync, supabaseAdmin } from "../_shared/supabase.ts";
 serve(async (request)=>{
   if (request.method === "OPTIONS") {
     return new Response("ok", {
@@ -66,7 +66,7 @@ serve(async (request)=>{
         const myScore = seriesScores.get(userId) ?? 0;
         const theirScore = opponentId ? seriesScores.get(opponentId) ?? 0 : 0;
         const eventType = userId === seriesWinner ? "match_won" : "match_lost";
-        await invokeInternalFunction("dispatch-notification", {
+        await invokeEdgeFunctionAsync("dispatch-notification", {
           user_id: userId,
           event_type: eventType,
           payload: {

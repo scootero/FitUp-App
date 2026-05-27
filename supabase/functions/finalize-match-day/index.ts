@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
-import { supabaseAdmin } from "../_shared/supabase.ts";
+import { invokeEdgeFunctionAsync, supabaseAdmin } from "../_shared/supabase.ts";
 
 /**
  * Finalizes one match day: copies metric_total → finalized_value, sets winner/void,
@@ -151,7 +151,7 @@ serve(async (request) => {
 
     let leaderboardError: string | null = null;
     try {
-      await invokeEdgeViaVaultRpc("update-leaderboard", {
+      await invokeEdgeFunctionAsync("update-leaderboard", {
         match_day_id: matchDayId,
         match_id: dayRow.match_id,
         winner_user_id: winnerUserId,
@@ -175,7 +175,7 @@ serve(async (request) => {
     let completeMatchError: string | null = null;
     if (allFinalized) {
       try {
-        await invokeEdgeViaVaultRpc("complete-match", { match_id: dayRow.match_id });
+        await invokeEdgeFunctionAsync("complete-match", { match_id: dayRow.match_id });
       } catch (err) {
         completeMatchError = err instanceof Error ? err.message : String(err);
         console.error("complete-match via invoke_edge_function_async failed:", completeMatchError);
@@ -198,19 +198,6 @@ serve(async (request) => {
     });
   }
 });
-
-async function invokeEdgeViaVaultRpc(
-  functionName: string,
-  payload: Record<string, unknown>,
-): Promise<void> {
-  const { error } = await supabaseAdmin.rpc("invoke_edge_function_async", {
-    p_function_name: functionName,
-    p_payload: payload,
-  });
-  if (error) {
-    throw new Error(`${functionName} rpc failed: ${error.message}`);
-  }
-}
 
 function toNumber(value: unknown): number {
   if (typeof value === "number") {

@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { battleScore } from "../_shared/battleScore.ts";
 import { corsHeaders, jsonResponse } from "../_shared/http.ts";
-import { invokeInternalFunction, supabaseAdmin } from "../_shared/supabase.ts";
+import { invokeEdgeFunctionAsync, supabaseAdmin } from "../_shared/supabase.ts";
 
 /** Local wall-clock hour for bundled yesterday recap (aligns with day cutoff). */
 const RECAP_LOCAL_HOUR = 10;
@@ -72,7 +72,7 @@ serve(async (request) => {
           continue;
         }
         const teaser = buildRecapTeaser(cards);
-        await invokeInternalFunction("dispatch-notification", {
+        await invokeEdgeFunctionAsync("dispatch-notification", {
           user_id: userId,
           event_type: "yesterday_recap",
           payload: {
@@ -93,7 +93,7 @@ serve(async (request) => {
           if (already) {
             continue;
           }
-          await invokeInternalFunction("dispatch-notification", {
+          await invokeEdgeFunctionAsync("dispatch-notification", {
             user_id: userId,
             event_type: "final_day_comeback",
             payload: {

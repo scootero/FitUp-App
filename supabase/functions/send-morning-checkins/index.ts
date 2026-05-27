@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { battleScore } from "../_shared/battleScore.ts";
 import { corsHeaders, jsonResponse } from "../_shared/http.ts";
-import { invokeInternalFunction, supabaseAdmin } from "../_shared/supabase.ts";
+import { invokeEdgeFunctionAsync, supabaseAdmin } from "../_shared/supabase.ts";
 
 serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -72,7 +72,7 @@ serve(async (request) => {
 
         const myScore = seriesScores.get(String(participant.user_id)) ?? 0;
         const theirScore = opponentId ? seriesScores.get(String(opponentId)) ?? 0 : 0;
-        await invokeInternalFunction("dispatch-notification", {
+        await invokeEdgeFunctionAsync("dispatch-notification", {
           user_id: participant.user_id,
           event_type: "morning_checkin",
           payload: {

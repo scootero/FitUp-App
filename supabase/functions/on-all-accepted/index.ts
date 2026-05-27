@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
-import { invokeInternalFunction, supabaseAdmin } from "../_shared/supabase.ts";
+import { invokeEdgeFunctionAsync, supabaseAdmin } from "../_shared/supabase.ts";
 serve(async (request)=>{
   if (request.method === "OPTIONS") {
     return new Response("ok", {
@@ -47,7 +47,7 @@ serve(async (request)=>{
     for (const userId of userIds){
       const opponentId = userIds.find((id)=>id !== userId) ?? null;
       const opponentDisplayName = opponentId ? names.get(opponentId) ?? "Opponent" : "Opponent";
-      await invokeInternalFunction("dispatch-notification", {
+      await invokeEdgeFunctionAsync("dispatch-notification", {
         user_id: userId,
         event_type: "match_active",
         payload: {

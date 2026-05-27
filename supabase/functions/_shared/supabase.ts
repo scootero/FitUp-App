@@ -17,6 +17,20 @@ export const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   },
 });
 
+/** Fire-and-forget Edge invoke via Vault JWT (pg_net). Prefer over invokeInternalFunction. */
+export async function invokeEdgeFunctionAsync(
+  functionName: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const { error } = await supabaseAdmin.rpc("invoke_edge_function_async", {
+    p_function_name: functionName,
+    p_payload: payload,
+  });
+  if (error) {
+    throw new Error(`${functionName} rpc failed: ${error.message}`);
+  }
+}
+
 export async function invokeInternalFunction<TPayload extends Record<string, unknown>>(
   functionName: string,
   payload: TPayload,

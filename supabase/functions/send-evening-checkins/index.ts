@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { battleScore } from "../_shared/battleScore.ts";
 import { corsHeaders, jsonResponse } from "../_shared/http.ts";
-import { invokeInternalFunction, supabaseAdmin } from "../_shared/supabase.ts";
+import { invokeEdgeFunctionAsync, supabaseAdmin } from "../_shared/supabase.ts";
 
 type CandidateRow = {
   user_id: string;
@@ -35,7 +35,7 @@ serve(async (request) => {
       }
       const pick = await pickClosestActiveMatchForUser(userId);
       if (!pick) {
-        await invokeInternalFunction("dispatch-notification", {
+        await invokeEdgeFunctionAsync("dispatch-notification", {
           user_id: userId,
           event_type: "evening_checkin",
           payload: {
@@ -47,7 +47,7 @@ serve(async (request) => {
         continue;
       }
       const opponentName = pick.opponentName;
-      await invokeInternalFunction("dispatch-notification", {
+      await invokeEdgeFunctionAsync("dispatch-notification", {
         user_id: userId,
         event_type: "evening_checkin",
         payload: {

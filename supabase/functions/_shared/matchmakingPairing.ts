@@ -1,4 +1,4 @@
-import { invokeInternalFunction, supabaseAdmin } from "./supabase.ts";
+import { invokeEdgeFunctionAsync, supabaseAdmin } from "./supabase.ts";
 
 export type MatchmakingPairingResult =
   | { status: "waiting" }
@@ -65,7 +65,7 @@ export async function runMatchmakingPairing(requestId: string): Promise<Matchmak
     const opponentId = userIds.find((id) => id !== userId) ?? null;
     const opponentDisplayName = opponentId ? (names.get(opponentId) ?? "Opponent") : "Opponent";
 
-    await invokeInternalFunction("dispatch-notification", {
+    await invokeEdgeFunctionAsync("dispatch-notification", {
       user_id: userId,
       event_type: eventType,
       payload: {
