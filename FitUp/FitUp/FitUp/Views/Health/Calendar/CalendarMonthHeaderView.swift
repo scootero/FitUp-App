@@ -9,6 +9,8 @@ import SwiftUI
 
 struct CalendarMonthHeaderView: View {
     let monthTitle: String
+    let centerLabel: String
+    var headerTitleSize: CGFloat = 20
     let onPrevious: () -> Void
     let onNext: () -> Void
     let onToday: () -> Void
@@ -16,7 +18,7 @@ struct CalendarMonthHeaderView: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(monthTitle)
-                .font(FitUpFont.display(20, weight: .bold))
+                .font(FitUpFont.display(headerTitleSize, weight: .bold))
                 .foregroundStyle(FitUpColors.Text.primary)
                 .lineLimit(1)
 
@@ -25,7 +27,7 @@ struct CalendarMonthHeaderView: View {
             HStack(spacing: 14) {
                 navButton(systemName: "chevron.left", action: onPrevious)
                 Button(action: onToday) {
-                    Text("Today")
+                    Text(centerLabel)
                         .font(FitUpFont.body(12, weight: .bold))
                         .foregroundStyle(FitUpColors.Neon.orange)
                 }

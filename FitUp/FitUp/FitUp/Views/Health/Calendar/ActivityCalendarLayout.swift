@@ -14,14 +14,14 @@ enum ActivityCalendarLayout {
     var ringSize: CGFloat {
         switch self {
         case .compact: 26
-        case .expanded: 48
+        case .expanded: 38
         }
     }
 
     var dayNumberFontSize: CGFloat {
         switch self {
         case .compact: 12
-        case .expanded: 13
+        case .expanded: 11
         }
     }
 
@@ -35,14 +35,28 @@ enum ActivityCalendarLayout {
     var gridRowSpacing: CGFloat {
         switch self {
         case .compact: 2
-        case .expanded: 4
+        case .expanded: 2
         }
     }
 
     var cellVerticalPadding: CGFloat {
         switch self {
         case .compact: 4
-        case .expanded: 6
+        case .expanded: 3
+        }
+    }
+
+    var sectionSpacing: CGFloat {
+        switch self {
+        case .compact: 12
+        case .expanded: 8
+        }
+    }
+
+    var headerTitleSize: CGFloat {
+        switch self {
+        case .compact: 20
+        case .expanded: 16
         }
     }
 }

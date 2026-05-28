@@ -137,11 +137,8 @@ struct SettingsGroupView<Content: View>: View {
             VStack(spacing: 20) {
                 SettingsGroupView(title: "ACCOUNT") {
                     SettingsRowView(sfSymbol: "bell", label: "Notifications",
-                                   showSeparator: true,
-                                   action: .toggle(.constant(true)))
-                    SettingsRowView(sfSymbol: "shield", label: "Privacy",
                                    showSeparator: false,
-                                   action: .chevron())
+                                   action: .toggle(.constant(true)))
                 }
 
                 SettingsGroupView(title: "DEVELOPER") {

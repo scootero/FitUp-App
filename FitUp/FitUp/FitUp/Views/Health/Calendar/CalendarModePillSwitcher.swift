@@ -16,7 +16,7 @@ struct CalendarModePillSwitcher: View {
                 pillButton(option)
             }
         }
-        .padding(6)
+        .padding(4)
         .background(Color.white.opacity(0.07))
         .clipShape(Capsule())
         .overlay {
@@ -31,10 +31,10 @@ struct CalendarModePillSwitcher: View {
             mode = option
         } label: {
             Text(option.pillLabel)
-                .font(FitUpFont.body(12, weight: .bold))
+                .font(FitUpFont.body(10, weight: .bold))
                 .foregroundStyle(isSelected ? Color.white : FitUpColors.Text.secondary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
                 .background {
                     if isSelected {
                         Capsule()

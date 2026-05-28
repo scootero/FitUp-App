@@ -13,7 +13,6 @@ struct StatsArcadeSliceOneView: View {
     let profileTimeZoneIdentifier: String?
     let battleStats: HealthBattleStats
     let rivalStats: [HomeRivalStat]
-    let rangeMargins: [DailyBattleMargin]
     let battleImpactMetric: StatsBattleImpactMetric?
     let monthlyBattleBonusMetric: StatsMonthlyBattleBonusMetric?
     let opponentStepsRollups: StatsOpponentStepsRollups?
@@ -1020,7 +1019,6 @@ struct StatsArcadeSliceOneView: View {
             profileTimeZoneIdentifier: nil,
             battleStats: .empty,
             rivalStats: [],
-            rangeMargins: [],
             battleImpactMetric: nil,
             monthlyBattleBonusMetric: nil,
             opponentStepsRollups: nil,

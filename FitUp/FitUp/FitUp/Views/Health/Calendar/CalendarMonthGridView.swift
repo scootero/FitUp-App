@@ -2,7 +2,7 @@
 //  CalendarMonthGridView.swift
 //  FitUp
 //
-//  6-week Monday-first grid for the activity calendar.
+//  Monday-first month grid for the activity calendar.
 //
 
 import SwiftUI
@@ -23,11 +23,11 @@ struct CalendarMonthGridView: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: layout == .expanded ? 4 : 8) {
             HStack(spacing: 0) {
                 ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                     Text(symbol)
-                        .font(FitUpFont.mono(10, weight: .semibold))
+                        .font(FitUpFont.mono(layout == .expanded ? 9 : 10, weight: .semibold))
                         .foregroundStyle(FitUpColors.Text.tertiary)
                         .frame(maxWidth: .infinity)
                 }

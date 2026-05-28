@@ -2,7 +2,7 @@
 //  CalendarMonthLayout.swift
 //  FitUp
 //
-//  Builds a 6-week Monday-first grid for the activity calendar.
+//  Builds a Monday-first grid for the activity calendar (leading prior-month days only; no trailing next-month row).
 //
 
 import Foundation
@@ -16,7 +16,6 @@ struct CalendarDayItem: Identifiable, Equatable, Sendable {
 }
 
 enum CalendarMonthLayout {
-    private static let gridWeekCount = 6
     private static let daysPerWeek = 7
 
     static func gridItems(
@@ -30,6 +29,7 @@ enum CalendarMonthLayout {
 
         let monthComponents = calendar.dateComponents([.year, .month], from: displayedMonth)
         guard let monthStart = calendar.date(from: monthComponents) else { return [] }
+        guard let monthEnd = calendar.date(byAdding: DateComponents(month: 1, day: -1), to: monthStart) else { return [] }
 
         let weekday = calendar.component(.weekday, from: monthStart)
         let leading = (weekday - calendar.firstWeekday + daysPerWeek) % daysPerWeek
@@ -39,10 +39,8 @@ enum CalendarMonthLayout {
         let displayedMonthKey = monthKey(for: monthStart, calendar: calendar)
 
         var items: [CalendarDayItem] = []
-        items.reserveCapacity(gridWeekCount * daysPerWeek)
-
-        for offset in 0..<(gridWeekCount * daysPerWeek) {
-            guard let date = calendar.date(byAdding: .day, value: offset, to: gridStart) else { continue }
+        var date = gridStart
+        while date <= monthEnd {
             let dateKey = HomeRepository.formatProfileCalendarDate(date, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
             let itemMonthKey = monthKey(for: date, calendar: calendar)
             items.append(
@@ -54,6 +52,8 @@ enum CalendarMonthLayout {
                     isToday: dateKey == todayKey
                 )
             )
+            guard let next = calendar.date(byAdding: .day, value: 1, to: date) else { break }
+            date = next
         }
         return items
     }
@@ -70,7 +70,20 @@ enum CalendarMonthLayout {
         return formatter.string(from: displayedMonth)
     }
 
-    /// Inclusive `yyyy-MM-dd` keys for the 6-week grid containing `displayedMonth`.
+    /// Short month name for calendar nav center label (e.g. "May", "April").
+    static func monthShortTitle(for displayedMonth: Date, profileTimeZoneIdentifier: String?) -> String {
+        let tz = profileTimeZoneIdentifier.flatMap { TimeZone(identifier: $0) } ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = tz
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = tz
+        formatter.locale = Locale.current
+        formatter.dateFormat = "MMMM"
+        return formatter.string(from: displayedMonth)
+    }
+
+    /// Inclusive `yyyy-MM-dd` keys for the visible grid (through last day of `displayedMonth`).
     static func gridDateKeyRange(
         for displayedMonth: Date,
         profileTimeZoneIdentifier: String?

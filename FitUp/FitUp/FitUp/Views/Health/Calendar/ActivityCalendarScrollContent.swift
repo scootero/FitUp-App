@@ -12,12 +12,14 @@ struct ActivityCalendarScrollContent: View {
     var layout: ActivityCalendarLayout = .compact
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: layout.sectionSpacing) {
             CalendarModePillSwitcher(mode: $viewModel.mode)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: 220)
 
             CalendarMonthHeaderView(
                 monthTitle: viewModel.monthTitle,
+                centerLabel: viewModel.monthShortTitle,
+                headerTitleSize: layout.headerTitleSize,
                 onPrevious: {
                     viewModel.dismissDayDetail()
                     viewModel.goToPreviousMonth()
@@ -52,6 +54,11 @@ struct ActivityCalendarScrollContent: View {
                 onSelectDay: { viewModel.selectDay($0) }
             )
             .opacity(viewModel.isLoading ? 0.65 : 1)
+
+            if viewModel.mode == .steps {
+                CalendarStepsLegendView(ringSize: layout == .expanded ? 14 : 12)
+                    .padding(.top, 2)
+            }
         }
     }
 

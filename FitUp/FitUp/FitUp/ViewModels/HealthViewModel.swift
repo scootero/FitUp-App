@@ -192,13 +192,14 @@ final class HealthViewModel: ObservableObject {
         profileId = newProfileId
         profileTimeZoneIdentifier = profile?.timezone
         updateStatsDateChipText()
-        if let newProfileId {
+        if LegacyStatsFeature.isEnabled, let newProfileId {
             loadStatsSnapshotIfAvailable(profileId: newProfileId)
         }
         Task { await reload(source: "profile_task") }
     }
 
     func setStatsRange(_ range: StatsRangeKey) async {
+        guard LegacyStatsFeature.isEnabled else { return }
         guard statsSelectedRange != range else { return }
         statsSelectedRange = range
         statsEffectiveRange = range.dayCountIfSupported == nil ? .oneDay : range
@@ -214,6 +215,11 @@ final class HealthViewModel: ObservableObject {
 
     /// HealthKit hourly buckets for today; only refreshed while the stats range is 1D so we skip the HK round-trip in other ranges.
     private func refreshOneDayHourlyStepsIfNeeded() async {
+        guard LegacyStatsFeature.isEnabled else {
+            oneDayHourlySteps = []
+            isOneDayHourlyLoading = false
+            return
+        }
         guard statsSelectedRange == .oneDay else {
             oneDayHourlySteps = []
             isOneDayHourlyLoading = false
@@ -256,6 +262,51 @@ final class HealthViewModel: ObservableObject {
 
         await HealthKitService.requestAuthorizationIfNeeded(analyticsUserId: userId)
 
+        if LegacyStatsFeature.isEnabled {
+            await reloadLegacyStats(userId: userId, source: source, loadStarted: loadStarted)
+        } else {
+            await reloadArcadeStats(userId: userId, source: source, loadStarted: loadStarted)
+        }
+    }
+
+    /// LegacyStatsFeature — arcade-only stats load (no margin charts, week arrays, or hourly buckets).
+    private func reloadArcadeStats(userId: UUID, source: String, loadStarted: Date) async {
+        errorMessage = nil
+        showHealthAccessBanner = false
+
+        async let opponentRollups = homeRepository.fetchOpponentStepsRollups()
+        async let rivalStatsLoad = loadRivalStats(force: source == "pull_refresh")
+        async let arcadeImpact = refreshArcadeImpactMetrics(userId: userId)
+        async let arcadeStreak = refreshArcadeStreakTimeline(userId: userId)
+        async let battleStatsLoad = refreshArcadeBattleStats()
+
+        await rivalStatsLoad
+        await arcadeImpact
+        statsOpponentStepsRollups = await opponentRollups
+        await arcadeStreak
+        await battleStatsLoad
+
+        lastLoadFinishedAt = Date()
+
+        let durationMs = Int(loadStarted.timeIntervalSinceNow * -1000)
+        AppLogger.log(
+            category: "healthkit_read",
+            level: .info,
+            message: "health screen arcade load ok",
+            userId: userId,
+            metadata: [
+                "source": source,
+                "pipeline": "HealthViewModel.reloadArcadeStats",
+                "duration_ms": "\(durationMs)",
+                "load_finished_at": ISO8601DateFormatter().string(from: Date()),
+                "battle_matches_played": "\(battleStats.matchesPlayed)",
+                "battle_wins": "\(battleStats.wins)",
+            ]
+        )
+    }
+
+    /// LegacyStatsFeature — full legacy + arcade stats load (week charts, margins, hourly buckets).
+    private func reloadLegacyStats(userId: UUID, source: String, loadStarted: Date) async {
         let stepsToday: Int
         do {
             stepsToday = try await healthKitRead("today_steps", userId: userId) {
@@ -276,7 +327,7 @@ final class HealthViewModel: ObservableObject {
                 userId: userId,
                 metadata: [
                     "source": source,
-                    "pipeline": "HealthViewModel.reload",
+                    "pipeline": "HealthViewModel.reloadLegacyStats",
                     "error": error.localizedDescription,
                     "error_type": String(describing: type(of: error)),
                 ]
@@ -303,7 +354,7 @@ final class HealthViewModel: ObservableObject {
                     userId: userId,
                     metadata: [
                         "source": source,
-                        "pipeline": "HealthViewModel.reload",
+                        "pipeline": "HealthViewModel.reloadLegacyStats",
                         "error": error.localizedDescription,
                         "error_type": String(describing: type(of: error)),
                     ]
@@ -327,7 +378,7 @@ final class HealthViewModel: ObservableObject {
             userId: userId,
             metadata: [
                 "source": source,
-                "pipeline": "HealthViewModel.reload",
+                "pipeline": "HealthViewModel.reloadLegacyStats",
                 "steps_today": "\(stepsToday)",
                 "active_calories_today": "\(calsToday)",
                 "duration_ms": "\(coreDurationMs)",
@@ -382,7 +433,7 @@ final class HealthViewModel: ObservableObject {
         )
         var meta = hkSnapshot
         meta["source"] = source
-        meta["pipeline"] = "HealthViewModel.reload"
+        meta["pipeline"] = "HealthViewModel.reloadLegacyStats"
         meta["duration_ms"] = "\(durationMs)"
         meta["load_finished_at"] = ISO8601DateFormatter().string(from: Date())
         meta["active_matches_count"] = "\(activeMatchEdges.count)"
@@ -397,6 +448,11 @@ final class HealthViewModel: ObservableObject {
             userId: userId,
             metadata: meta
         )
+    }
+
+    private func refreshArcadeBattleStats() async {
+        battleStats = await battleStatsRepository.fetchHealthBattleStats()
+        statsBattleStatsScopeLabel = "lifetime"
     }
 
     func loadRivalStatsIfNeeded() async {
@@ -449,6 +505,7 @@ final class HealthViewModel: ObservableObject {
     }
 
     private func refreshStatsRangeMargins(source: String, forceNetworkRefresh: Bool = false) async {
+        guard LegacyStatsFeature.isEnabled else { return }
         guard profileId != nil else {
             statsRangeMargins = []
             isStatsRangeMarginsRefreshing = false
@@ -643,6 +700,7 @@ final class HealthViewModel: ObservableObject {
     }
 
     private func loadStatsSnapshotIfAvailable(profileId: UUID) {
+        guard LegacyStatsFeature.isEnabled else { return }
         guard let cached = statsSnapshotCacheStore.load(
             profileId: profileId,
             profileTimeZoneIdentifier: profileTimeZoneIdentifier,
@@ -659,6 +717,7 @@ final class HealthViewModel: ObservableObject {
     }
 
     private func saveStatsSnapshotIfPossible() {
+        guard LegacyStatsFeature.isEnabled else { return }
         guard let profileId else { return }
         let snapshot = statsSnapshotCacheStore.makeSnapshot(
             profileId: profileId,

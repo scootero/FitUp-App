@@ -562,9 +562,12 @@ struct HomeView: View {
             Text("No battles yet")
                 .font(FitUpFont.display(24, weight: .black))
             .fitUpGlobalTitleStyle(weight: .black, tracking: 0.25)
-            Text("Start a battle to compete today.")
+            Text("FitUp battles are 1v1—you need another player. Start a search or challenge someone you know.")
                 .font(FitUpFont.body(15, weight: .medium))
                 .foregroundStyle(HomePageStyle.muted)
+            Text("Tip: New Battle → pick an opponent to send a direct challenge.")
+                .font(FitUpFont.body(13, weight: .medium))
+                .foregroundStyle(FitUpColors.Text.tertiary)
             Button("New Battle") {
                 onOpenChallenge(nil)
             }

@@ -45,6 +45,13 @@ final class ActivityCalendarViewModel: ObservableObject {
         )
     }
 
+    var monthShortTitle: String {
+        CalendarMonthLayout.monthShortTitle(
+            for: displayedMonth,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
+    }
+
     private let userId: UUID
     private let profileTimeZoneIdentifier: String?
     private let calendarRepository: CalendarRepository

@@ -284,7 +284,7 @@ final class HomeViewModel: ObservableObject {
     var statusStripMessage: String {
         switch statusStripState {
         case .searching:
-            return "Searching for random opponent..."
+            return "Waiting for another player…"
         case let .invitesWaiting(count):
             return count == 1 ? "1 invite waiting" : "\(count) invites waiting"
         case let .waitingOnOpponent(count):

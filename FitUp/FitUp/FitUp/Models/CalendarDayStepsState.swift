@@ -25,8 +25,28 @@ struct CalendarDayStepsState: Equatable, Sendable {
         Self.abbreviate(steps: steps)
     }
 
+    /// Tighter abbreviation for small calendar day rings (k from 1,000+).
+    var calendarRingStepsLabel: String {
+        Self.abbreviateForCalendarRing(steps: steps)
+    }
+
     static func abbreviate(steps: Int) -> String {
         if steps < 10_000 {
+            return "\(steps)"
+        }
+        let thousands = Double(steps) / 1000
+        if steps >= 100_000 {
+            return String(format: "%.0fk", thousands)
+        }
+        let formatted = String(format: "%.1fk", thousands)
+        if formatted.hasSuffix(".0k") {
+            return String(format: "%.0fk", thousands)
+        }
+        return formatted
+    }
+
+    static func abbreviateForCalendarRing(steps: Int) -> String {
+        if steps < 1_000 {
             return "\(steps)"
         }
         let thousands = Double(steps) / 1000

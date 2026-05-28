@@ -2,7 +2,7 @@
 //  HealthDataBreakdownView.swift
 //  FitUp
 //
-//  Health Data Info — authoritative totals + per-source attribution (debug).
+//  Health Data Info — authoritative totals + per-source attribution.
 //
 
 import SwiftUI
@@ -81,6 +81,7 @@ struct HealthDataBreakdownView: View {
                         .foregroundStyle(FitUpColors.Text.tertiary)
                 }
 
+                #if DEBUG
                 Section {
                     debugRow(label: "Steps samples", value: "\(viewModel.stepsSampleCount)")
                     debugRow(label: "Active calorie samples", value: "\(viewModel.caloriesSampleCount)")
@@ -94,6 +95,7 @@ struct HealthDataBreakdownView: View {
                 } header: {
                     sectionHeader("Debug")
                 }
+                #endif
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)

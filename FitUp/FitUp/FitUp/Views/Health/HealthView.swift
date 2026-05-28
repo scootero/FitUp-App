@@ -28,7 +28,6 @@ struct HealthView: View {
                     profileTimeZoneIdentifier: profile?.timezone,
                     battleStats: viewModel.battleStats,
                     rivalStats: viewModel.rivalStats,
-                    rangeMargins: viewModel.statsRangeMargins,
                     battleImpactMetric: viewModel.statsBattleImpactMetric,
                     monthlyBattleBonusMetric: viewModel.statsMonthlyBattleBonusMetric,
                     opponentStepsRollups: viewModel.statsOpponentStepsRollups,
@@ -44,23 +43,27 @@ struct HealthView: View {
                     .padding(.bottom, 10)
 
                 #if DEBUG
-                DisclosureGroup("Legacy Stats", isExpanded: $isLegacyStatsExpanded) {
-                    legacyStatsSection
-                        .padding(.bottom, 8)
+                if LegacyStatsFeature.isEnabled {
+                    DisclosureGroup("Legacy Stats", isExpanded: $isLegacyStatsExpanded) {
+                        legacyStatsSection
+                            .padding(.bottom, 8)
+                    }
+                    .padding(.bottom, 8)
                 }
-                .padding(.bottom, 8)
                 #endif
             }
             .padding(.horizontal, 16)
         }
         .scrollIndicators(.hidden)
         .overlay {
-            if let explainer = statsMetricExplainer {
+            #if DEBUG
+            if LegacyStatsFeature.isEnabled, let explainer = statsMetricExplainer {
                 StatsMetricExplainerOverlay(
                     kind: explainer,
                     onDismiss: { statsMetricExplainer = nil }
                 )
             }
+            #endif
         }
         .refreshable {
             await viewModel.reload(source: "pull_refresh")

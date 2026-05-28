@@ -56,8 +56,6 @@ struct PeerProfileView: View {
                             friendshipPrimaryButton
 
                             messageButton
-
-                            comingSoonCard
                         }
                     }
                     .padding(.horizontal, 16)
@@ -261,15 +259,6 @@ struct PeerProfileView: View {
             }
             errorMessage = msg
         }
-    }
-
-    private var comingSoonCard: some View {
-        Text("Competition history — coming soon.")
-            .font(FitUpFont.body(13, weight: .medium))
-            .foregroundStyle(FitUpColors.Text.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .glassCard(.base)
     }
 
     private func load() async {

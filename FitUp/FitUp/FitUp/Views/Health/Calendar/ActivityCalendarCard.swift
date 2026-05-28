@@ -84,15 +84,15 @@ private struct ActivityCalendarCardContent: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("ACTIVITY CALENDAR")
-                .font(.system(size: 18, weight: .black))
+                .font(.system(size: 15, weight: .black))
                 .tracking(2)
                 .foregroundStyle(cardTint)
 
             ActivityCalendarScrollContent(viewModel: viewModel, layout: .expanded)
         }
-        .padding(14)
+        .padding(10)
         .background(cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {

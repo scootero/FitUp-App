@@ -28,9 +28,14 @@ struct FindFirstMatchView: View {
                     .font(FitUpFont.display(26, weight: .black))
                     .foregroundStyle(FitUpColors.Text.primary)
 
-                Text("We use your recent activity to match you with a fair first opponent.")
+                Text("We use your recent activity to match you with another FitUp player at a similar level.")
                     .font(FitUpFont.body(14, weight: .medium))
                     .foregroundStyle(FitUpColors.Text.secondary)
+
+                Text("FitUp is 1v1—you need another player in the queue. Turn on notifications so we can alert you when you're matched. For TestFlight, two accounts or devices make testing much easier.")
+                    .font(FitUpFont.body(12, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Balanced Battle compares each player against their normal daily pace, so different step levels can compete fairly.")

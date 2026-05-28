@@ -19,11 +19,11 @@ struct CalendarDayCell: View {
     private var ringSize: CGFloat { layout.ringSize }
 
     var body: some View {
-        VStack(spacing: layout == .expanded ? 4 : 5) {
+        VStack(spacing: layout == .expanded ? 3 : 5) {
             Text("\(item.dayNumber)")
                 .font(FitUpFont.mono(layout.dayNumberFontSize, weight: item.isToday ? .bold : .semibold))
                 .foregroundStyle(dayNumberColor)
-                .frame(height: layout == .expanded ? 16 : 14)
+                .frame(height: layout == .expanded ? 14 : 14)
 
             if item.isWithinDisplayedMonth {
                 ringView

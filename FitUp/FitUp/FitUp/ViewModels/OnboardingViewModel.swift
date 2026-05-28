@@ -313,7 +313,7 @@ final class OnboardingViewModel: ObservableObject {
                 userId: profileId
             )
 
-            statusMessage = "We'll notify you when your match is found."
+            statusMessage = "Searching for another player—we'll notify you when you're matched."
             try await Task.sleep(nanoseconds: 3_000_000_000)
             return true
         } catch {

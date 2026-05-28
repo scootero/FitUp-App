@@ -44,15 +44,17 @@ struct CalendarBattleDayDetailPanel: View {
     }
 
     private func battleBody(match: CalendarDayBattleMatchDetail) -> some View {
-        HStack(alignment: .bottom, spacing: 12) {
-            VStack(alignment: .leading, spacing: 12) {
-                stackedAvatars(match: match)
+        VStack(alignment: .leading, spacing: 14) {
+            stackedAvatars(match: match)
+
+            HStack(alignment: .bottom, spacing: 0) {
                 verticalStepBars(match: match)
+                    .frame(minWidth: 80, alignment: .leading)
+
+                Spacer(minLength: 16)
+
+                headToHeadColumn(match: match)
             }
-
-            Spacer(minLength: 8)
-
-            headToHeadColumn(match: match)
         }
     }
 
@@ -79,22 +81,24 @@ struct CalendarBattleDayDetailPanel: View {
 
     private func verticalStepBars(match: CalendarDayBattleMatchDetail) -> some View {
         let maxSteps = max(match.mySteps, match.theirSteps, 1)
-        let barMaxHeight: CGFloat = 88
+        let barMaxHeight: CGFloat = 72
 
-        return HStack(alignment: .bottom, spacing: 16) {
+        return HStack(alignment: .bottom, spacing: 20) {
             verticalBar(
                 label: "YOU",
                 steps: match.mySteps,
                 height: barMaxHeight * CGFloat(match.mySteps) / CGFloat(maxSteps),
                 color: FitUpColors.Neon.cyan,
-                won: match.myWon == true
+                won: match.myWon == true,
+                barMaxHeight: barMaxHeight
             )
             verticalBar(
                 label: match.opponent.initials,
                 steps: match.theirSteps,
                 height: barMaxHeight * CGFloat(match.theirSteps) / CGFloat(maxSteps),
                 color: calendarOpponentColor(hex: match.opponent.colorHex),
-                won: match.myWon == false
+                won: match.myWon == false,
+                barMaxHeight: barMaxHeight
             )
         }
     }
@@ -104,18 +108,19 @@ struct CalendarBattleDayDetailPanel: View {
         steps: Int,
         height: CGFloat,
         color: Color,
-        won: Bool
+        won: Bool,
+        barMaxHeight: CGFloat
     ) -> some View {
         VStack(spacing: 6) {
             Text(formattedSteps(steps))
                 .font(FitUpFont.mono(10, weight: .bold))
                 .foregroundStyle(color)
-                .offset(y: height > 24 ? -4 : 0)
+                .frame(height: 14, alignment: .bottom)
 
             ZStack(alignment: .bottom) {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color.white.opacity(0.08))
-                    .frame(width: 28, height: 88)
+                    .frame(width: 24, height: barMaxHeight)
 
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(
@@ -125,7 +130,7 @@ struct CalendarBattleDayDetailPanel: View {
                             endPoint: .bottom
                         )
                     )
-                    .frame(width: 28, height: max(10, height))
+                    .frame(width: 24, height: max(10, height))
                     .shadow(color: color.opacity(won ? 0.45 : 0.2), radius: won ? 8 : 2)
             }
 

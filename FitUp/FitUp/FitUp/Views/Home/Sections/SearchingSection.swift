@@ -22,7 +22,7 @@ struct SearchingSection: View {
                         SearchingPulseIcon()
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Searching for random opponent...")
+                            Text("Waiting for another player to join the queue…")
                                 .font(FitUpFont.body(14, weight: .bold))
                                 .foregroundStyle(HomePageStyle.offWhite)
                             HStack(spacing: 4) {
