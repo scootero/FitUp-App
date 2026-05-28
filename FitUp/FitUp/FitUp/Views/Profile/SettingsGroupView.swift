@@ -140,9 +140,6 @@ struct SettingsGroupView<Content: View>: View {
                                    showSeparator: true,
                                    action: .toggle(.constant(true)))
                     SettingsRowView(sfSymbol: "shield", label: "Privacy",
-                                   showSeparator: true,
-                                   action: .chevron())
-                    SettingsRowView(sfSymbol: "gear", label: "Connected Apps",
                                    showSeparator: false,
                                    action: .chevron())
                 }

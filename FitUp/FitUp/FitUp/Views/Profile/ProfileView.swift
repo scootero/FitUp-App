@@ -8,11 +8,16 @@
 
 import SwiftUI
 
+private enum ProfileSupportLinks {
+    static let privacyPolicyURL = "https://scootero.github.io/FitUp-App/privacy/"
+}
+
 struct ProfileView: View {
     let profile: Profile?
     var onSignOut: () -> Void
     var onOpenPaywall: () -> Void
 
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var sessionStore: SessionStore
     @StateObject private var viewModel = ProfileViewModel()
     @ObservedObject private var subscriptionService = SubscriptionService.shared
@@ -275,14 +280,39 @@ struct ProfileView: View {
                 sfSymbol: "shield",
                 label: "Privacy",
                 showSeparator: true,
-                action: .chevron()
+                action: .chevron {
+                    if let url = URL(string: ProfileSupportLinks.privacyPolicyURL) {
+                        openURL(url)
+                    }
+                }
             )
-            SettingsRowView(
-                sfSymbol: "gear",
-                label: "Connected Apps",
-                showSeparator: false,
-                action: .chevron()
-            )
+            NavigationLink {
+                AccountDeletionRequestView(profile: profile)
+            } label: {
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.07))
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "person.crop.circle.badge.minus")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Text.secondary)
+                        }
+                        Text("Account Deletion")
+                            .font(FitUpFont.body(14))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 13)
+                    .contentShape(Rectangle())
+                }
+            }
+            .buttonStyle(.plain)
         }
     }
 
