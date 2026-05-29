@@ -600,11 +600,11 @@ struct MatchDetailsView: View {
         metaPillsRow(dm: dm)
         battleModeExplainerBlock(dm: dm)
         heroCardV2(dm: dm)
-        if dm.snapshot.state == .active {
+        if dm.snapshot.state == .active, !dm.isPendingFinalization {
             todayBattleRow(dm: dm)
             alertBanner(dm: dm)
         }
-        if dm.snapshot.state == .active, !viewModel.intradaySeries.isEmpty {
+        if dm.snapshot.state == .active, !dm.isPendingFinalization, !viewModel.intradaySeries.isEmpty {
             IntradayCumulativeChartView(
                 points: viewModel.intradaySeries,
                 opponentTotal: dm.theirToday,
@@ -674,7 +674,7 @@ struct MatchDetailsView: View {
                     )
             }
 
-            if dm.snapshot.state == .active {
+            if dm.snapshot.state == .active, !dm.isPendingFinalization {
                 HStack(spacing: 5) {
                     Circle()
                         .fill(FitUpColors.Neon.green)
@@ -724,7 +724,15 @@ struct MatchDetailsView: View {
 
     private func heroCardV2(dm: MatchDetailDisplayModel) -> some View {
         let variant = dm.glassVariant
-        let accent = dm.isAheadToday ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange
+        let accent: Color = {
+            if dm.isPendingFinalization {
+                return dm.matchScoreMargin >= 0 ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange
+            }
+            if dm.snapshot.state == .completed {
+                return dm.snapshot.isWinning ? FitUpColors.Neon.green : FitUpColors.Neon.orange
+            }
+            return dm.isAheadToday ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange
+        }()
         return VStack(spacing: 0) {
             Rectangle()
                 .fill(
@@ -738,27 +746,40 @@ struct MatchDetailsView: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top) {
-                    Text(dm.statusLabel)
-                        .font(FitUpFont.body(10, weight: .heavy))
-                        .tracking(2)
-                        .foregroundStyle(dm.isAheadToday ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(dm.statusLabel)
+                            .font(FitUpFont.body(10, weight: .heavy))
+                            .tracking(2)
+                            .foregroundStyle(accent)
+                    }
 
                     Spacer()
 
-                    Text(dm.dayBadgeLabel)
-                        .font(FitUpFont.mono(10, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.white.opacity(0.06))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                                )
-                        )
+                    if !dm.battleDateRangeLabel.isEmpty {
+                        Text(dm.battleDateRangeLabel)
+                            .font(FitUpFont.mono(9, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                            .multilineTextAlignment(.trailing)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                    } else if !dm.isPendingFinalization, dm.snapshot.state == .active {
+                        Text(dm.dayBadgeLabel)
+                            .font(FitUpFont.mono(10, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color.white.opacity(0.06))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                                    )
+                            )
+                    }
                 }
+
+                matchScoreBanner(dm: dm)
 
                 HStack(alignment: .top, spacing: 6) {
                     let myBattle = dm.snapshot.isBalancedStepsBattle
@@ -783,9 +804,11 @@ struct MatchDetailsView: View {
                         border: FitUpColors.Neon.cyan,
                         seriesScore: dm.snapshot.myScore,
                         todaySteps: dm.myTodayDisplay,
+                        stepsPeriodLabel: dm.stepsPeriodLabel,
                         todayPillStyle: myPill,
-                        pulse: dm.snapshot.state == .active,
+                        pulse: dm.snapshot.state == .active && !dm.isPendingFinalization,
                         staleHint: dm.healthKitStale ? "May be stale" : nil,
+                        syncRelativeLabel: dm.mySyncRelativeLabel,
                         primaryBattleScore: myBattle
                     )
 
@@ -807,9 +830,11 @@ struct MatchDetailsView: View {
                         border: color(from: dm.snapshot.opponent.colorHex),
                         seriesScore: dm.snapshot.theirScore,
                         todaySteps: dm.theirToday,
+                        stepsPeriodLabel: dm.stepsPeriodLabel,
                         todayPillStyle: theirPill,
                         pulse: false,
                         staleHint: nil,
+                        syncRelativeLabel: dm.opponentSyncRelativeLabel,
                         primaryBattleScore: theirBattle,
                         onTap: profile == nil
                             ? nil
@@ -819,48 +844,71 @@ struct MatchDetailsView: View {
                     )
                 }
 
-                if let sync = dm.lastSyncedRelativeLabel {
-                    Text(sync)
-                        .font(FitUpFont.mono(9, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-
                 recordDotsRow(dm: dm)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(Color.white.opacity(0.08))
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
+                if dm.snapshot.state == .active, !dm.isPendingFinalization {
+                    VStack(alignment: .leading, spacing: 6) {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                    .fill(Color.white.opacity(0.08))
+                                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
                                     )
-                                )
-                                .frame(width: max(0, geo.size.width * dm.seriesProgressFraction))
+                                    .frame(width: max(0, geo.size.width * dm.seriesProgressFraction))
+                            }
                         }
-                    }
-                    .frame(height: 5)
+                        .frame(height: 5)
 
-                    HStack {
-                        Text(dm.daysRemainingLabel)
-                            .font(FitUpFont.mono(9, weight: .medium))
-                            .foregroundStyle(FitUpColors.Text.tertiary)
-                        Spacer()
-                        Text(dm.percentCompleteLabel)
-                            .font(FitUpFont.mono(9, weight: .medium))
-                            .foregroundStyle(FitUpColors.Text.tertiary)
+                        HStack {
+                            Text(dm.daysRemainingLabel)
+                                .font(FitUpFont.mono(9, weight: .medium))
+                                .foregroundStyle(FitUpColors.Text.tertiary)
+                            Spacer()
+                            Text(dm.percentCompleteLabel)
+                                .font(FitUpFont.mono(9, weight: .medium))
+                                .foregroundStyle(FitUpColors.Text.tertiary)
+                        }
                     }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 16)
         }
-        .glassCard(variant)
+        .matchDetailsHeroCardChrome(accent: accent, variant: variant)
+    }
+
+    @ViewBuilder
+    private func matchScoreBanner(dm: MatchDetailDisplayModel) -> some View {
+        VStack(spacing: 6) {
+            if dm.isPendingFinalization {
+                Text(BattlePhaseCopy.pendingSubtitle)
+                    .font(FitUpFont.body(11, weight: .semibold))
+                    .foregroundStyle(FitUpColors.Neon.yellow.opacity(0.92))
+            } else {
+                Text(dm.matchStatusLabel)
+                    .font(FitUpFont.body(11, weight: .heavy))
+                    .foregroundStyle(dm.matchStatusColor)
+            }
+
+            Text(dm.matchScoreText)
+                .font(FitUpFont.display(40, weight: .black))
+                .foregroundStyle(FitUpColors.Text.primary)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+
+            Text(BattlePhaseCopy.matchScoreCaption.uppercased())
+                .font(FitUpFont.mono(9, weight: .bold))
+                .tracking(1.2)
+                .foregroundStyle(FitUpColors.Text.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
     }
 
     private func heroTodayPillStyle(dm: MatchDetailDisplayModel, forOpponent: Bool, myBattle: Int?, theirBattle: Int?) -> HeroTodayPillStyle {
@@ -900,9 +948,11 @@ struct MatchDetailsView: View {
         border: Color,
         seriesScore: Int,
         todaySteps: Int,
+        stepsPeriodLabel: String,
         todayPillStyle: HeroTodayPillStyle,
         pulse: Bool,
         staleHint: String?,
+        syncRelativeLabel: String? = nil,
         primaryBattleScore: Int? = nil,
         onTap: (() -> Void)? = nil
     ) -> some View {
@@ -920,28 +970,27 @@ struct MatchDetailsView: View {
                 .foregroundStyle(FitUpColors.Text.primary)
                 .lineLimit(1)
 
-            Text("Series wins \(seriesScore)")
+            Text("\(seriesScore) days won")
                 .font(FitUpFont.mono(9, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.tertiary)
 
             if let battle = primaryBattleScore {
                 Text("\(battle)")
-                    .font(FitUpFont.display(56, weight: .black))
+                    .font(FitUpFont.display(30, weight: .black))
                     .foregroundStyle(FitUpColors.Neon.cyan)
-                    .minimumScaleFactor(0.5)
+                    .minimumScaleFactor(0.6)
                     .lineLimit(1)
 
-                Text("Battle Score")
-                    .font(FitUpFont.mono(10, weight: .bold))
+                Text(BattlePhaseCopy.stepScoreCaption)
+                    .font(FitUpFont.mono(9, weight: .bold))
                     .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.85))
-                    .padding(.top, -4)
 
                 VStack(spacing: 2) {
-                    Text("Actual Steps")
+                    Text(stepsPeriodLabel)
                         .font(FitUpFont.mono(9, weight: .bold))
                         .foregroundStyle(FitUpColors.Text.tertiary)
                     Text("\(todaySteps)")
-                        .font(FitUpFont.mono(11, weight: .bold))
+                        .font(FitUpFont.mono(12, weight: .bold))
                         .foregroundStyle(todayPillStyle.foreground)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -956,15 +1005,18 @@ struct MatchDetailsView: View {
                 }
                 .padding(.top, 2)
             } else {
-                Text("\(seriesScore)")
-                    .font(FitUpFont.display(56, weight: .black))
+                Text("\(todaySteps)")
+                    .font(FitUpFont.display(30, weight: .black))
                     .foregroundStyle(FitUpColors.Text.primary)
-                    .minimumScaleFactor(0.5)
+                    .minimumScaleFactor(0.6)
                     .lineLimit(1)
 
-                Text("\(todaySteps)")
-                    .font(FitUpFont.mono(11, weight: .bold))
+                Text(stepsPeriodLabel)
+                    .font(FitUpFont.mono(10, weight: .bold))
                     .foregroundStyle(todayPillStyle.foreground)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(
@@ -975,6 +1027,12 @@ struct MatchDetailsView: View {
                                     .strokeBorder(todayPillStyle.stroke, lineWidth: 1)
                             )
                     )
+            }
+
+            if let syncRelativeLabel {
+                Text(syncRelativeLabel)
+                    .font(FitUpFont.mono(9, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.tertiary)
             }
 
             if let staleHint {
@@ -1092,7 +1150,7 @@ struct MatchDetailsView: View {
                     Text("\(dm.myTodayDisplay)")
                         .font(FitUpFont.display(18, weight: .heavy))
                         .foregroundStyle(FitUpColors.Text.secondary)
-                    Text("Battle Score")
+                    Text(BattlePhaseCopy.stepScoreCaption)
                         .font(FitUpFont.mono(9, weight: .bold))
                         .foregroundStyle(FitUpColors.Text.tertiary)
                     Text("\(myB)")
@@ -1132,7 +1190,7 @@ struct MatchDetailsView: View {
                     Text("\(dm.theirToday)")
                         .font(FitUpFont.display(18, weight: .heavy))
                         .foregroundStyle(FitUpColors.Text.secondary)
-                    Text("Battle Score")
+                    Text(BattlePhaseCopy.stepScoreCaption)
                         .font(FitUpFont.mono(9, weight: .bold))
                         .foregroundStyle(FitUpColors.Text.tertiary)
                     Text("\(theirB)")
@@ -1319,6 +1377,120 @@ struct MatchDetailsView: View {
         )
     }
 
+    private func dayBreakdownColumn(
+        day: MatchDetailsDayRow,
+        dm: MatchDetailDisplayModel,
+        opponentTint: Color,
+        barW: CGFloat,
+        maxH: CGFloat,
+        isColumnHighlighted: Bool
+    ) -> some View {
+        let outcome = day.chartOutcome
+        let outcomeBorder: Color = {
+            switch outcome {
+            case .won: return FitUpColors.Neon.green.opacity(0.55)
+            case .lost: return FitUpColors.Neon.orange.opacity(0.55)
+            case .tie: return FitUpColors.Text.tertiary.opacity(0.4)
+            case .none: return Color.clear
+            }
+        }()
+        let outcomeLabel: String? = {
+            switch outcome {
+            case .won: return "WON"
+            case .lost: return "LOST"
+            case .tie: return "TIE"
+            case .none: return nil
+            }
+        }()
+        let outcomeColor: Color = {
+            switch outcome {
+            case .won: return FitUpColors.Neon.green
+            case .lost: return FitUpColors.Neon.orange
+            case .tie: return FitUpColors.Text.secondary
+            case .none: return FitUpColors.Text.tertiary
+            }
+        }()
+
+        return VStack(spacing: 4) {
+            if let outcomeLabel {
+                Text(outcomeLabel)
+                    .font(FitUpFont.body(8, weight: .heavy))
+                    .tracking(0.8)
+                    .foregroundStyle(outcomeColor)
+            } else {
+                Text(" ")
+                    .font(FitUpFont.body(8, weight: .heavy))
+            }
+
+            HStack(alignment: .bottom, spacing: 3) {
+                if day.isFuture {
+                    dayBreakdownFutureBar(width: barW, height: maxH)
+                    dayBreakdownFutureBar(width: barW, height: maxH)
+                } else {
+                    dayBreakdownPlayerBar(
+                        valueLabel: formatBreakdownMetricValue(dm.myValue(for: day), calories: dm.metricIsCalories),
+                        barWidth: barW,
+                        barHeight: max(3, CGFloat(Double(dm.myValue(for: day)) / dm.chartMaxValue) * maxH),
+                        fill: FitUpColors.Neon.cyan.opacity(0.85),
+                        maxHeight: maxH
+                    )
+                    dayBreakdownPlayerBar(
+                        valueLabel: formatBreakdownMetricValue(day.theirValue, calories: dm.metricIsCalories),
+                        barWidth: barW,
+                        barHeight: max(3, CGFloat(Double(day.theirValue) / dm.chartMaxValue) * maxH),
+                        fill: opponentTint.opacity(0.85),
+                        maxHeight: maxH
+                    )
+                }
+            }
+            .padding(.horizontal, 3)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isColumnHighlighted ? Color.white.opacity(0.06) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(
+                        outcome != nil ? outcomeBorder : Color.white.opacity(isColumnHighlighted ? 0.22 : 0),
+                        lineWidth: outcome != nil ? 1.5 : 1
+                    )
+            )
+            .frame(height: maxH + 22, alignment: .bottom)
+        }
+    }
+
+    private func dayBreakdownPlayerBar(
+        valueLabel: String,
+        barWidth: CGFloat,
+        barHeight: CGFloat,
+        fill: Color,
+        maxHeight: CGFloat
+    ) -> some View {
+        VStack(spacing: 3) {
+            Text(valueLabel)
+                .font(FitUpFont.mono(8, weight: .bold))
+                .foregroundStyle(FitUpColors.Text.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .frame(width: barWidth + 6)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(fill)
+                .frame(width: barWidth, height: barHeight)
+        }
+        .frame(height: maxHeight + 18, alignment: .bottom)
+    }
+
+    private func dayBreakdownFutureBar(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(Color.white.opacity(0.06))
+            .frame(width: width, height: height)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.1), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            )
+    }
+
     private func dayBreakdownAccessibilityLabel(day: MatchDetailsDayRow, dm: MatchDetailDisplayModel) -> String {
         let progress = MatchDurationCopy.dayProgress(current: day.dayNumber, total: dm.snapshot.durationDays)
         if day.isFuture {
@@ -1345,57 +1517,21 @@ struct MatchDetailsView: View {
             GeometryReader { outer in
                 let dayCount = max(dm.mergedDayRows.count, 1)
                 let slotW = outer.size.width / CGFloat(dayCount)
-                let barW = max(10, min(slotW * (dayCount == 1 ? 0.36 : 0.20), 58))
-                let maxH: CGFloat = 80
+                let barW = max(8, min(slotW * (dayCount == 1 ? 0.34 : 0.18), 52))
+                let maxH: CGFloat = 72
                 VStack(spacing: 8) {
                     HStack(alignment: .bottom, spacing: 0) {
                         ForEach(dm.mergedDayRows) { day in
-                            let isColumnHighlighted =
-                                hoveredDayBreakdownDayNumber == day.dayNumber
-                                || tappedDayBreakdownDayNumber == day.dayNumber
-                            VStack(spacing: 0) {
-                                HStack(alignment: .bottom, spacing: 3) {
-                                    if day.isFuture {
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .fill(Color.white.opacity(0.06))
-                                            .frame(width: barW, height: maxH)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                                    .strokeBorder(Color.white.opacity(0.1), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                                            )
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .fill(Color.white.opacity(0.06))
-                                            .frame(width: barW, height: maxH)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                                    .strokeBorder(Color.white.opacity(0.1), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                                            )
-                                    } else {
-                                        let h = max(3, CGFloat(Double(dm.myValue(for: day)) / dm.chartMaxValue) * maxH)
-                                        let th = max(3, CGFloat(Double(day.theirValue) / dm.chartMaxValue) * maxH)
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .fill(FitUpColors.Neon.cyan.opacity(0.85))
-                                            .frame(width: barW, height: h)
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .fill(opponentTint.opacity(0.85))
-                                            .frame(width: barW, height: th)
-                                    }
-                                }
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 3)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(isColumnHighlighted ? Color.white.opacity(0.06) : Color.clear)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .strokeBorder(
-                                            Color.white.opacity(isColumnHighlighted ? 0.22 : 0),
-                                            lineWidth: 1
-                                        )
-                                )
-                                .frame(height: maxH, alignment: .bottom)
-                            }
+                            dayBreakdownColumn(
+                                day: day,
+                                dm: dm,
+                                opponentTint: opponentTint,
+                                barW: barW,
+                                maxH: maxH,
+                                isColumnHighlighted:
+                                    hoveredDayBreakdownDayNumber == day.dayNumber
+                                    || tappedDayBreakdownDayNumber == day.dayNumber
+                            )
                             .frame(maxWidth: .infinity)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -1432,7 +1568,7 @@ struct MatchDetailsView: View {
                     }
                 }
             }
-            .frame(height: 110)
+            .frame(height: 148)
 
             HStack(spacing: 16) {
                 HStack(spacing: 6) {

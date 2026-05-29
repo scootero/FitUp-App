@@ -36,6 +36,13 @@ struct HomeView: View {
     @State private var handoffOpponentRevealKickoff = UUID()
     @State private var handoffKeepOpponentBlackedOut = false
     @State private var handoffFinishTask: Task<Void, Never>?
+    @State private var homeIntroCollapsed = false
+    @State private var homeIntroOpacity: Double = 1
+    @State private var homeIntroDismissTask: Task<Void, Never>?
+
+    private var showsHomeIntro: Bool {
+        sessionStore.showHomeIntroTip && !homeIntroCollapsed
+    }
 
     var body: some View {
         ZStack {
@@ -77,10 +84,18 @@ struct HomeView: View {
                     }
 
                     Group {
-                        heroSummaryLine
+                        if viewModel.hasOnlyPendingFinalizationStepBattles {
+                            Text("Battles are finalizing — see Active Battles below.")
+                                .font(FitUpFont.body(13, weight: .medium))
+                                .foregroundStyle(HomePageStyle.muted)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.horizontal, 4)
+                        }
+
                         ActiveBattlesNeonSection(
                             matches: viewModel.isInitialLoading ? [] : viewModel.sortedActiveMatchesForHome,
                             summary: viewModel.battleSummaryStats,
+                            summaryLine: viewModel.heroSummaryText,
                             leaderboardRankDisplay: viewModel.globalLeaderboardRankDisplay,
                             onOpenMatch: { match in
                                 onOpenMatchDetails(match.id, match.opponent.displayName)
@@ -173,6 +188,18 @@ struct HomeView: View {
             }
 
             friendNotificationTopStack
+
+            if showsHomeIntro {
+                VStack {
+                    HomeIntroTipView()
+                        .opacity(homeIntroOpacity)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                    Spacer(minLength: 0)
+                }
+                .allowsHitTesting(false)
+                .zIndex(3)
+            }
         }
         .transaction { transaction in
             transaction.disablesAnimations = true
@@ -196,6 +223,10 @@ struct HomeView: View {
             viewModel.resumeHomeLivePipeline(profile: profile, sessionStore: sessionStore)
             clearSearchingFlagIfHasMatch()
             viewModel.syncHeroMetricWithActiveMatches()
+            scheduleHomeIntroAutoDismiss()
+        }
+        .onDisappear {
+            homeIntroDismissTask?.cancel()
         }
         .onChange(of: sessionStore.homeSnapshotRefreshToken) { _, _ in
             Task { await viewModel.reload(force: true) }
@@ -534,27 +565,30 @@ struct HomeView: View {
         }
     }
 
-    private var heroSummaryLine: some View {
-        Group {
-            if let text = viewModel.heroSummaryText {
-                Text(text)
-                    .font(FitUpFont.body(14, weight: .semibold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [HomePageStyle.muted, FitUpColors.Neon.cyan.opacity(0.92)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 2)
+    private func scheduleHomeIntroAutoDismiss() {
+        guard sessionStore.showHomeIntroTip, !homeIntroCollapsed else { return }
+        homeIntroDismissTask?.cancel()
+        homeIntroDismissTask = Task {
+            let holdSeconds: Double = 3
+            let fadeSeconds: Double = reduceMotion ? 0.15 : 2
+            try? await Task.sleep(for: .seconds(holdSeconds))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.linear(duration: fadeSeconds)) {
+                    homeIntroOpacity = 0
+                }
+            }
+            try? await Task.sleep(for: .seconds(fadeSeconds))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                homeIntroCollapsed = true
+                sessionStore.dismissHomeIntroTip()
             }
         }
     }
 
     private var heroSortedStepMatches: [HomeActiveMatch] {
-        viewModel.sortedActiveMatchesForHome.filter { $0.metricType != "active_calories" }
+        viewModel.sortedActiveMatchesForHome
     }
 
     private var zeroState: some View {

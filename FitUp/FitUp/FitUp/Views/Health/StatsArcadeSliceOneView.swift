@@ -80,12 +80,12 @@ struct StatsArcadeSliceOneView: View {
         VStack(alignment: .leading, spacing: 14) {
             header
             battleImpactCard
-            opponentsCard
-            currentStreakCard
             ActivityCalendarCard(
                 userId: calendarUserId,
                 profileTimeZoneIdentifier: profileTimeZoneIdentifier
             )
+            opponentsCard
+            currentStreakCard
             stepsDuringBattlesCard
             opponentsVsYouCard
         }

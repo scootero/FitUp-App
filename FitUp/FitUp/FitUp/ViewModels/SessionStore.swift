@@ -25,6 +25,9 @@ final class SessionStore: ObservableObject {
     @Published private(set) var healthKitPromptCompleted = false
     @Published private(set) var showSearchingCardOnHome = false
 
+    /// Shown once per app launch on Home until the user scrolls or switches tabs.
+    @Published private(set) var showHomeIntroTip: Bool = true
+
     /// Bumped when root UI (e.g. challenge flow) dismisses so Home refetches searching rows without waiting for poll.
     @Published private(set) var homeSnapshotRefreshToken: UInt64 = 0
 
@@ -400,6 +403,11 @@ final class SessionStore: ObservableObject {
 
     func requestHomeSnapshotRefresh() {
         homeSnapshotRefreshToken &+= 1
+    }
+
+    func dismissHomeIntroTip() {
+        guard showHomeIntroTip else { return }
+        showHomeIntroTip = false
     }
 
     func queueMatchFoundCelebration(matchId: UUID) {

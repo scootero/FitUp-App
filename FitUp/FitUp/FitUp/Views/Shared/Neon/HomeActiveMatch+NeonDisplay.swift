@@ -9,6 +9,13 @@ import SwiftUI
 
 extension HomeActiveMatch {
     var neonCardAccentColor: Color {
+        if isPendingFinalization {
+            return FitUpColors.Neon.yellow.opacity(0.85)
+        }
+        return matchStatusColor
+    }
+
+    var neonLiveCardAccentColor: Color {
         let m = comparableMargin
         if m > 0 { return FitUpColors.Neon.green }
         if m < 0 { return FitUpColors.Neon.red }
@@ -54,32 +61,17 @@ extension HomeActiveMatch {
     }
 
     func neonHeroMatchHeaderContent(userDisplayName: String) -> NeonHeroMatchHeaderContent {
-        var pills: [NeonHeroMetaPill] = [
-            NeonHeroMetaPill(id: "metric", label: sportLabel, accent: FitUpColors.Neon.cyan),
-            NeonHeroMetaPill(
-                id: "duration",
-                label: MatchDurationCopy.winsTargetBadge(totalDays: durationDays),
-                accent: FitUpColors.Neon.purple
-            ),
-        ]
-        if metricType == "steps" {
-            if isBalancedStepsBattle {
-                pills.append(
-                    NeonHeroMetaPill(id: "scoring", label: "Balanced Battle", accent: FitUpColors.Neon.blue)
-                )
-            } else {
-                pills.append(
-                    NeonHeroMetaPill(id: "scoring", label: "Raw Battle", accent: FitUpColors.Neon.orange)
-                )
-            }
-        }
         let trimmedUser = userDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedOpponent = opponent.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         return NeonHeroMatchHeaderContent(
             userDisplayName: trimmedUser.isEmpty ? "You" : trimmedUser,
             opponentDisplayName: trimmedOpponent.isEmpty ? opponent.initials : trimmedOpponent,
-            pills: pills,
-            dayProgressLabel: neonHeroDayProgressLabel
+            pills: [],
+            dayProgressLabel: neonHeroDayProgressLabel,
+            battleDateRangeLabel: battleDateRangeLabel,
+            matchStatusLabel: matchStatusLabel,
+            matchScoreText: matchScoreText,
+            matchStatusColor: matchStatusColor
         )
     }
 }

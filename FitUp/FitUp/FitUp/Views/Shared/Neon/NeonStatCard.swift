@@ -13,21 +13,24 @@ struct NeonStatCard: View {
     let value: String
     let accent: Color
     var compact: Bool = false
+    /// When set, overrides `HomeHeroCompactLayout.battlesScale` for tighter stat tiles.
+    var compactScale: CGFloat? = nil
 
     private var scale: CGFloat {
-        compact ? HomeHeroCompactLayout.battlesScale : 1
+        if let compactScale { return compactScale }
+        return compact ? HomeHeroCompactLayout.battlesScale : 1
     }
 
     var body: some View {
         VStack(spacing: HomeHeroCompactLayout.scaled(5, by: scale)) {
             Image(systemName: systemImage)
-                .font(.system(size: HomeHeroCompactLayout.scaled(18, by: scale), weight: .bold))
+                .font(.system(size: HomeHeroCompactLayout.scaled(compact ? 15 : 18, by: scale), weight: .bold))
                 .foregroundStyle(accent)
                 .shadow(color: accent.opacity(0.75), radius: HomeHeroCompactLayout.scaled(8, by: scale), x: 0, y: 0)
                 .padding(.top, HomeHeroCompactLayout.scaled(4, by: scale))
 
             Text(label.uppercased())
-                .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(9, by: scale), weight: .bold))
+                .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(compact ? 8 : 9, by: scale), weight: .bold))
                 .tracking(1.0 * scale)
                 .foregroundStyle(HomePageStyle.offWhite.opacity(0.94))
                 .lineLimit(2)
@@ -35,7 +38,7 @@ struct NeonStatCard: View {
                 .multilineTextAlignment(.center)
 
             Text(value)
-                .font(FitUpFont.display(HomeHeroCompactLayout.scaled(30, by: scale), weight: .black))
+                .font(FitUpFont.display(HomeHeroCompactLayout.scaled(compact ? 24 : 30, by: scale), weight: .black))
                 .foregroundStyle(accent)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
@@ -43,8 +46,11 @@ struct NeonStatCard: View {
                 .padding(.bottom, HomeHeroCompactLayout.scaled(2, by: scale))
         }
         .padding(.horizontal, HomeHeroCompactLayout.scaled(4, by: scale))
-        .padding(.vertical, HomeHeroCompactLayout.scaled(6, by: scale))
-        .neonOvalStatCard(accent: accent)
+        .padding(.vertical, HomeHeroCompactLayout.scaled(compact ? 4 : 6, by: scale))
+        .neonOvalStatCard(
+            accent: accent,
+            minHeight: HomeHeroCompactLayout.scaled(NeonArcadeChrome.statCardMinHeight, by: scale)
+        )
     }
 }
 

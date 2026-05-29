@@ -22,6 +22,8 @@ enum MatchDetailsScreenPhase: String {
 struct MatchDetailDisplayModel {
     let snapshot: MatchDetailsSnapshot
     let opponentTodayLastSyncedAt: Date?
+    let myTodayLastSyncedAt: Date?
+    let myHealthKitSyncedAt: Date?
     let startsAt: Date?
     let endsAt: Date?
     let matchTimezone: String
@@ -71,6 +73,9 @@ struct MatchDetailDisplayModel {
     }
 
     var glassVariant: GlassCardVariant {
+        if isPendingFinalization {
+            return matchScoreMargin >= 0 ? .win : .lose
+        }
         switch snapshot.state {
         case .pending:
             return .base
@@ -80,10 +85,16 @@ struct MatchDetailDisplayModel {
     }
 
     var statusLabel: String {
+        if isPendingFinalization {
+            return BattlePhaseCopy.pendingTitle.uppercased()
+        }
         switch snapshot.state {
         case .pending:
             return "PENDING"
         case .completed:
+            if snapshot.myScore == snapshot.theirScore {
+                return "BATTLE COMPLETE"
+            }
             return snapshot.isWinning ? "YOU WON" : "YOU LOST"
         case .active:
             return isAheadToday ? "YOU'RE UP" : "YOU'RE DOWN"
@@ -249,13 +260,17 @@ struct MatchDetailDisplayModel {
     }
 
     var lastSyncedRelativeLabel: String? {
-        guard let at = opponentTodayLastSyncedAt else { return nil }
-        let sec = Int(Date().timeIntervalSince(at))
-        if sec < 60 { return "Last synced just now" }
-        let min = sec / 60
-        if min < 60 { return "Last synced \(min) min ago" }
-        let h = min / 60
-        return "Last synced \(h) hr ago"
+        guard let label = RelativeSyncLabel.shortAgo(since: opponentTodayLastSyncedAt) else { return nil }
+        return "Last synced \(label)"
+    }
+
+    var mySyncRelativeLabel: String? {
+        let at = myHealthKitSyncedAt ?? myTodayLastSyncedAt
+        return RelativeSyncLabel.shortAgo(since: at)
+    }
+
+    var opponentSyncRelativeLabel: String? {
+        RelativeSyncLabel.shortAgo(since: opponentTodayLastSyncedAt)
     }
 }
 
@@ -270,6 +285,8 @@ final class MatchDetailsViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     @Published private(set) var opponentTodayLastSyncedAt: Date?
+    @Published private(set) var myTodayLastSyncedAt: Date?
+    @Published private(set) var myHealthKitSyncedAt: Date?
     @Published private(set) var startsAt: Date?
     @Published private(set) var endsAt: Date?
     @Published private(set) var matchTimezone: String = "America/Chicago"
@@ -290,7 +307,7 @@ final class MatchDetailsViewModel: ObservableObject {
     private var pollingTask: Task<Void, Never>?
     private let pollingIntervalNs: UInt64 = 180_000_000_000
 
-    private let cacheKeyPrefix = "matchDetail.cache.v1."
+    private let cacheKeyPrefix = "matchDetail.cache.v2."
 
     init(
         matchId: UUID,
@@ -315,6 +332,8 @@ final class MatchDetailsViewModel: ObservableObject {
         return MatchDetailDisplayModel(
             snapshot: snapshot,
             opponentTodayLastSyncedAt: opponentTodayLastSyncedAt,
+            myTodayLastSyncedAt: myTodayLastSyncedAt,
+            myHealthKitSyncedAt: myHealthKitSyncedAt,
             startsAt: startsAt,
             endsAt: endsAt,
             matchTimezone: matchTimezone,
@@ -449,6 +468,7 @@ final class MatchDetailsViewModel: ObservableObject {
         if let v = result.value {
             myTodayHK = v
             healthKitStale = false
+            myHealthKitSyncedAt = Date()
         } else {
             myTodayHK = myTodayHK ?? fallbackMyToday
             healthKitStale = result.stale
@@ -479,6 +499,7 @@ final class MatchDetailsViewModel: ObservableObject {
     private func applyBundle(_ bundle: MatchDetailBundle) {
         snapshot = bundle.snapshot
         opponentTodayLastSyncedAt = bundle.opponentTodayLastSyncedAt
+        myTodayLastSyncedAt = bundle.myTodayLastSyncedAt
         startsAt = bundle.startsAt
         endsAt = bundle.endsAt
         matchTimezone = bundle.matchTimezone

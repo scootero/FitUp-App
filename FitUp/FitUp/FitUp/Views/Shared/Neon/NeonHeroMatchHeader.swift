@@ -13,19 +13,15 @@ struct NeonHeroMetaPill {
     let accent: Color
 }
 
-struct NeonHeroMatchHeaderContent: Equatable {
+struct NeonHeroMatchHeaderContent {
     let userDisplayName: String
     let opponentDisplayName: String
     let pills: [NeonHeroMetaPill]
     let dayProgressLabel: String
-
-    static func == (lhs: NeonHeroMatchHeaderContent, rhs: NeonHeroMatchHeaderContent) -> Bool {
-        lhs.userDisplayName == rhs.userDisplayName
-            && lhs.opponentDisplayName == rhs.opponentDisplayName
-            && lhs.dayProgressLabel == rhs.dayProgressLabel
-            && lhs.pills.map(\.id) == rhs.pills.map(\.id)
-            && lhs.pills.map(\.label) == rhs.pills.map(\.label)
-    }
+    let battleDateRangeLabel: String
+    let matchStatusLabel: String
+    let matchScoreText: String
+    let matchStatusColor: Color
 }
 
 // MARK: - Layout (VS row + player columns share insets)
@@ -167,16 +163,19 @@ struct NeonSparkyHeroName: View {
 struct NeonRetroVersusBanner: View {
     let userName: String
     let opponentName: String
+    let matchStatusLabel: String
+    let matchScoreText: String
+    let matchStatusColor: Color
 
     @Environment(\.homeHeroCompactScale) private var compactScale
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: HomeHeroCompactLayout.scaled(NeonHeroVersusLayout.playerColumnSpacing, by: compactScale)) {
+        HStack(alignment: .center, spacing: HomeHeroCompactLayout.scaled(NeonHeroVersusLayout.playerColumnSpacing, by: compactScale)) {
             NeonSparkyHeroName(text: userName, accent: FitUpColors.Neon.cyan, alignment: .center)
                 .frame(maxWidth: .infinity)
                 .padding(.leading, HomeHeroCompactLayout.scaled(NeonHeroVersusLayout.playerColumnEdgeInset, by: compactScale))
 
-            versusMark
+            matchScoreCenter
                 .layoutPriority(1)
                 .padding(.horizontal, HomeHeroCompactLayout.scaled(4, by: compactScale))
 
@@ -188,15 +187,29 @@ struct NeonRetroVersusBanner: View {
         .padding(.leading, HomeHeroCompactLayout.scaled(6, by: compactScale))
     }
 
-    private var versusMark: some View {
-        Text("VS")
-            .font(FitUpFont.display(HomeHeroCompactLayout.scaled(34, by: compactScale), weight: .black))
-            .tracking(4.8 * compactScale)
-            .foregroundStyle(Color.white)
-            .scaleEffect(x: 1.18, y: 1)
-            .shadow(color: Color.white.opacity(0.28), radius: HomeHeroCompactLayout.scaled(8, by: compactScale), x: 0, y: 0)
-            .offset(y: HomeHeroCompactLayout.scaled(8, by: compactScale))
-            .accessibilityLabel("Versus")
+    private var matchScoreCenter: some View {
+        VStack(spacing: HomeHeroCompactLayout.scaled(4, by: compactScale)) {
+            Text(matchStatusLabel)
+                .font(FitUpFont.body(HomeHeroCompactLayout.scaled(11, by: compactScale), weight: .heavy))
+                .tracking(1.2 * compactScale)
+                .foregroundStyle(matchStatusColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text(matchScoreText)
+                .font(FitUpFont.display(HomeHeroCompactLayout.scaled(28, by: compactScale), weight: .black))
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+
+            Text(BattlePhaseCopy.matchScoreCaption.uppercased())
+                .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(10, by: compactScale), weight: .heavy))
+                .tracking(1.4 * compactScale)
+                .foregroundStyle(HomePageStyle.muted)
+        }
+        .multilineTextAlignment(.center)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(matchStatusLabel). Match score \(matchScoreText)")
     }
 }
 
@@ -250,7 +263,13 @@ struct NeonGlowMetaPill: View {
                 NeonHeroMetaPill(id: "scoring", label: "Raw Battle", accent: FitUpColors.Neon.orange),
             ]
         )
-        NeonRetroVersusBanner(userName: "Scott", opponentName: "Mike")
+        NeonRetroVersusBanner(
+            userName: "Scott",
+            opponentName: "Mike",
+            matchStatusLabel: BattlePhaseCopy.matchWinning,
+            matchScoreText: "1 - 0",
+            matchStatusColor: FitUpColors.Neon.green
+        )
     }
     .padding()
     .background(FitUpColors.Bg.base)

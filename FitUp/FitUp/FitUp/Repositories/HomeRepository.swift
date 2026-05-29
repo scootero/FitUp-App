@@ -84,6 +84,65 @@ struct HomeActiveMatch: Identifiable, Equatable {
     let difficulty: String?
     let myBaselineSteps: Double?
     let theirBaselineSteps: Double?
+    /// User-facing duration + calendar span for hero header.
+    let battleDateRangeLabel: String
+    /// Max `match_days.calendar_date` for pending-finalization detection.
+    let battleEndDateKey: String?
+    /// Profile-local today (`yyyy-MM-dd`) when this snapshot was built.
+    let profileTodayKey: String
+    let hasUnfinalizedDay: Bool
+
+    init(
+        id: UUID,
+        metricType: String,
+        durationDays: Int,
+        sportLabel: String,
+        seriesLabel: String,
+        daysLeft: Int,
+        finalDayCutoffAt: Date?,
+        finalDayScoreEndsAt: Date?,
+        myToday: Int,
+        theirToday: Int,
+        myScore: Int,
+        theirScore: Int,
+        isWinning: Bool,
+        opponent: HomeOpponent,
+        opponentTodayUpdatedAt: Date?,
+        dayPips: [HomeDayPip],
+        scoringMode: String?,
+        difficulty: String?,
+        myBaselineSteps: Double?,
+        theirBaselineSteps: Double?,
+        battleDateRangeLabel: String = "",
+        battleEndDateKey: String? = nil,
+        profileTodayKey: String = "",
+        hasUnfinalizedDay: Bool = false
+    ) {
+        self.id = id
+        self.metricType = metricType
+        self.durationDays = durationDays
+        self.sportLabel = sportLabel
+        self.seriesLabel = seriesLabel
+        self.daysLeft = daysLeft
+        self.finalDayCutoffAt = finalDayCutoffAt
+        self.finalDayScoreEndsAt = finalDayScoreEndsAt
+        self.myToday = myToday
+        self.theirToday = theirToday
+        self.myScore = myScore
+        self.theirScore = theirScore
+        self.isWinning = isWinning
+        self.opponent = opponent
+        self.opponentTodayUpdatedAt = opponentTodayUpdatedAt
+        self.dayPips = dayPips
+        self.scoringMode = scoringMode
+        self.difficulty = difficulty
+        self.myBaselineSteps = myBaselineSteps
+        self.theirBaselineSteps = theirBaselineSteps
+        self.battleDateRangeLabel = battleDateRangeLabel
+        self.battleEndDateKey = battleEndDateKey
+        self.profileTodayKey = profileTodayKey
+        self.hasUnfinalizedDay = hasUnfinalizedDay
+    }
 
     var isBalancedStepsBattle: Bool {
         metricType == "steps" && scoringMode == "balanced"
@@ -680,6 +739,18 @@ final class HomeRepository {
                 let daysLeft = max(durationDays - finalizedCount, 0)
                 let finalCutoff = finalDayCutoff(from: dayRows, daysLeft: daysLeft, timeZone: profileTimeZone)
                 let scoreEndsAt = finalDayScoreEndsAt(from: dayRows, daysLeft: daysLeft, timeZone: profileTimeZone)
+                let calendarBounds = deriveBattleCalendarBounds(
+                    dayRows: dayRows,
+                    durationDays: durationDays,
+                    timeZone: profileTimeZone
+                )
+                let hasUnfinalized = dayRows.contains { string(from: $0["status"]) != "finalized" }
+                let rangeLabel = BattleDateRangeFormatting.label(
+                    durationDays: durationDays,
+                    startDateKey: calendarBounds.startDateKey,
+                    endDateKey: calendarBounds.endDateKey,
+                    timeZone: profileTimeZone
+                )
 
                 #if DEBUG
                 if daysLeft == 1, let cutoff = finalCutoff, Date() > cutoff,
@@ -720,7 +791,11 @@ final class HomeRepository {
                             scoringMode: scoringMode,
                             difficulty: matchDifficulty,
                             myBaselineSteps: myBaseline,
-                            theirBaselineSteps: theirBaseline
+                            theirBaselineSteps: theirBaseline,
+                            battleDateRangeLabel: rangeLabel,
+                            battleEndDateKey: calendarBounds.endDateKey,
+                            profileTodayKey: profileTodayKey,
+                            hasUnfinalizedDay: hasUnfinalized
                         )
                     )
                 } else if state == "pending" {
@@ -906,6 +981,18 @@ final class HomeRepository {
 
     /// First non-finalized day’s cutoff: 10:00 local on the calendar day after `calendar_date` (matches `day_cutoff_check` in slice8).
     /// Uses `profiles.timezone` when provided so the countdown aligns with server rules; otherwise device calendar.
+    private func deriveBattleCalendarBounds(
+        dayRows: [[String: Any]],
+        durationDays: Int,
+        timeZone: TimeZone?
+    ) -> (startDateKey: String?, endDateKey: String?) {
+        let keys = dayRows.compactMap { string(from: $0["calendar_date"]) }.sorted()
+        if keys.isEmpty {
+            return (nil, nil)
+        }
+        return (keys.first, keys.last)
+    }
+
     private func finalDayCutoff(from dayRows: [[String: Any]], daysLeft: Int, timeZone: TimeZone?) -> Date? {
         guard daysLeft == 1 else { return nil }
         guard let pending = dayRows.first(where: { string(from: $0["status"]) != "finalized" }),

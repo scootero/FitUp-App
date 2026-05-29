@@ -27,14 +27,53 @@ struct ActiveBattleRowView: View {
     private var ringSize: CGFloat { scaled(42) }
 
     var body: some View {
+        Group {
+            if match.isPendingFinalization {
+                pendingRow
+            } else {
+                liveRow
+            }
+        }
+        .neonCompactBattleCard(accent: accent, minHeight: compact ? scaled(62) : nil)
+    }
+
+    private var pendingRow: some View {
+        VStack(alignment: .leading, spacing: scaled(6)) {
+            topRow
+            Text(BattlePhaseCopy.pendingTitle)
+                .font(FitUpFont.body(scaled(14), weight: .bold))
+                .foregroundStyle(HomePageStyle.offWhite)
+            Text(BattlePhaseCopy.pendingSubtitle)
+                .font(FitUpFont.body(scaled(12), weight: .semibold))
+                .foregroundStyle(FitUpColors.Neon.yellow.opacity(0.9))
+            Text(BattlePhaseCopy.matchScorePrefixed(myScore: match.myScore, theirScore: match.theirScore))
+                .font(FitUpFont.mono(scaled(11), weight: .semibold))
+                .foregroundStyle(HomePageStyle.muted)
+        }
+        .padding(.horizontal, scaled(12))
+        .padding(.vertical, scaled(10))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var liveRow: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: scaled(6)) {
                 topRow
-                Text(match.neonDayProgressText)
-                    .font(FitUpFont.mono(scaled(11), weight: .semibold))
-                    .foregroundStyle(HomePageStyle.muted)
+                Text(match.matchStatusLabel)
+                    .font(FitUpFont.body(scaled(12), weight: .heavy))
+                    .foregroundStyle(match.matchStatusColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                Text(match.matchScoreText)
+                    .font(FitUpFont.display(scaled(22), weight: .black))
+                    .foregroundStyle(HomePageStyle.offWhite)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                Text(BattlePhaseCopy.matchScoreCaption.uppercased())
+                    .font(FitUpFont.mono(scaled(10), weight: .semibold))
+                    .foregroundStyle(HomePageStyle.muted)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
             .padding(.horizontal, scaled(12))
@@ -43,45 +82,35 @@ struct ActiveBattleRowView: View {
 
             Text(match.neonStepDifferenceNowText)
                 .font(FitUpFont.mono(scaled(10), weight: .bold))
-                .foregroundStyle(match.neonComparableMarginColor)
+                .foregroundStyle(match.neonLiveCardAccentColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .padding(.horizontal, scaled(12))
                 .padding(.bottom, scaled(8))
         }
-        .neonCompactBattleCard(accent: accent, minHeight: compact ? scaled(62) : nil)
     }
 
     private var topRow: some View {
-        ZStack {
-            HStack(spacing: scaled(8)) {
-                AvatarView(
-                    initials: match.opponent.initials,
-                    color: ProfileAccentColor.swiftUIColor(hex: match.opponent.colorHex),
-                    size: avatarSize,
-                    glow: true
-                )
-                .overlay {
-                    Circle()
-                        .strokeBorder(accent.opacity(0.85), lineWidth: max(1, scaled(2)))
-                        .frame(width: ringSize, height: ringSize)
-                        .shadow(color: accent.opacity(0.4), radius: scaled(6), x: 0, y: 0)
-                }
-
-                Text(match.opponent.displayName)
-                    .font(FitUpFont.body(scaled(15), weight: .bold))
-                    .foregroundStyle(HomePageStyle.offWhite)
-                    .lineLimit(1)
-
-                Spacer(minLength: 0)
+        HStack(spacing: scaled(8)) {
+            AvatarView(
+                initials: match.opponent.initials,
+                color: ProfileAccentColor.swiftUIColor(hex: match.opponent.colorHex),
+                size: avatarSize,
+                glow: true
+            )
+            .overlay {
+                Circle()
+                    .strokeBorder(accent.opacity(0.85), lineWidth: max(1, scaled(2)))
+                    .frame(width: ringSize, height: ringSize)
+                    .shadow(color: accent.opacity(0.4), radius: scaled(6), x: 0, y: 0)
             }
 
-            Text(match.neonDayScoreText)
-                .font(FitUpFont.display(scaled(24), weight: .black))
+            Text(match.opponent.displayName)
+                .font(FitUpFont.body(scaled(15), weight: .bold))
                 .foregroundStyle(HomePageStyle.offWhite)
-                .shadow(color: accent.opacity(0.35), radius: scaled(6), x: 0, y: 0)
                 .lineLimit(1)
-                .minimumScaleFactor(0.65)
+
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity)
     }

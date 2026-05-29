@@ -20,11 +20,12 @@ enum NeonArcadeChrome {
 
 private struct NeonOvalStatCardModifier: ViewModifier {
     let accent: Color
+    var minHeight: CGFloat = NeonArcadeChrome.statCardMinHeight
 
     func body(content: Content) -> some View {
         content
             .frame(maxWidth: .infinity)
-            .frame(minHeight: NeonArcadeChrome.statCardMinHeight)
+            .frame(minHeight: minHeight)
             .background {
                 RoundedRectangle(cornerRadius: NeonArcadeChrome.statCardCornerRadius, style: .continuous)
                     .fill(Color.black.opacity(0.58))
@@ -225,8 +226,8 @@ struct NeonRowSeparator: View {
 // MARK: - View extensions
 
 extension View {
-    func neonOvalStatCard(accent: Color) -> some View {
-        modifier(NeonOvalStatCardModifier(accent: accent))
+    func neonOvalStatCard(accent: Color, minHeight: CGFloat = NeonArcadeChrome.statCardMinHeight) -> some View {
+        modifier(NeonOvalStatCardModifier(accent: accent, minHeight: minHeight))
     }
 
     func neonRivalryPanel() -> some View {

@@ -2310,7 +2310,7 @@ private struct DayBattleSparklinePreview: View {
 
     @Environment(\.homeHeroCompactScale) private var compactScale
 
-    private var chartHeight: CGFloat { HomeHeroCompactLayout.scaled(96, by: compactScale) }
+    private var chartHeight: CGFloat { HomeHeroCompactLayout.scaled(68, by: compactScale) }
 
     var body: some View {
         VStack(spacing: HomeHeroCompactLayout.scaled(6, by: compactScale)) {
@@ -2330,11 +2330,6 @@ private struct DayBattleSparklinePreview: View {
                     sparkline(points: ptsO, color: FitUpColors.Neon.orange.opacity(0.92), glowMultiplier: 0.85)
 
                     sparkline(points: ptsU, color: FitUpColors.Neon.cyan.opacity(0.95), glowMultiplier: 1.0)
-
-                    lightningForks(along: ptsO, color: FitUpColors.Neon.orange)
-                    lightningForks(along: ptsU, color: FitUpColors.Neon.cyan)
-
-                    endpointDots(ptsU: ptsU, ptsO: ptsO)
                 }
             }
             .frame(height: chartHeight)
@@ -2654,6 +2649,33 @@ enum EnergyBeamNumberFormatting {
     static let steps: NumberFormatter = score
 }
 
+// MARK: - Intraday sync caption (Slice 6)
+
+/// Single-line HealthKit recency under the hero sparkline.
+private struct EnergyBeamIntradaySyncCaption: View {
+    let viewerHealthKitAt: Date?
+
+    @Environment(\.homeHeroCompactScale) private var compactScale
+
+    var body: some View {
+        if let viewerHealthKitAt {
+            TimelineView(.periodic(from: .now, by: 45)) { timeline in
+                Text("HealthKit synced \(relativeString(for: viewerHealthKitAt, relativeTo: timeline.date))")
+                    .font(FitUpFont.body(HomeHeroCompactLayout.scaled(12, by: compactScale), weight: .medium))
+                    .foregroundStyle(HomePageStyle.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("HealthKit synced \(relativeString(for: viewerHealthKitAt, relativeTo: timeline.date))")
+            }
+        }
+    }
+
+    private func relativeString(for date: Date, relativeTo now: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: now)
+    }
+}
+
 // MARK: - Intraday freshness (Slice 6)
 
 /// Subtle “last synced” row under the sparkline: viewer HealthKit read vs opponent tick recency.
@@ -2857,9 +2879,22 @@ struct EnergyBeamHeroGlassCardView: View {
             }
 
             if let matchHeaderContent {
-                VStack(spacing: scaled(10)) {
-                    NeonHeroDayProgressBanner(label: matchHeaderContent.dayProgressLabel)
-                    NeonHeroMetaPillsRow(pills: matchHeaderContent.pills)
+                VStack(spacing: scaled(8)) {
+                    HStack(alignment: .center) {
+                        NeonHeroDayProgressBanner(label: matchHeaderContent.dayProgressLabel)
+                    }
+                    if !matchHeaderContent.battleDateRangeLabel.isEmpty {
+                        Text(matchHeaderContent.battleDateRangeLabel)
+                            .font(FitUpFont.mono(scaled(11), weight: .semibold))
+                            .foregroundStyle(HomePageStyle.muted)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                            .multilineTextAlignment(.center)
+                    }
+                    if !matchHeaderContent.pills.isEmpty {
+                        NeonHeroMetaPillsRow(pills: matchHeaderContent.pills)
+                    }
                 }
                 .padding(.horizontal, scaled(16))
                 .padding(.top, showTopBrandHeader ? scaled(8) : scaled(14))
@@ -2869,7 +2904,10 @@ struct EnergyBeamHeroGlassCardView: View {
             if let matchHeaderContent {
                 NeonRetroVersusBanner(
                     userName: matchHeaderContent.userDisplayName,
-                    opponentName: matchHeaderContent.opponentDisplayName
+                    opponentName: matchHeaderContent.opponentDisplayName,
+                    matchStatusLabel: matchHeaderContent.matchStatusLabel,
+                    matchScoreText: matchHeaderContent.matchScoreText,
+                    matchStatusColor: matchHeaderContent.matchStatusColor
                 )
                 .padding(.horizontal, scaled(10))
                 .padding(.top, scaled(12))
@@ -2893,16 +2931,9 @@ struct EnergyBeamHeroGlassCardView: View {
             .padding(.horizontal, scaled(14))
             .padding(.bottom, scaled(4))
 
-            EnergyBeamIntradayFreshnessRow(
-                viewerHealthKitAt: viewerIntradayHealthKitSyncedAt,
-                opponentTickAt: opponentIntradayLatestTickAt
-            )
-            .padding(.horizontal, scaled(14))
-            .padding(.bottom, scaled(8))
-
-            DayElapsedProgressPreview(fractionElapsed: dayElapsedFraction, caption: dayProgressCaption)
-                .padding(.horizontal, scaled(18))
-                .padding(.bottom, scaled(14))
+            EnergyBeamIntradaySyncCaption(viewerHealthKitAt: viewerIntradayHealthKitSyncedAt)
+                .padding(.horizontal, scaled(14))
+                .padding(.bottom, scaled(12))
         }
         .background {
             ZStack {

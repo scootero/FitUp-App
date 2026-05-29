@@ -39,6 +39,10 @@ struct CachedHomeActiveMatch: Codable {
     let difficulty: String?
     let myBaselineSteps: Double?
     let theirBaselineSteps: Double?
+    let battleDateRangeLabel: String
+    let battleEndDateKey: String?
+    let profileTodayKey: String
+    let hasUnfinalizedDay: Bool
 }
 
 struct CachedHomeOpponent: Codable {
@@ -56,7 +60,7 @@ struct CachedHomeDayPip: Codable {
 final class HomeSnapshotCacheStore {
     private let defaults: UserDefaults
     private let keyPrefix = "home.hero.snapshot.v2"
-    private let schemaVersion = 4
+    private let schemaVersion = 5
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -188,7 +192,11 @@ private extension CachedHomeActiveMatch {
             scoringMode: match.scoringMode,
             difficulty: match.difficulty,
             myBaselineSteps: match.myBaselineSteps,
-            theirBaselineSteps: match.theirBaselineSteps
+            theirBaselineSteps: match.theirBaselineSteps,
+            battleDateRangeLabel: match.battleDateRangeLabel,
+            battleEndDateKey: match.battleEndDateKey,
+            profileTodayKey: match.profileTodayKey,
+            hasUnfinalizedDay: match.hasUnfinalizedDay
         )
     }
 
@@ -220,7 +228,11 @@ private extension CachedHomeActiveMatch {
             scoringMode: scoringMode,
             difficulty: difficulty,
             myBaselineSteps: myBaselineSteps,
-            theirBaselineSteps: theirBaselineSteps
+            theirBaselineSteps: theirBaselineSteps,
+            battleDateRangeLabel: battleDateRangeLabel,
+            battleEndDateKey: battleEndDateKey,
+            profileTodayKey: profileTodayKey,
+            hasUnfinalizedDay: hasUnfinalizedDay
         )
     }
 }

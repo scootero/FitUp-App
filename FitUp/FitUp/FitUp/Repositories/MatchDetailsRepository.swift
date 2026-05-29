@@ -48,6 +48,8 @@ struct MatchDetailsDayRow: Identifiable, Equatable, Codable {
     let isFuture: Bool
     /// Opponent's `last_updated_at` on `match_day_participants` for this day (set when `isToday`).
     let opponentLastUpdatedAt: Date?
+    /// Viewer's `last_updated_at` on `match_day_participants` for this day (set when `isToday`).
+    let myLastUpdatedAt: Date?
     let myWon: Bool?
     let isTie: Bool
 
@@ -64,6 +66,7 @@ struct MatchDetailsDayRow: Identifiable, Equatable, Codable {
             isToday: isToday,
             isFuture: isFuture,
             opponentLastUpdatedAt: opponentLastUpdatedAt,
+            myLastUpdatedAt: myLastUpdatedAt,
             myWon: myWon,
             isTie: isTie
         )
@@ -168,6 +171,7 @@ struct MatchDetailsSnapshot: Equatable, Codable {
 struct MatchDetailBundle: Equatable {
     let snapshot: MatchDetailsSnapshot
     let opponentTodayLastSyncedAt: Date?
+    let myTodayLastSyncedAt: Date?
     let startsAt: Date?
     let endsAt: Date?
     let matchTimezone: String
@@ -230,7 +234,9 @@ final class MatchDetailsRepository {
         let rowsForScoring = visibleDayRows.isEmpty ? derivedDayRows : visibleDayRows
         let scoreTuple = deriveScore(from: rowsForScoring)
         let todayTotals = deriveTodayTotals(from: rowsForScoring)
-        let opponentTodayLastSyncedAt = rowsForScoring.first(where: { $0.isToday })?.opponentLastUpdatedAt
+        let todayRow = rowsForScoring.first(where: { $0.isToday })
+        let opponentTodayLastSyncedAt = todayRow?.opponentLastUpdatedAt
+        let myTodayLastSyncedAt = todayRow?.myLastUpdatedAt
 
         let scoringMode = string(from: matchRow["scoring_mode"])
         let difficulty = string(from: matchRow["difficulty"])
@@ -289,6 +295,7 @@ final class MatchDetailsRepository {
         return MatchDetailBundle(
             snapshot: snapshot,
             opponentTodayLastSyncedAt: opponentTodayLastSyncedAt,
+            myTodayLastSyncedAt: myTodayLastSyncedAt,
             startsAt: startsAt,
             endsAt: endsAt,
             matchTimezone: matchTimezone
@@ -378,6 +385,7 @@ final class MatchDetailsRepository {
             let myFinalized = int(from: myParticipant?["finalized_value"])
             let theirFinalized = int(from: theirParticipant?["finalized_value"])
             let theirLastUpdated = date(from: theirParticipant?["last_updated_at"])
+            let myLastUpdated = date(from: myParticipant?["last_updated_at"])
 
             let myValue = isFinalized ? (myFinalized ?? myLive) : myLive
             let theirValue = isFinalized ? (theirFinalized ?? theirLive) : theirLive
@@ -411,6 +419,7 @@ final class MatchDetailsRepository {
                     isToday: isTodayRow,
                     isFuture: isFutureDay,
                     opponentLastUpdatedAt: isTodayRow ? theirLastUpdated : nil,
+                    myLastUpdatedAt: isTodayRow ? myLastUpdated : nil,
                     myWon: myWon,
                     isTie: isVoid || (isFinalized && winnerUserId == nil)
                 )

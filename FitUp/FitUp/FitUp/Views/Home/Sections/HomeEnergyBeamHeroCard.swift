@@ -269,7 +269,7 @@ struct HomeEnergyBeamHeroCard: View {
                         opponentSteps: match.theirToday,
                         userBattleScore: userScoreInt,
                         opponentBattleScore: opponentScoreInt,
-                        battleScoreColumnTitle: "Battle Score",
+                        battleScoreColumnTitle: BattlePhaseCopy.stepScoreCaption,
                         resultEyebrow: Self.resultEyebrow(for: marginInt),
                         resultEyebrowColor: Self.resultEyebrowColor(for: marginInt),
                         resultHeroNumberText: Self.resultHeroNumberText(for: marginInt),

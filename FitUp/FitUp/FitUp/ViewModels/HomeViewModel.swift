@@ -130,20 +130,44 @@ final class HomeViewModel: ObservableObject {
         activeMatches.filter { normalizedHeroMetricType($0.metricType) == HomeBattleHeroCard.HeroMetric.steps.metricType }
     }
 
-    /// Active step battles sorted for Home (closest deficit first).
-    var sortedActiveStepMatchesForHero: [HomeActiveMatch] {
-        sortedActiveMatchesForHome.filter { normalizedHeroMetricType($0.metricType) == "steps" }
+    /// Steps battles shown on Home (excludes calories).
+    var activeStepMatchesForHomeUX: [HomeActiveMatch] {
+        activeStepMatches.filter(\.isStepsBattleForHomeUX)
     }
 
-    /// Single featured step battle for the home hero, tap target, and comparable-margin summaries (balanced → Battle Score).
+    /// Live step battles eligible for the energy-beam hero (excludes pending finalization).
+    var activeStepMatchesEligibleForHero: [HomeActiveMatch] {
+        activeStepMatchesForHomeUX.filter { !$0.isPendingFinalization }
+    }
+
+    var hasOnlyPendingFinalizationStepBattles: Bool {
+        !activeStepMatchesForHomeUX.isEmpty && activeStepMatchesEligibleForHero.isEmpty
+    }
+
+    /// Active step battles for list UI (includes pending finalization); live rows first.
+    var sortedActiveMatchesForHome: [HomeActiveMatch] {
+        activeStepMatchesForHomeUX.sorted { lhs, rhs in
+            if lhs.isPendingFinalization != rhs.isPendingFinalization {
+                return !lhs.isPendingFinalization && rhs.isPendingFinalization
+            }
+            return sortActiveStepMatches(lhs, rhs)
+        }
+    }
+
+    /// Opponent picker under hero — live step battles only.
+    var sortedActiveStepMatchesForHero: [HomeActiveMatch] {
+        activeStepMatchesEligibleForHero.sorted(by: sortActiveStepMatches)
+    }
+
+    /// Single featured step battle for the home hero (never pending-finalization).
     var featuredHomeStepMatch: HomeActiveMatch? {
-        let stepMatches = activeStepMatches
-        guard !stepMatches.isEmpty else { return nil }
+        let eligible = activeStepMatchesEligibleForHero
+        guard !eligible.isEmpty else { return nil }
         if let selectedHeroStepMatchId,
-           let selected = stepMatches.first(where: { $0.id == selectedHeroStepMatchId }) {
+           let selected = eligible.first(where: { $0.id == selectedHeroStepMatchId }) {
             return selected
         }
-        return HomeActiveMatch.featuredStepMatch(from: stepMatches)
+        return HomeActiveMatch.featuredStepMatch(from: eligible)
     }
 
     /// Same as ``featuredHomeStepMatch``; kept for call sites that still use the older name.
@@ -189,7 +213,8 @@ final class HomeViewModel: ObservableObject {
     private var lastHomeLayoutLogSignature: String?
 
     var battleSummaryStats: BattleSummaryStats {
-        guard !activeMatches.isEmpty else {
+        let liveStepBattles = activeStepMatchesForHomeUX.filter { !$0.isPendingFinalization }
+        guard !liveStepBattles.isEmpty else {
             return BattleSummaryStats(
                 totalActive: 0,
                 winningCount: 0,
@@ -198,15 +223,15 @@ final class HomeViewModel: ObservableObject {
                 closestDeficit: nil
             )
         }
-        let margins = activeMatches.map(\.comparableMargin)
-        let winningCount = margins.filter { $0 > 0 }.count
-        let losingCount = margins.filter { $0 < 0 }.count
+        let matchMargins = liveStepBattles.map(\.matchScoreMargin)
+        let winningCount = matchMargins.filter { $0 > 0 }.count
+        let losingCount = matchMargins.filter { $0 < 0 }.count
         return BattleSummaryStats(
-            totalActive: activeMatches.count,
+            totalActive: liveStepBattles.count,
             winningCount: winningCount,
             losingCount: losingCount,
-            closestLead: margins.filter { $0 > 0 }.min(),
-            closestDeficit: margins.filter { $0 < 0 }.max()
+            closestLead: matchMargins.filter { $0 > 0 }.min(),
+            closestDeficit: matchMargins.filter { $0 < 0 }.max()
         )
     }
 
@@ -238,24 +263,19 @@ final class HomeViewModel: ObservableObject {
         guard let total = battleSummaryStats.totalActive, total > 0 else { return nil }
         let wins = battleSummaryStats.winningCount ?? 0
         let losses = battleSummaryStats.losingCount ?? 0
-        let margins = activeMatches.map(\.comparableMargin)
-        let ties = margins.filter { $0 == 0 }.count
-        let hasBalanced = activeMatches.contains(where: \.isBalancedStepsBattle)
-
-        if let closestLead = battleSummaryStats.closestLead {
-            let leadSuffix = hasBalanced
-                ? " · Closest lead (Battle Score): +\(closestLead.formatted())"
-                : " · Closest: +\(closestLead.formatted()) steps"
-            return "Ahead in \(wins) / \(total) battles\(leadSuffix)"
-        }
+        let liveStepBattles = activeStepMatchesForHomeUX.filter { !$0.isPendingFinalization }
+        let ties = liveStepBattles.filter { $0.matchScoreMargin == 0 }.count
 
         if wins == 0, losses > 0 {
-            return "Trailing in \(losses) / \(total) battles"
+            return "Losing \(losses) of \(total) battles"
         }
         if ties == total {
-            return "All \(total) battles tied right now"
+            return "All \(total) battles tied on match score"
         }
-        return "Ahead in \(wins) / \(total) battles"
+        if wins == total {
+            return "Winning all \(total) battles"
+        }
+        return "Winning \(wins) of \(total) battles"
     }
 
     var statusStripState: StatusStripState {
@@ -324,53 +344,55 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    var sortedActiveMatchesForHome: [HomeActiveMatch] {
-        activeMatches.sorted { lhs, rhs in
-            let lhsMargin = lhs.comparableMargin
-            let rhsMargin = rhs.comparableMargin
-
-            let lhsCategory = sortCategory(for: lhsMargin)
-            let rhsCategory = sortCategory(for: rhsMargin)
-            if lhsCategory != rhsCategory {
-                return lhsCategory < rhsCategory
-            }
-
-            if lhsMargin != rhsMargin {
-                if lhsMargin < 0 && rhsMargin < 0 {
-                    return lhsMargin > rhsMargin
-                }
-                if lhsMargin > 0 && rhsMargin > 0 {
-                    return lhsMargin < rhsMargin
-                }
-            }
-
-            let lhsTs = lhs.opponentTodayUpdatedAt?.timeIntervalSince1970
-            let rhsTs = rhs.opponentTodayUpdatedAt?.timeIntervalSince1970
-            if lhsTs != rhsTs {
-                switch (lhsTs, rhsTs) {
-                case let (l?, r?):
-                    return l < r
-                case (.some, .none):
-                    return true
-                case (.none, .some):
-                    return false
-                case (.none, .none):
-                    break
-                }
-            }
-
-            return lhs.id.uuidString < rhs.id.uuidString
-        }
-    }
-
-    /// Closest losing battle for Home stat-card deep link (smallest deficit first).
+    /// Closest losing battle for Home stat-card deep link (smallest match-score deficit first).
     var primaryLosingMatchForHome: HomeActiveMatch? {
-        sortedActiveMatchesForHome.first { $0.comparableMargin < 0 }
+        activeStepMatchesEligibleForHero
+            .filter { $0.matchScoreMargin < 0 }
+            .max(by: { $0.matchScoreMargin < $1.matchScoreMargin })
     }
 
-    /// Closest winning battle for Home stat-card deep link (smallest lead / biggest threat first).
+    /// Closest winning battle for Home stat-card deep link (smallest match-score cushion first).
     var primaryWinningMatchForHome: HomeActiveMatch? {
-        sortedActiveMatchesForHome.first { $0.comparableMargin > 0 }
+        activeStepMatchesEligibleForHero
+            .filter { $0.matchScoreMargin > 0 }
+            .min(by: { $0.matchScoreMargin < $1.matchScoreMargin })
+    }
+
+    private func sortActiveStepMatches(_ lhs: HomeActiveMatch, _ rhs: HomeActiveMatch) -> Bool {
+        let lhsMargin = lhs.matchScoreMargin
+        let rhsMargin = rhs.matchScoreMargin
+
+        let lhsCategory = sortCategory(for: lhsMargin)
+        let rhsCategory = sortCategory(for: rhsMargin)
+        if lhsCategory != rhsCategory {
+            return lhsCategory < rhsCategory
+        }
+
+        if lhsMargin != rhsMargin {
+            if lhsMargin < 0 && rhsMargin < 0 {
+                return lhsMargin > rhsMargin
+            }
+            if lhsMargin > 0 && rhsMargin > 0 {
+                return lhsMargin < rhsMargin
+            }
+        }
+
+        let lhsTs = lhs.opponentTodayUpdatedAt?.timeIntervalSince1970
+        let rhsTs = rhs.opponentTodayUpdatedAt?.timeIntervalSince1970
+        if lhsTs != rhsTs {
+            switch (lhsTs, rhsTs) {
+            case let (l?, r?):
+                return l < r
+            case (.some, .none):
+                return true
+            case (.none, .some):
+                return false
+            case (.none, .none):
+                break
+            }
+        }
+
+        return lhs.id.uuidString < rhs.id.uuidString
     }
 
     func start(profile: Profile?, showOnboardingSearching: Bool, sessionStore: SessionStore) {
@@ -1139,7 +1161,11 @@ final class HomeViewModel: ObservableObject {
                 scoringMode: match.scoringMode,
                 difficulty: match.difficulty,
                 myBaselineSteps: match.myBaselineSteps,
-                theirBaselineSteps: match.theirBaselineSteps
+                theirBaselineSteps: match.theirBaselineSteps,
+                battleDateRangeLabel: match.battleDateRangeLabel,
+                battleEndDateKey: match.battleEndDateKey,
+                profileTodayKey: match.profileTodayKey,
+                hasUnfinalizedDay: match.hasUnfinalizedDay
             )
         }
     }
@@ -1186,7 +1212,11 @@ final class HomeViewModel: ObservableObject {
                 scoringMode: match.scoringMode,
                 difficulty: match.difficulty,
                 myBaselineSteps: match.myBaselineSteps,
-                theirBaselineSteps: match.theirBaselineSteps
+                theirBaselineSteps: match.theirBaselineSteps,
+                battleDateRangeLabel: match.battleDateRangeLabel,
+                battleEndDateKey: match.battleEndDateKey,
+                profileTodayKey: localDate,
+                hasUnfinalizedDay: match.hasUnfinalizedDay
             )
         }
         syncLiveActivity()
@@ -1487,8 +1517,9 @@ final class HomeViewModel: ObservableObject {
     }
 
     func selectHeroStepMatch(_ match: HomeActiveMatch) {
-        guard normalizedHeroMetricType(match.metricType) == "steps" else { return }
-        guard activeStepMatches.contains(where: { $0.id == match.id }) else { return }
+        guard match.isStepsBattleForHomeUX else { return }
+        guard !match.isPendingFinalization else { return }
+        guard activeStepMatchesEligibleForHero.contains(where: { $0.id == match.id }) else { return }
         guard selectedHeroStepMatchId != match.id else { return }
 
         selectedHeroStepMatchId = match.id
@@ -1501,7 +1532,8 @@ final class HomeViewModel: ObservableObject {
 
     private func reconcileSelectedHeroStepMatch(userId: UUID) {
         guard let selectedHeroStepMatchId else { return }
-        guard activeStepMatches.contains(where: { $0.id == selectedHeroStepMatchId }) else {
+        let isEligible = activeStepMatchesEligibleForHero.contains(where: { $0.id == selectedHeroStepMatchId })
+        guard isEligible else {
             self.selectedHeroStepMatchId = nil
             SelectedHeroStepMatchStore.clear(userId: userId)
             return

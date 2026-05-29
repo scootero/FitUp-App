@@ -10,22 +10,43 @@ import SwiftUI
 struct ActiveBattlesNeonSection: View {
     let matches: [HomeActiveMatch]
     let summary: HomeViewModel.BattleSummaryStats
+    let summaryLine: String?
     let leaderboardRankDisplay: String
     var onOpenMatch: (HomeActiveMatch) -> Void
     var onOpenWinningMatch: () -> Void
     var onOpenLosingMatch: () -> Void
     var onOpenLeaderboard: () -> Void
 
-    private let gridSpacing: CGFloat = 5
+    private let gridSpacing: CGFloat = 3
+    private let statCardScale: CGFloat = 0.72
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             statsGrid
+            sectionHeaderRow
 
             if !matches.isEmpty {
                 battlesList
             }
         }
+    }
+
+    private var sectionHeaderRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("Active Battles")
+                .font(FitUpFont.body(12, weight: .bold))
+                .foregroundStyle(HomePageStyle.offWhite)
+            Spacer(minLength: 0)
+            if let summaryLine, !summaryLine.isEmpty {
+                Text(summaryLine)
+                    .font(FitUpFont.body(11, weight: .semibold))
+                    .foregroundStyle(HomePageStyle.muted)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .padding(.horizontal, 2)
     }
 
     private var statsGrid: some View {
@@ -38,7 +59,8 @@ struct ActiveBattlesNeonSection: View {
                 label: "Active Battles",
                 value: activeCountText,
                 accent: FitUpColors.Neon.cyan,
-                compact: true
+                compact: true,
+                compactScale: statCardScale
             )
             tappableStatCard(
                 systemImage: "trophy.fill",
@@ -62,7 +84,8 @@ struct ActiveBattlesNeonSection: View {
                     label: "Leaderboard",
                     value: leaderboardRankDisplay,
                     accent: FitUpColors.Neon.pink,
-                    compact: true
+                    compact: true,
+                    compactScale: statCardScale
                 )
             }
             .buttonStyle(.plain)
@@ -85,7 +108,8 @@ struct ActiveBattlesNeonSection: View {
                     label: label,
                     value: value,
                     accent: accent,
-                    compact: true
+                    compact: true,
+                    compactScale: statCardScale
                 )
             }
             .buttonStyle(.plain)
@@ -95,16 +119,14 @@ struct ActiveBattlesNeonSection: View {
                 label: label,
                 value: value,
                 accent: accent,
-                compact: true
+                compact: true,
+                compactScale: statCardScale
             )
         }
     }
 
     private var activeCountText: String {
-        if let total = summary.totalActive {
-            return String(total)
-        }
-        return matches.isEmpty ? "--" : String(matches.count)
+        matches.isEmpty ? "--" : String(matches.count)
     }
 
     private var battlesList: some View {
