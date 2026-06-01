@@ -28,6 +28,17 @@ extension MatchDetailDisplayModel {
         return false
     }
 
+    /// Series clinch from finalized day wins only.
+    var isClinched: Bool {
+        let winsRequired = MatchDurationCopy.winsTarget(totalDays: snapshot.durationDays)
+        return snapshot.myScore >= winsRequired || snapshot.theirScore >= winsRequired
+    }
+
+    /// Match details should treat clinched-active and pending-finalization similarly.
+    var isEffectivelyOver: Bool {
+        isPendingFinalization || (snapshot.state == .active && isClinched)
+    }
+
     var battleDateRangeLabel: String {
         let keys = mergedDayRows
             .compactMap { row -> String? in
@@ -67,6 +78,6 @@ extension MatchDetailDisplayModel {
 
     /// Label for the step totals row when the battle day has ended but scores are not final yet.
     var stepsPeriodLabel: String {
-        isPendingFinalization ? "Yesterday's steps" : "Steps today"
+        isEffectivelyOver ? "Yesterday's steps" : "Steps today"
     }
 }

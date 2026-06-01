@@ -27,6 +27,17 @@ extension HomeActiveMatch {
         return endKey < profileTodayKey
     }
 
+    /// Series clinch from finalized day wins only (backend source of truth for wins).
+    var isClinched: Bool {
+        let winsRequired = MatchDurationCopy.winsTarget(totalDays: durationDays)
+        return myScore >= winsRequired || theirScore >= winsRequired
+    }
+
+    /// Home/UI should treat these matches as over (not hero-eligible).
+    var isEffectivelyOverForHomeUX: Bool {
+        isPendingFinalization || isClinched
+    }
+
     var matchStatusLabel: String {
         let margin = matchScoreMargin
         if margin > 0 { return BattlePhaseCopy.matchWinning }

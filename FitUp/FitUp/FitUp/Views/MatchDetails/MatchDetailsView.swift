@@ -600,11 +600,11 @@ struct MatchDetailsView: View {
         metaPillsRow(dm: dm)
         battleModeExplainerBlock(dm: dm)
         heroCardV2(dm: dm)
-        if dm.snapshot.state == .active, !dm.isPendingFinalization {
+        if dm.snapshot.state == .active, !dm.isEffectivelyOver {
             todayBattleRow(dm: dm)
             alertBanner(dm: dm)
         }
-        if dm.snapshot.state == .active, !dm.isPendingFinalization, !viewModel.intradaySeries.isEmpty {
+        if dm.snapshot.state == .active, !dm.isEffectivelyOver, !viewModel.intradaySeries.isEmpty {
             IntradayCumulativeChartView(
                 points: viewModel.intradaySeries,
                 opponentTotal: dm.theirToday,
@@ -674,7 +674,7 @@ struct MatchDetailsView: View {
                     )
             }
 
-            if dm.snapshot.state == .active, !dm.isPendingFinalization {
+            if dm.snapshot.state == .active, !dm.isEffectivelyOver {
                 HStack(spacing: 5) {
                     Circle()
                         .fill(FitUpColors.Neon.green)
@@ -725,7 +725,7 @@ struct MatchDetailsView: View {
     private func heroCardV2(dm: MatchDetailDisplayModel) -> some View {
         let variant = dm.glassVariant
         let accent: Color = {
-            if dm.isPendingFinalization {
+            if dm.isEffectivelyOver {
                 return dm.matchScoreMargin >= 0 ? FitUpColors.Neon.cyan : FitUpColors.Neon.orange
             }
             if dm.snapshot.state == .completed {
@@ -762,7 +762,7 @@ struct MatchDetailsView: View {
                             .multilineTextAlignment(.trailing)
                             .lineLimit(2)
                             .minimumScaleFactor(0.8)
-                    } else if !dm.isPendingFinalization, dm.snapshot.state == .active {
+                    } else if !dm.isEffectivelyOver, dm.snapshot.state == .active {
                         Text(dm.dayBadgeLabel)
                             .font(FitUpFont.mono(10, weight: .medium))
                             .foregroundStyle(FitUpColors.Text.secondary)
@@ -806,7 +806,7 @@ struct MatchDetailsView: View {
                         todaySteps: dm.myTodayDisplay,
                         stepsPeriodLabel: dm.stepsPeriodLabel,
                         todayPillStyle: myPill,
-                        pulse: dm.snapshot.state == .active && !dm.isPendingFinalization,
+                        pulse: dm.snapshot.state == .active && !dm.isEffectivelyOver,
                         staleHint: dm.healthKitStale ? "May be stale" : nil,
                         syncRelativeLabel: dm.mySyncRelativeLabel,
                         primaryBattleScore: myBattle
@@ -846,7 +846,7 @@ struct MatchDetailsView: View {
 
                 recordDotsRow(dm: dm)
 
-                if dm.snapshot.state == .active, !dm.isPendingFinalization {
+                if dm.snapshot.state == .active, !dm.isEffectivelyOver {
                     VStack(alignment: .leading, spacing: 6) {
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
@@ -886,7 +886,7 @@ struct MatchDetailsView: View {
     @ViewBuilder
     private func matchScoreBanner(dm: MatchDetailDisplayModel) -> some View {
         VStack(spacing: 6) {
-            if dm.isPendingFinalization {
+            if dm.isEffectivelyOver {
                 Text(BattlePhaseCopy.pendingSubtitle)
                     .font(FitUpFont.body(11, weight: .semibold))
                     .foregroundStyle(FitUpColors.Neon.yellow.opacity(0.92))

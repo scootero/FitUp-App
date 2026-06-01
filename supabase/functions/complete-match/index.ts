@@ -35,16 +35,20 @@ serve(async (request)=>{
         match_id: matchId
       });
     }
-    const { data: dayRows, error: dayError } = await supabaseAdmin.from("match_days").select("id, status").eq("match_id", matchId);
+    const { data: dayRows, error: dayError } = await supabaseAdmin
+      .from("match_days")
+      .select("id, status, winner_user_id, is_void")
+      .eq("match_id", matchId);
     if (dayError) {
       throw dayError;
     }
-    const hasPending = (dayRows ?? []).some((row)=>row.status !== "finalized");
-    if (hasPending) {
+    const series = summarizeSeries(dayRows ?? [], Number(match.duration_days ?? 1));
+    const readyToComplete = series.allFinalized || series.clinched;
+    if (!readyToComplete) {
       return jsonResponse(409, {
         status: "not_ready",
         match_id: matchId,
-        message: "Cannot complete match until all days are finalized."
+        message: "Cannot complete match until clinched or all days are finalized."
       });
     }
     const nowIso = new Date().toISOString();
@@ -86,7 +90,8 @@ serve(async (request)=>{
     return jsonResponse(200, {
       status: "completed",
       match_id: matchId,
-      completed_at: nowIso
+      completed_at: nowIso,
+      completion_reason: series.clinched ? "clinched" : "all_days_finalized"
     });
   } catch (error) {
     return jsonResponse(500, {
@@ -150,4 +155,30 @@ function resolveSeriesWinner(scores) {
     return null;
   }
   return winner;
+}
+
+function summarizeSeries(
+  dayRows,
+  durationDays,
+) {
+  const rows = dayRows ?? [];
+  const allFinalized = rows.length > 0 && rows.every((row)=>row.status === "finalized");
+  const winsRequired = Math.max(Math.floor((Math.max(Number(durationDays) || 1, 1) + 1) / 2), 1);
+  const wins = new Map();
+  for (const row of rows){
+    if (row.status !== "finalized" || row.is_void || !row.winner_user_id) continue;
+    const winnerId = String(row.winner_user_id);
+    wins.set(winnerId, (wins.get(winnerId) ?? 0) + 1);
+  }
+  let clinched = false;
+  for (const count of wins.values()){
+    if (count >= winsRequired) {
+      clinched = true;
+      break;
+    }
+  }
+  return {
+    allFinalized,
+    clinched
+  };
 }

@@ -137,7 +137,7 @@ final class HomeViewModel: ObservableObject {
 
     /// Live step battles eligible for the energy-beam hero (excludes pending finalization).
     var activeStepMatchesEligibleForHero: [HomeActiveMatch] {
-        activeStepMatchesForHomeUX.filter { !$0.isPendingFinalization }
+        activeStepMatchesForHomeUX.filter { !$0.isEffectivelyOverForHomeUX }
     }
 
     var hasOnlyPendingFinalizationStepBattles: Bool {
@@ -147,8 +147,8 @@ final class HomeViewModel: ObservableObject {
     /// Active step battles for list UI (includes pending finalization); live rows first.
     var sortedActiveMatchesForHome: [HomeActiveMatch] {
         activeStepMatchesForHomeUX.sorted { lhs, rhs in
-            if lhs.isPendingFinalization != rhs.isPendingFinalization {
-                return !lhs.isPendingFinalization && rhs.isPendingFinalization
+            if lhs.isEffectivelyOverForHomeUX != rhs.isEffectivelyOverForHomeUX {
+                return !lhs.isEffectivelyOverForHomeUX && rhs.isEffectivelyOverForHomeUX
             }
             return sortActiveStepMatches(lhs, rhs)
         }
@@ -213,7 +213,7 @@ final class HomeViewModel: ObservableObject {
     private var lastHomeLayoutLogSignature: String?
 
     var battleSummaryStats: BattleSummaryStats {
-        let liveStepBattles = activeStepMatchesForHomeUX.filter { !$0.isPendingFinalization }
+        let liveStepBattles = activeStepMatchesForHomeUX.filter { !$0.isEffectivelyOverForHomeUX }
         guard !liveStepBattles.isEmpty else {
             return BattleSummaryStats(
                 totalActive: 0,
@@ -263,7 +263,7 @@ final class HomeViewModel: ObservableObject {
         guard let total = battleSummaryStats.totalActive, total > 0 else { return nil }
         let wins = battleSummaryStats.winningCount ?? 0
         let losses = battleSummaryStats.losingCount ?? 0
-        let liveStepBattles = activeStepMatchesForHomeUX.filter { !$0.isPendingFinalization }
+        let liveStepBattles = activeStepMatchesForHomeUX.filter { !$0.isEffectivelyOverForHomeUX }
         let ties = liveStepBattles.filter { $0.matchScoreMargin == 0 }.count
 
         if wins == 0, losses > 0 {
@@ -930,7 +930,7 @@ final class HomeViewModel: ObservableObject {
     // MARK: - Live Activity sync
 
     private func syncLiveActivity() {
-        guard let firstActive = activeMatches.first else {
+        guard let firstActive = activeStepMatchesForHomeUX.first(where: { !$0.isEffectivelyOverForHomeUX }) else {
             LiveActivityCoordinator.shared.endActivity()
             return
         }
@@ -1518,7 +1518,7 @@ final class HomeViewModel: ObservableObject {
 
     func selectHeroStepMatch(_ match: HomeActiveMatch) {
         guard match.isStepsBattleForHomeUX else { return }
-        guard !match.isPendingFinalization else { return }
+        guard !match.isEffectivelyOverForHomeUX else { return }
         guard activeStepMatchesEligibleForHero.contains(where: { $0.id == match.id }) else { return }
         guard selectedHeroStepMatchId != match.id else { return }
 

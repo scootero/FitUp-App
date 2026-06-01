@@ -2,7 +2,7 @@
 //  HomeIntroTipView.swift
 //  FitUp
 //
-//  One-time-per-launch intro card on Home (fades out after a few seconds).
+//  App description card on Home when there is no active step battle.
 //
 
 import SwiftUI
@@ -29,20 +29,6 @@ struct HomeIntroTipView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background {
-            RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay {
-                    RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                        .fill(Color.black.opacity(0.42))
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-                }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Self.lines.joined(separator: " "))

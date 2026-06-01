@@ -28,7 +28,7 @@ struct ActiveBattleRowView: View {
 
     var body: some View {
         Group {
-            if match.isPendingFinalization {
+            if match.isEffectivelyOverForHomeUX {
                 pendingRow
             } else {
                 liveRow

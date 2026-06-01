@@ -45,16 +45,49 @@ serve(async (request) => {
     }
     const { data: matchRow, error: matchFetchError } = await supabaseAdmin
       .from("matches")
-      .select("metric_type, duration_days, scoring_mode")
+      .select("state, metric_type, duration_days, scoring_mode")
       .eq("id", dayRow.match_id)
       .limit(1)
       .maybeSingle();
     if (matchFetchError) {
       throw matchFetchError;
     }
+    if ((matchRow?.state ?? "active") !== "active") {
+      return jsonResponse(200, {
+        status: "match_not_active",
+        match_day_id: matchDayId,
+        match_id: dayRow.match_id,
+      });
+    }
     const metricType = matchRow?.metric_type ?? "steps";
+    const durationDays = Number(matchRow?.duration_days ?? 1);
     const scoringMode = matchRow?.scoring_mode ?? null;
     const useBalancedWinner = scoringMode === "balanced" && metricType === "steps";
+    const { data: preDayRows, error: preDayError } = await supabaseAdmin
+      .from("match_days")
+      .select("status, winner_user_id, is_void")
+      .eq("match_id", dayRow.match_id);
+    if (preDayError) {
+      throw preDayError;
+    }
+    const preSeries = summarizeSeries(preDayRows ?? [], durationDays);
+    if (preSeries.clinched) {
+      let completeMatchError: string | null = null;
+      try {
+        await invokeEdgeFunctionAsync("complete-match", { match_id: dayRow.match_id });
+      } catch (err) {
+        completeMatchError = err instanceof Error ? err.message : String(err);
+        console.error("complete-match via invoke_edge_function_async failed:", completeMatchError);
+      }
+      return jsonResponse(200, {
+        status: "already_clinched",
+        match_day_id: matchDayId,
+        match_id: dayRow.match_id,
+        clinched: true,
+        completed_match: true,
+        complete_match_error: completeMatchError,
+      });
+    }
     const { data: baselineRows, error: baselineError } = await supabaseAdmin
       .from("match_participants")
       .select("user_id, baseline_steps")
@@ -164,16 +197,17 @@ serve(async (request) => {
 
     const { data: allDayRows, error: allDayError } = await supabaseAdmin
       .from("match_days")
-      .select("id, status")
+      .select("status, winner_user_id, is_void")
       .eq("match_id", dayRow.match_id);
     if (allDayError) {
       throw allDayError;
     }
-    const allFinalized =
-      (allDayRows ?? []).length > 0 &&
-      (allDayRows ?? []).every((row) => row.status === "finalized");
+    const series = summarizeSeries(allDayRows ?? [], durationDays);
+    const allFinalized = series.allFinalized;
+    const clinched = series.clinched;
+    const shouldComplete = allFinalized || clinched;
     let completeMatchError: string | null = null;
-    if (allFinalized) {
+    if (shouldComplete) {
       try {
         await invokeEdgeFunctionAsync("complete-match", { match_id: dayRow.match_id });
       } catch (err) {
@@ -188,7 +222,9 @@ serve(async (request) => {
       match_id: dayRow.match_id,
       is_void: isVoid,
       winner_user_id: winnerUserId,
-      completed_match: allFinalized,
+      clinched,
+      completed_match: shouldComplete,
+      completion_reason: clinched ? "clinched" : allFinalized ? "all_days_finalized" : "none",
       leaderboard_error: leaderboardError,
       complete_match_error: completeMatchError,
     });
@@ -210,4 +246,27 @@ function toNumber(value: unknown): number {
     }
   }
   return 0;
+}
+
+function summarizeSeries(
+  dayRows: Array<{ status: string; winner_user_id: string | null; is_void: boolean }>,
+  durationDays: number,
+): { allFinalized: boolean; clinched: boolean } {
+  const rows = dayRows ?? [];
+  const allFinalized = rows.length > 0 && rows.every((row) => row.status === "finalized");
+  const winsRequired = Math.max(Math.floor((Math.max(durationDays, 1) + 1) / 2), 1);
+  const wins = new Map<string, number>();
+  for (const row of rows) {
+    if (row.status !== "finalized" || row.is_void || !row.winner_user_id) continue;
+    const winnerId = String(row.winner_user_id);
+    wins.set(winnerId, (wins.get(winnerId) ?? 0) + 1);
+  }
+  let clinched = false;
+  for (const count of wins.values()) {
+    if (count >= winsRequired) {
+      clinched = true;
+      break;
+    }
+  }
+  return { allFinalized, clinched };
 }

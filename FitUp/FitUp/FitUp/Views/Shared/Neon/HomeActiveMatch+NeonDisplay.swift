@@ -9,7 +9,7 @@ import SwiftUI
 
 extension HomeActiveMatch {
     var neonCardAccentColor: Color {
-        if isPendingFinalization {
+        if isEffectivelyOverForHomeUX {
             return FitUpColors.Neon.yellow.opacity(0.85)
         }
         return matchStatusColor

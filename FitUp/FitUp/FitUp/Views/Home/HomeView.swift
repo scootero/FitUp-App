@@ -36,12 +36,10 @@ struct HomeView: View {
     @State private var handoffOpponentRevealKickoff = UUID()
     @State private var handoffKeepOpponentBlackedOut = false
     @State private var handoffFinishTask: Task<Void, Never>?
-    @State private var homeIntroCollapsed = false
-    @State private var homeIntroOpacity: Double = 1
-    @State private var homeIntroDismissTask: Task<Void, Never>?
 
-    private var showsHomeIntro: Bool {
-        sessionStore.showHomeIntroTip && !homeIntroCollapsed
+    /// App description card above the empty hero when there is no live featured step battle.
+    private var showsPersistentHomeIntroTip: Bool {
+        viewModel.featuredHomeStepMatch == nil && viewModel.heroOpponentHandoff == nil
     }
 
     var body: some View {
@@ -50,6 +48,10 @@ struct HomeView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
+                    if showsPersistentHomeIntroTip {
+                        persistentHomeIntroTipCard
+                    }
+
                     if viewModel.isHeroLoading {
                         skeletonBlock(height: homeEnergyBeamHeroSkeletonHeight)
                             .homeLiquidGlassCard(.base)
@@ -123,10 +125,6 @@ struct HomeView: View {
                         } else {
                             pendingAndSearchingSection
 
-                            if !viewModel.hasAnyContent, !viewModel.isLoading {
-                                zeroState
-                            }
-
                             HealthPastMatchesCard(
                                 matches: viewModel.completedMatches,
                                 isExpanded: isPastMatchesExpanded,
@@ -188,18 +186,6 @@ struct HomeView: View {
             }
 
             friendNotificationTopStack
-
-            if showsHomeIntro {
-                VStack {
-                    HomeIntroTipView()
-                        .opacity(homeIntroOpacity)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                    Spacer(minLength: 0)
-                }
-                .allowsHitTesting(false)
-                .zIndex(3)
-            }
         }
         .transaction { transaction in
             transaction.disablesAnimations = true
@@ -223,10 +209,6 @@ struct HomeView: View {
             viewModel.resumeHomeLivePipeline(profile: profile, sessionStore: sessionStore)
             clearSearchingFlagIfHasMatch()
             viewModel.syncHeroMetricWithActiveMatches()
-            scheduleHomeIntroAutoDismiss()
-        }
-        .onDisappear {
-            homeIntroDismissTask?.cancel()
         }
         .onChange(of: sessionStore.homeSnapshotRefreshToken) { _, _ in
             Task { await viewModel.reload(force: true) }
@@ -565,50 +547,16 @@ struct HomeView: View {
         }
     }
 
-    private func scheduleHomeIntroAutoDismiss() {
-        guard sessionStore.showHomeIntroTip, !homeIntroCollapsed else { return }
-        homeIntroDismissTask?.cancel()
-        homeIntroDismissTask = Task {
-            let holdSeconds: Double = 3
-            let fadeSeconds: Double = reduceMotion ? 0.15 : 2
-            try? await Task.sleep(for: .seconds(holdSeconds))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                withAnimation(.linear(duration: fadeSeconds)) {
-                    homeIntroOpacity = 0
-                }
-            }
-            try? await Task.sleep(for: .seconds(fadeSeconds))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                homeIntroCollapsed = true
-                sessionStore.dismissHomeIntroTip()
-            }
-        }
+    private var persistentHomeIntroTipCard: some View {
+        HomeIntroTipView()
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .homeLiquidGlassCard(.base)
+            .padding(.horizontal, homeHeroHorizontalPadding)
     }
 
     private var heroSortedStepMatches: [HomeActiveMatch] {
         viewModel.sortedActiveMatchesForHome
-    }
-
-    private var zeroState: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("No battles yet")
-                .font(FitUpFont.display(24, weight: .black))
-            .fitUpGlobalTitleStyle(weight: .black, tracking: 0.25)
-            Text("FitUp battles are 1v1—you need another player. Start a search or challenge someone you know.")
-                .font(FitUpFont.body(15, weight: .medium))
-                .foregroundStyle(HomePageStyle.muted)
-            Text("Tip: New Battle → pick an opponent to send a direct challenge.")
-                .font(FitUpFont.body(13, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.tertiary)
-            Button("New Battle") {
-                onOpenChallenge(nil)
-            }
-            .solidButton(color: FitUpColors.Neon.cyan)
-        }
-        .padding(20)
-        .homeLiquidGlassCard(.base)
     }
 
     private var loadingSkeleton: some View {
