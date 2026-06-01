@@ -93,4 +93,69 @@ extension View {
     func matchDetailsHeroCardChrome(accent: Color, variant: GlassCardVariant) -> some View {
         modifier(MatchDetailsHeroCardChrome(accent: accent, variant: variant))
     }
+
+    func matchDetailsSecondaryCard(leadingAccent: Color, trailingAccent: Color? = nil) -> some View {
+        modifier(MatchDetailsSecondaryCardChrome(leadingAccent: leadingAccent, trailingAccent: trailingAccent))
+    }
+}
+
+struct MatchDetailsSecondaryCardChrome: ViewModifier {
+    let leadingAccent: Color
+    let trailingAccent: Color?
+
+    func body(content: Content) -> some View {
+        content
+            .padding(14)
+            .background {
+                ZStack {
+                    RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                        .fill(.ultraThinMaterial)
+
+                    RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.08),
+                                    Color.white.opacity(0.03),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    RadialGradient(
+                        colors: [
+                            leadingAccent.opacity(0.12),
+                            trailingAccent?.opacity(0.08) ?? leadingAccent.opacity(0.04),
+                            Color.clear,
+                        ],
+                        center: .topLeading,
+                        startRadius: 6,
+                        endRadius: 180
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous))
+
+                    MatchDetailsHeroTextureOverlay()
+                        .opacity(0.45)
+                        .clipShape(RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous))
+                        .blendMode(.plusLighter)
+
+                    RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    leadingAccent.opacity(0.32),
+                                    Color.white.opacity(0.14),
+                                    (trailingAccent ?? leadingAccent).opacity(0.24),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+                .shadow(color: leadingAccent.opacity(0.08), radius: 14, x: 0, y: 8)
+                .shadow(color: Color.black.opacity(0.28), radius: 10, x: 0, y: 5)
+            }
+    }
 }

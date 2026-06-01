@@ -61,6 +61,12 @@ enum FitUpRadius {
     static let pill: CGFloat = 999
 }
 
+/// Shared inset for floating bottom chrome (tab bar, challenge flow dock).
+enum FitUpLayout {
+    static let floatingBottomBarHorizontalPadding: CGFloat = 12
+    static let floatingBottomBarBottomPadding: CGFloat = 2
+}
+
 // MARK: - Fonts (T.font → SF)
 
 enum FitUpFont {
@@ -174,6 +180,26 @@ struct GlassCardModifier: ViewModifier {
                     }
                     .shadow(color: variant.shadowColor, radius: 16, x: 0, y: 8)
                     .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
+            }
+    }
+}
+
+/// Frosted system material for the Home intro tip — no stacked gray gradients.
+struct HomeIntroTipGlassCardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                    .fill(.regularMaterial)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                            .fill(Color.black.opacity(0.36))
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+                    }
+                    .shadow(color: Color.black.opacity(0.28), radius: 10, x: 0, y: 5)
             }
     }
 }
@@ -311,6 +337,10 @@ extension View {
 
     func homeLiquidGlassCard(_ variant: GlassCardVariant) -> some View {
         modifier(HomeLiquidGlassCardModifier(variant: variant))
+    }
+
+    func homeIntroTipGlassCard() -> some View {
+        modifier(HomeIntroTipGlassCardModifier())
     }
 }
 

@@ -83,7 +83,7 @@ actor MetricSyncCoordinator {
         if let wake = lastObserverWakeAt {
             AppLogger.log(
                 category: "healthkit_sync",
-                level: .info,
+                level: .debug,
                 message: "HealthKit observer fired (steps or active energy changed)",
                 userId: profile.id,
                 metadata: [
@@ -114,7 +114,7 @@ actor MetricSyncCoordinator {
         case .skipUnchanged:
             AppLogger.log(
                 category: "healthkit_sync",
-                level: .info,
+                level: .debug,
                 message: "metric sync skipped (observer unchanged)",
                 userId: profile.id,
                 metadata: [
@@ -127,7 +127,7 @@ actor MetricSyncCoordinator {
         case let .skipDebounce(remainingSeconds):
             AppLogger.log(
                 category: "healthkit_sync",
-                level: .info,
+                level: .debug,
                 message: "metric sync skipped (observer debounce)",
                 userId: profile.id,
                 metadata: [
@@ -139,7 +139,7 @@ actor MetricSyncCoordinator {
         case let .skipInsufficientStepIncrease(delta, lastSynced):
             AppLogger.log(
                 category: "healthkit_sync",
-                level: .info,
+                level: .debug,
                 message: "metric sync skipped (observer step delta < 100)",
                 userId: profile.id,
                 metadata: [
@@ -170,7 +170,7 @@ actor MetricSyncCoordinator {
         let syncStarted = Date()
         AppLogger.log(
             category: "healthkit_sync",
-            level: .info,
+            level: .debug,
             message: "metric sync started",
             userId: profile.id,
             metadata: [
@@ -331,7 +331,7 @@ actor MetricSyncCoordinator {
                     }
                     AppLogger.log(
                         category: "healthkit_sync",
-                        level: .info,
+                        level: .debug,
                         message: result.wasUpdated ? "metric snapshot updated (same value)" : "metric snapshot inserted",
                         userId: profile.id,
                         metadata: [
@@ -392,7 +392,7 @@ actor MetricSyncCoordinator {
         let durationMs = Int(syncStarted.timeIntervalSinceNow * -1000)
         AppLogger.log(
             category: "healthkit_sync",
-            level: .info,
+            level: .debug,
             message: "metric sync finished",
             userId: profile.id,
             metadata: [
@@ -457,7 +457,7 @@ actor MetricSyncCoordinator {
         case .skipUnchanged:
             AppLogger.log(
                 category: "healthkit_sync",
-                level: .info,
+                level: .debug,
                 message: "intraday step tick skipped (unchanged vs last upload)",
                 userId: profile.id,
                 metadata: baseMeta
@@ -466,7 +466,7 @@ actor MetricSyncCoordinator {
         case let .skipDebounce(remainingSeconds):
             AppLogger.log(
                 category: "healthkit_sync",
-                level: .info,
+                level: .debug,
                 message: "intraday step tick skipped (debounce)",
                 userId: profile.id,
                 metadata: baseMeta.merging([
@@ -477,7 +477,7 @@ actor MetricSyncCoordinator {
         case let .skipInsufficientIncrease(delta, lastUploaded):
             AppLogger.log(
                 category: "healthkit_sync",
-                level: .info,
+                level: .debug,
                 message: "intraday step tick skipped (delta < 100)",
                 userId: profile.id,
                 metadata: baseMeta.merging([
@@ -502,7 +502,7 @@ actor MetricSyncCoordinator {
                 )
                 AppLogger.log(
                     category: "healthkit_sync",
-                    level: .info,
+                    level: .debug,
                     message: "intraday step tick appended",
                     userId: profile.id,
                     metadata: baseMeta.merging([

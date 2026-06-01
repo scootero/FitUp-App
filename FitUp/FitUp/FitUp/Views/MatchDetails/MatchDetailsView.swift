@@ -607,9 +607,11 @@ struct MatchDetailsView: View {
         if dm.snapshot.state == .active, !dm.isEffectivelyOver, !viewModel.intradaySeries.isEmpty {
             IntradayCumulativeChartView(
                 points: viewModel.intradaySeries,
+                opponentPoints: viewModel.opponentIntradaySeries,
                 opponentTotal: dm.theirToday,
                 isCalories: dm.metricIsCalories,
-                opponentColor: color(from: dm.snapshot.opponent.colorHex)
+                opponentColor: color(from: dm.snapshot.opponent.colorHex),
+                opponentName: dm.snapshot.opponent.displayName
             )
         }
         dayByDayChart(dm: dm)
@@ -1111,6 +1113,7 @@ struct MatchDetailsView: View {
     }
 
     private func balancedTodayBattleRow(dm: MatchDetailDisplayModel) -> some View {
+        let opponentTint = color(from: dm.snapshot.opponent.colorHex)
         let myB = HomeActiveMatch.battleScore(
             actualSteps: dm.myTodayDisplay,
             myBaseline: dm.snapshot.myBaselineSteps,
@@ -1146,10 +1149,10 @@ struct MatchDetailsView: View {
                         .foregroundStyle(FitUpColors.Neon.cyan)
                     Text("Actual Steps")
                         .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .foregroundStyle(FitUpColors.Text.secondary)
                     Text("\(dm.myTodayDisplay)")
                         .font(FitUpFont.display(18, weight: .heavy))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.Text.primary)
                     Text(BattlePhaseCopy.stepScoreCaption)
                         .font(FitUpFont.mono(9, weight: .bold))
                         .foregroundStyle(FitUpColors.Text.tertiary)
@@ -1158,16 +1161,16 @@ struct MatchDetailsView: View {
                         .foregroundStyle(FitUpColors.Neon.cyan)
                     Text("Daily Avg")
                         .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .foregroundStyle(FitUpColors.Text.secondary)
                     Text(formatBaselineSteps(dm.snapshot.myBaselineSteps))
                         .font(FitUpFont.display(16, weight: .heavy))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.Text.primary)
                     Text("Balance")
                         .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .foregroundStyle(FitUpColors.Text.secondary)
                     Text(myBalance)
                         .font(FitUpFont.display(16, weight: .heavy))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.Text.primary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -1182,32 +1185,32 @@ struct MatchDetailsView: View {
                     }
                     Text(dm.snapshot.opponent.displayName)
                         .font(FitUpFont.body(11, weight: .heavy))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(opponentTint)
                         .lineLimit(1)
                     Text("Actual Steps")
                         .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .foregroundStyle(FitUpColors.Text.secondary)
                     Text("\(dm.theirToday)")
                         .font(FitUpFont.display(18, weight: .heavy))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.Text.primary)
                     Text(BattlePhaseCopy.stepScoreCaption)
                         .font(FitUpFont.mono(9, weight: .bold))
                         .foregroundStyle(FitUpColors.Text.tertiary)
                     Text("\(theirB)")
                         .font(FitUpFont.display(28, weight: .black))
-                        .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.92))
+                        .foregroundStyle(opponentTint.opacity(0.95))
                     Text("Daily Avg")
                         .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .foregroundStyle(FitUpColors.Text.secondary)
                     Text(formatBaselineSteps(dm.snapshot.theirBaselineSteps))
                         .font(FitUpFont.display(16, weight: .heavy))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.Text.primary)
                     Text("Balance")
                         .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .foregroundStyle(FitUpColors.Text.secondary)
                     Text(theirBalance)
                         .font(FitUpFont.display(16, weight: .heavy))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.Text.primary)
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
@@ -1216,18 +1219,11 @@ struct MatchDetailsView: View {
                 .font(FitUpFont.body(12, weight: .bold))
                 .foregroundStyle(deltaTint)
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
+        .matchDetailsSecondaryCard(leadingAccent: FitUpColors.Neon.cyan, trailingAccent: opponentTint)
     }
 
     private func rawOrCalorieTodayBattleRow(dm: MatchDetailDisplayModel) -> some View {
+        let opponentTint = color(from: dm.snapshot.opponent.colorHex)
         let deltaTint = dm.todayDelta >= 0 ? FitUpColors.Neon.cyan : FitUpColors.Neon.red
         let showRawStepsMeta = !dm.metricIsCalories && dm.snapshot.metricType == "steps" && dm.snapshot.scoringMode == "raw"
         return HStack(alignment: .top) {
@@ -1235,7 +1231,7 @@ struct MatchDetailsView: View {
                 Text(dm.metricIsCalories ? "ACTIVE CALORIES" : "STEPS TODAY")
                     .font(FitUpFont.body(10, weight: .heavy))
                     .tracking(1.5)
-                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .foregroundStyle(FitUpColors.Text.secondary)
 
                 Text("\(dm.myTodayDisplay)")
                     .font(FitUpFont.display(26, weight: .heavy))
@@ -1276,10 +1272,10 @@ struct MatchDetailsView: View {
                 }
                 Text("\(dm.theirToday)")
                     .font(FitUpFont.display(20, weight: .heavy))
-                    .foregroundStyle(FitUpColors.Neon.orange)
+                    .foregroundStyle(opponentTint)
                 Text(dm.snapshot.opponent.displayName)
                     .font(FitUpFont.body(11, weight: .semibold))
-                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .foregroundStyle(opponentTint.opacity(0.92))
                     .lineLimit(1)
                 if showRawStepsMeta {
                     Text("Daily Avg")
@@ -1291,15 +1287,7 @@ struct MatchDetailsView: View {
                 }
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
+        .matchDetailsSecondaryCard(leadingAccent: FitUpColors.Neon.cyan, trailingAccent: opponentTint)
     }
 
     private func alertBanner(dm: MatchDetailDisplayModel) -> some View {
@@ -1507,7 +1495,7 @@ struct MatchDetailsView: View {
             Text("DAY-BY-DAY BREAKDOWN")
                 .font(FitUpFont.body(10, weight: .heavy))
                 .tracking(2)
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .foregroundStyle(FitUpColors.Text.secondary)
 
             if let dayNum = activeBreakdownDayNumber,
                let row = dm.mergedDayRows.first(where: { $0.dayNumber == dayNum }) {
@@ -1585,80 +1573,80 @@ struct MatchDetailsView: View {
                         .frame(width: 10, height: 10)
                     Text(dm.snapshot.opponent.displayName)
                         .font(FitUpFont.body(11, weight: .semibold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(opponentTint.opacity(0.92))
                         .lineLimit(1)
                 }
             }
             .padding(.top, 10)
             .overlay(alignment: .top) {
                 Rectangle()
-                    .fill(Color.white.opacity(0.06))
+                    .fill(Color.white.opacity(0.1))
                     .frame(height: 1)
                     .offset(y: -10)
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
+        .matchDetailsSecondaryCard(leadingAccent: FitUpColors.Neon.cyan, trailingAccent: opponentTint)
     }
 
     private func matchStatsSection(dm: MatchDetailDisplayModel) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let opponentTint = color(from: dm.snapshot.opponent.colorHex)
+        return VStack(alignment: .leading, spacing: 10) {
             Text("MATCH STATS")
                 .font(FitUpFont.body(11, weight: .heavy))
                 .tracking(1.5)
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .foregroundStyle(FitUpColors.Text.secondary)
                 .padding(.horizontal, 4)
 
             HStack(spacing: 8) {
                 statHeaderPill(text: "You", tint: FitUpColors.Neon.cyan)
-                statHeaderPill(text: "\(dm.opponentFirstName)'s", tint: FitUpColors.Neon.orange)
+                statHeaderPill(text: "\(dm.opponentFirstName)'s", tint: opponentTint)
             }
 
             if dm.snapshot.isBalancedStepsBattle {
                 statStatRow(
                     title: "Daily Avg",
                     left: formatBaselineSteps(dm.snapshot.myBaselineSteps),
-                    right: formatBaselineSteps(dm.snapshot.theirBaselineSteps)
+                    right: formatBaselineSteps(dm.snapshot.theirBaselineSteps),
+                    opponentTint: opponentTint
                 )
                 statStatRow(
                     title: "Series daily avg",
                     left: formatStatNumber(dm.dailyAverageMine, calories: false),
-                    right: formatStatNumber(dm.dailyAverageTheirs, calories: false)
+                    right: formatStatNumber(dm.dailyAverageTheirs, calories: false),
+                    opponentTint: opponentTint
                 )
             } else {
                 statStatRow(
                     title: "Daily Avg",
                     left: formatStatNumber(dm.dailyAverageMine, calories: dm.metricIsCalories),
-                    right: formatStatNumber(dm.dailyAverageTheirs, calories: dm.metricIsCalories)
+                    right: formatStatNumber(dm.dailyAverageTheirs, calories: dm.metricIsCalories),
+                    opponentTint: opponentTint
                 )
                 if dm.snapshot.metricType == "steps", let diff = dm.snapshot.rawDifficultyPillLabel {
-                    statStatRow(title: "Difficulty", left: diff, right: diff)
+                    statStatRow(title: "Difficulty", left: diff, right: diff, opponentTint: opponentTint)
                 }
             }
 
             statStatRow(
                 title: "Best Day",
                 left: "\(dm.bestDayMine)",
-                right: "\(dm.bestDayTheirs)"
+                right: "\(dm.bestDayTheirs)",
+                opponentTint: opponentTint
             )
             statStatRow(
                 title: dm.metricIsCalories ? "Total Calories" : "Total Steps",
                 left: "\(dm.totalMine)",
-                right: "\(dm.totalTheirs)"
+                right: "\(dm.totalTheirs)",
+                opponentTint: opponentTint
             )
             statStatRow(
                 title: "Days Won · Win %",
                 left: "\(dm.daysWonFractionLabel) · \(Int(dm.winRateMinePercent.rounded()))%",
-                right: "\(MatchDurationCopy.daysWonFraction(won: dm.snapshot.theirScore, totalDays: dm.snapshot.durationDays)) · \(Int(dm.winRateTheirsPercent.rounded()))%"
+                right: "\(MatchDurationCopy.daysWonFraction(won: dm.snapshot.theirScore, totalDays: dm.snapshot.durationDays)) · \(Int(dm.winRateTheirsPercent.rounded()))%",
+                opponentTint: opponentTint
             )
         }
+        .matchDetailsSecondaryCard(leadingAccent: FitUpColors.Neon.cyan, trailingAccent: opponentTint)
     }
 
     private func formatBaselineSteps(_ baseline: Double?) -> String {
@@ -1683,11 +1671,11 @@ struct MatchDetailsView: View {
             )
     }
 
-    private func statStatRow(title: String, left: String, right: String) -> some View {
+    private func statStatRow(title: String, left: String, right: String, opponentTint: Color) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title.uppercased())
                 .font(FitUpFont.body(9, weight: .heavy))
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .foregroundStyle(FitUpColors.Text.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 8) {
                 Text(left)
@@ -1695,26 +1683,23 @@ struct MatchDetailsView: View {
                     .foregroundStyle(FitUpColors.Neon.cyan)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(12)
-                    .background(statCellBackground(cyan: true))
+                    .background(statCellBackground(tint: FitUpColors.Neon.cyan))
                 Text(right)
                     .font(FitUpFont.display(22, weight: .heavy))
-                    .foregroundStyle(FitUpColors.Neon.orange)
+                    .foregroundStyle(opponentTint)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(12)
-                    .background(statCellBackground(cyan: false))
+                    .background(statCellBackground(tint: opponentTint))
             }
         }
     }
 
-    private func statCellBackground(cyan: Bool) -> some View {
+    private func statCellBackground(tint: Color) -> some View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(cyan ? FitUpColors.Neon.cyan.opacity(0.04) : FitUpColors.Neon.orange.opacity(0.04))
+            .fill(tint.opacity(0.08))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(
-                        cyan ? FitUpColors.Neon.cyan.opacity(0.14) : FitUpColors.Neon.orange.opacity(0.14),
-                        lineWidth: 1
-                    )
+                    .strokeBorder(tint.opacity(0.22), lineWidth: 1)
             )
     }
 
@@ -1727,11 +1712,12 @@ struct MatchDetailsView: View {
 
     private func headToHeadCard(dm: MatchDetailDisplayModel) -> some View {
         let fr = dm.headToHeadBarFractions
+        let opponentTint = color(from: dm.snapshot.opponent.colorHex)
         return VStack(alignment: .leading, spacing: 12) {
             Text("ALL-TIME VS \(dm.snapshot.opponent.displayName.uppercased())")
                 .font(FitUpFont.body(10, weight: .heavy))
                 .tracking(1.5)
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .foregroundStyle(FitUpColors.Text.secondary)
 
             if let h = dm.headToHead {
                 HStack {
@@ -1756,7 +1742,7 @@ struct MatchDetailsView: View {
                     VStack {
                         Text("\(h.opponentWins)")
                             .font(FitUpFont.display(32, weight: .heavy))
-                            .foregroundStyle(FitUpColors.Neon.orange)
+                            .foregroundStyle(opponentTint)
                         Text("Them")
                             .font(FitUpFont.body(11, weight: .semibold))
                             .foregroundStyle(FitUpColors.Text.secondary)
@@ -1773,7 +1759,7 @@ struct MatchDetailsView: View {
                             .fill(Color.white.opacity(0.12))
                             .frame(width: geo.size.width * fr.tie)
                         Rectangle()
-                            .fill(FitUpColors.Neon.orange.opacity(0.85))
+                            .fill(opponentTint.opacity(0.85))
                             .frame(width: geo.size.width * fr.theirs)
                     }
                 }
@@ -1785,16 +1771,8 @@ struct MatchDetailsView: View {
                     .foregroundStyle(FitUpColors.Text.tertiary)
             }
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
+        .matchDetailsSecondaryCard(leadingAccent: FitUpColors.Neon.cyan, trailingAccent: opponentTint)
     }
 
     private func actionButtons(dm: MatchDetailDisplayModel) -> some View {

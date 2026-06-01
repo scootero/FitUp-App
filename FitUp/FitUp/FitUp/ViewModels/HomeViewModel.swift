@@ -101,6 +101,8 @@ final class HomeViewModel: ObservableObject {
     /// Normalized 0…1 intraday samples for the energy hero sparkline; `nil` uses mock curves in `HomeEnergyBeamHeroCard`.
     @Published private(set) var heroSparklineUserSeries: [CGFloat]?
     @Published private(set) var heroSparklineOpponentSeries: [CGFloat]?
+    /// Time-stamped intraday samples for the hero day timeline (scrub + accurate *Now placement).
+    @Published private(set) var heroSparklineDomain: HomeHeroSparklineDomain?
     /// Last time HealthKit today’s **steps** read succeeded for the hero patch (Slice 6).
     @Published private(set) var heroViewerHealthKitStepsReadAt: Date?
     /// Latest opponent intraday tick `recorded_at` from the last successful sparkline fetch (Slice 6).
@@ -211,6 +213,7 @@ final class HomeViewModel: ObservableObject {
     private var lastHomeProfileLocalDate: String?
     private var completedMatchesListTask: Task<Void, Never>?
     private var lastHomeLayoutLogSignature: String?
+    private var lastLoggedSnapshotSummary: String?
 
     var battleSummaryStats: BattleSummaryStats {
         let liveStepBattles = activeStepMatchesForHomeUX.filter { !$0.isEffectivelyOverForHomeUX }
@@ -420,6 +423,7 @@ final class HomeViewModel: ObservableObject {
             heroHealthKitPatchCompletedValue = nil
             heroSparklineUserSeries = nil
             heroSparklineOpponentSeries = nil
+            heroSparklineDomain = nil
             heroViewerHealthKitStepsReadAt = nil
             heroOpponentIntradayLatestTickAt = nil
             heroSparklineLoadGeneration &+= 1
@@ -959,6 +963,7 @@ final class HomeViewModel: ObservableObject {
             heroSparklineLoadGeneration &+= 1
             heroSparklineUserSeries = nil
             heroSparklineOpponentSeries = nil
+            heroSparklineDomain = nil
             heroOpponentIntradayLatestTickAt = nil
             return
         }
@@ -966,6 +971,7 @@ final class HomeViewModel: ObservableObject {
             heroSparklineLoadGeneration &+= 1
             heroSparklineUserSeries = nil
             heroSparklineOpponentSeries = nil
+            heroSparklineDomain = nil
             heroOpponentIntradayLatestTickAt = nil
             return
         }
@@ -986,6 +992,7 @@ final class HomeViewModel: ObservableObject {
             guard self.featuredHomeStepMatch?.id == matchId else { return }
             self.heroSparklineUserSeries = result.userSeries
             self.heroSparklineOpponentSeries = result.opponentSeries
+            self.heroSparklineDomain = result.domain
             self.heroOpponentIntradayLatestTickAt = result.opponentLatestTickRecordedAt
         }
     }
@@ -1070,7 +1077,7 @@ final class HomeViewModel: ObservableObject {
         if heroHealthKitValueByMetric[metricType] == value {
             AppLogger.log(
                 category: "home_perf",
-                level: .info,
+                level: .debug,
                 message: "hk_patch_skipped",
                 userId: userId,
                 metadata: [
@@ -1097,7 +1104,7 @@ final class HomeViewModel: ObservableObject {
         }
         AppLogger.log(
             category: "home_perf",
-            level: .info,
+            level: .debug,
             message: "hk_patch",
             userId: userId,
             metadata: [
@@ -1187,6 +1194,7 @@ final class HomeViewModel: ObservableObject {
         heroHealthKitValueByMetric.removeAll()
         heroSparklineUserSeries = nil
         heroSparklineOpponentSeries = nil
+        heroSparklineDomain = nil
         heroViewerHealthKitStepsReadAt = nil
         heroOpponentIntradayLatestTickAt = nil
         heroSparklineLoadGeneration &+= 1
@@ -1394,7 +1402,7 @@ final class HomeViewModel: ObservableObject {
         }
         AppLogger.log(
             category: "home_snapshot",
-            level: .info,
+            level: .debug,
             message: "home_snapshot_loaded",
             userId: profileId,
             metadata: [
@@ -1413,9 +1421,15 @@ final class HomeViewModel: ObservableObject {
     }
 
     private func logSnapshotSaved(profileId: UUID, localDate: String) {
+        let summary = snapshotCacheStore.makeCompactSummary(
+            activeMatches: activeMatches,
+            heroMetric: heroMetric
+        )
+        guard summary != lastLoggedSnapshotSummary else { return }
+        lastLoggedSnapshotSummary = summary
         AppLogger.log(
             category: "home_snapshot",
-            level: .info,
+            level: .debug,
             message: "home_snapshot_saved",
             userId: profileId,
             metadata: [
@@ -1423,10 +1437,7 @@ final class HomeViewModel: ObservableObject {
                 "local_date": localDate,
                 "active_count": "\(activeMatches.count)",
                 "hero_metric": heroMetric.rawValue,
-                "summary": snapshotCacheStore.makeCompactSummary(
-                    activeMatches: activeMatches,
-                    heroMetric: heroMetric
-                ),
+                "summary": summary,
             ]
         )
     }
@@ -1434,7 +1445,7 @@ final class HomeViewModel: ObservableObject {
     private func logHomeReturnNoReload(profileId: UUID) {
         AppLogger.log(
             category: "home_snapshot",
-            level: .info,
+            level: .debug,
             message: "home_return_no_reload",
             userId: profileId,
             metadata: [

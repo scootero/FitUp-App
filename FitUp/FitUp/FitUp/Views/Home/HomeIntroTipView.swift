@@ -24,12 +24,17 @@ struct HomeIntroTipView: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Self.lines, id: \.self) { line in
                 Text(line)
-                    .font(FitUpFont.body(13, weight: .medium))
+                    .font(FitUpFont.body(13, weight: .semibold))
                     .foregroundStyle(Self.fitGradient)
+                    .shadow(color: Color.black.opacity(0.35), radius: 1, y: 1)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .homeIntroTipGlassCard()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Self.lines.joined(separator: " "))
     }

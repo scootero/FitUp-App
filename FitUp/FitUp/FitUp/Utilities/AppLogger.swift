@@ -62,6 +62,23 @@ enum AppLogger {
 
     /// Per-value cap so huge fields (e.g. `hk_snapshot`) don’t flood the Xcode console.
     private static let maxConsoleMetadataValueLength = 800
+    /// Remote inserts use a tighter cap to keep `app_logs` rows small.
+    private static let maxRemoteMetadataValueLength = 400
+
+    private static func sanitizedRemoteMetadata(_ metadata: [String: String]?) -> [String: String]? {
+        guard let metadata, !metadata.isEmpty else { return metadata }
+        var result: [String: String] = [:]
+        result.reserveCapacity(metadata.count)
+        for pair in metadata.sorted(by: { $0.key < $1.key }) {
+            let value = pair.value
+            if value.count > maxRemoteMetadataValueLength {
+                result[pair.key] = String(value.prefix(maxRemoteMetadataValueLength)) + "…(truncated)"
+            } else {
+                result[pair.key] = value
+            }
+        }
+        return result
+    }
 
     /// Fire-and-forget log line (never throws to callers).
     static func log(
@@ -106,7 +123,7 @@ enum AppLogger {
             category: category,
             level: level.rawValue,
             message: message,
-            metadata: metadata
+            metadata: sanitizedRemoteMetadata(metadata)
         )
         do {
             try await client.from("app_logs").insert(row).execute()

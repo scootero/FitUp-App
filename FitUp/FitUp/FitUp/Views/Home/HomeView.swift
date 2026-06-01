@@ -42,6 +42,18 @@ struct HomeView: View {
         viewModel.featuredHomeStepMatch == nil && viewModel.heroOpponentHandoff == nil
     }
 
+    private var activeBattleRowUserProfile: ActiveBattleRowUserProfile {
+        let p = profile ?? sessionStore.currentProfile
+        let name = p?.displayName.trimmingCharacters(in: .whitespacesAndNewlines) ?? "You"
+        let initials = p?.initials.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Y"
+        let hex = p.map { ProfileAccentColor.hex(for: $0.id) } ?? ProfileAccentColor.hex(for: UUID())
+        return ActiveBattleRowUserProfile(
+            displayName: name.isEmpty ? "You" : name,
+            initials: initials.isEmpty ? "Y" : initials,
+            colorHex: hex
+        )
+    }
+
     var body: some View {
         ZStack {
             StaticPageGradientBackgroundView()
@@ -96,6 +108,7 @@ struct HomeView: View {
 
                         ActiveBattlesNeonSection(
                             matches: viewModel.isInitialLoading ? [] : viewModel.sortedActiveMatchesForHome,
+                            userProfile: activeBattleRowUserProfile,
                             summary: viewModel.battleSummaryStats,
                             summaryLine: viewModel.heroSummaryText,
                             leaderboardRankDisplay: viewModel.globalLeaderboardRankDisplay,
@@ -201,7 +214,7 @@ struct HomeView: View {
                 homeFirstRenderAt = Date()
                 AppLogger.log(
                     category: "home_perf",
-                    level: .info,
+                    level: .debug,
                     message: "home_first_render",
                     userId: profile?.id
                 )
@@ -229,7 +242,7 @@ struct HomeView: View {
             }
             AppLogger.log(
                 category: "home_perf",
-                level: .info,
+                level: .debug,
                 message: "hero_first_render",
                 userId: profile?.id,
                 metadata: ["elapsed_ms_from_first_render": "\(elapsedMs)"]
@@ -246,7 +259,7 @@ struct HomeView: View {
             }
             AppLogger.log(
                 category: "home_perf",
-                level: .info,
+                level: .debug,
                 message: "home_data_loaded",
                 userId: profile?.id,
                 metadata: ["elapsed_ms_from_first_render": "\(elapsedMs)"]
@@ -298,6 +311,7 @@ struct HomeView: View {
             profile: profile,
             sparklineUserValues: viewModel.heroSparklineUserSeries,
             sparklineOpponentValues: viewModel.heroSparklineOpponentSeries,
+            sparklineDomain: viewModel.heroSparklineDomain,
             viewerIntradayHealthKitSyncedAt: viewModel.heroViewerHealthKitStepsReadAt,
             opponentIntradayLatestTickAt: viewModel.heroOpponentIntradayLatestTickAt,
             handoffRevealActive: handoffRevealActive,
@@ -549,9 +563,6 @@ struct HomeView: View {
 
     private var persistentHomeIntroTipCard: some View {
         HomeIntroTipView()
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .homeLiquidGlassCard(.base)
             .padding(.horizontal, homeHeroHorizontalPadding)
     }
 

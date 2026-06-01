@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ActiveBattlesNeonSection: View {
     let matches: [HomeActiveMatch]
+    let userProfile: ActiveBattleRowUserProfile
     let summary: HomeViewModel.BattleSummaryStats
     let summaryLine: String?
     let leaderboardRankDisplay: String
@@ -135,7 +136,7 @@ struct ActiveBattlesNeonSection: View {
                 Button {
                     onOpenMatch(match)
                 } label: {
-                    ActiveBattleRowView(match: match, compact: true)
+                    ActiveBattleRowView(match: match, userProfile: userProfile, compact: true)
                 }
                 .buttonStyle(.plain)
             }

@@ -75,6 +75,8 @@ struct HomeEnergyBeamHeroCard: View {
     let sparklineUserValues: [CGFloat]?
     /// When non-nil, replaces mock intraday sparkline for the opponent.
     let sparklineOpponentValues: [CGFloat]?
+    /// Time-stamped intraday domain for accurate day timeline rendering and scrubbing.
+    let sparklineDomain: HomeHeroSparklineDomain?
     /// Last successful HealthKit steps read (`HomeViewModel.heroViewerHealthKitStepsReadAt`).
     let viewerIntradayHealthKitSyncedAt: Date?
     /// Latest opponent tick `recorded_at` from sparkline fetch (`HomeViewModel.heroOpponentIntradayLatestTickAt`).
@@ -168,6 +170,7 @@ struct HomeEnergyBeamHeroCard: View {
         profile: Profile?,
         sparklineUserValues: [CGFloat]? = nil,
         sparklineOpponentValues: [CGFloat]? = nil,
+        sparklineDomain: HomeHeroSparklineDomain? = nil,
         viewerIntradayHealthKitSyncedAt: Date? = nil,
         opponentIntradayLatestTickAt: Date? = nil,
         debugBeamLabEnabled: Bool = false,
@@ -185,6 +188,7 @@ struct HomeEnergyBeamHeroCard: View {
         self.profile = profile
         self.sparklineUserValues = sparklineUserValues
         self.sparklineOpponentValues = sparklineOpponentValues
+        self.sparklineDomain = sparklineDomain
         self.viewerIntradayHealthKitSyncedAt = viewerIntradayHealthKitSyncedAt
         self.opponentIntradayLatestTickAt = opponentIntradayLatestTickAt
         self.debugBeamLabEnabled = debugBeamLabEnabled
@@ -276,6 +280,7 @@ struct HomeEnergyBeamHeroCard: View {
                         unitLabel: Self.unitLabel(for: match),
                         sparklineUserValues: sparklineUserValues ?? EnergyBeamHeroMockSeries.cumulativeUser(wiggle: 0),
                         sparklineOpponentValues: sparklineOpponentValues ?? Self.neutralOpponentSparkline,
+                        sparklineDomain: resolvedSparklineDomain(for: match),
                         dayElapsedFraction: Self.dayProgressState(for: profile?.timezone).fraction,
                         dayProgressCaption: Self.dayProgressState(for: profile?.timezone).caption,
                         showMockTimelineDebugLabel: mockTimelineDebugFlag,
@@ -423,11 +428,19 @@ struct HomeEnergyBeamHeroCard: View {
     }
 
     private var mockTimelineDebugFlag: Bool {
-        #if DEBUG
-        true
-        #else
         false
-        #endif
+    }
+
+    private func resolvedSparklineDomain(for match: HomeActiveMatch) -> HomeHeroSparklineDomain {
+        if let sparklineDomain {
+            return sparklineDomain
+        }
+        let tz = profile?.timezone.flatMap(TimeZone.init(identifier:)) ?? .current
+        return EnergyBeamHeroMockSeries.mockDomain(
+            timeZone: tz,
+            myToday: match.myToday,
+            theirToday: match.theirToday
+        )
     }
 
     private var emptyHeroCard: some View {

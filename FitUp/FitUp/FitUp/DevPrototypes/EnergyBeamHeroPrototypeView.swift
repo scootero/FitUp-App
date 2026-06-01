@@ -238,6 +238,12 @@ struct EnergyBeamHeroPrototypeView: View {
                         unitLabel: EnergyBeamHeroPrototypeKnobs.previewUnitLabel,
                         sparklineUserValues: EnergyBeamHeroMockSeries.cumulativeUser(wiggle: chartWiggleUser),
                         sparklineOpponentValues: EnergyBeamHeroMockSeries.cumulativeOpponent(wiggle: chartWiggleOpp),
+                        sparklineDomain: EnergyBeamHeroMockSeries.mockDomain(
+                            myToday: userSteps,
+                            theirToday: opponentSteps,
+                            wiggleUser: chartWiggleUser,
+                            wiggleOpp: chartWiggleOpp
+                        ),
                         dayElapsedFraction: EnergyBeamHeroPrototypeKnobs.mockDayElapsedFraction,
                         dayProgressCaption: EnergyBeamHeroPrototypeKnobs.mockDayProgressCaption,
                         showMockTimelineDebugLabel: EnergyBeamHeroPrototypeKnobs.showMockTimelineDebugLabel,

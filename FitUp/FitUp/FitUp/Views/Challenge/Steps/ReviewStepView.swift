@@ -221,7 +221,21 @@ struct ReviewStepView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(.base)
+        .homeLiquidGlassCard(.pending)
+        .overlay {
+            RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            FitUpColors.Neon.cyan.opacity(0.4),
+                            FitUpColors.Neon.purple.opacity(0.28),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
     }
 
     private var opponentName: String {

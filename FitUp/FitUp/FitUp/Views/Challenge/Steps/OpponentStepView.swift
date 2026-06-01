@@ -63,7 +63,7 @@ struct OpponentStepView: View {
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 12)
-                            .glassCard(.base)
+                            .opponentPickerRowCard()
                         }
                         .buttonStyle(.plain)
                     }
@@ -85,8 +85,14 @@ struct OpponentStepView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .glassCard(.base)
-        .clipShape(Capsule(style: .continuous))
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.white.opacity(0.04))
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(FitUpColors.Neon.cyan.opacity(0.22), lineWidth: 1)
+                }
+        }
     }
 
     private var quickMatchCard: some View {
@@ -174,14 +180,18 @@ struct OpponentStepView: View {
     }
 
     private func statLine(for opponent: ChallengeOpponent) -> String {
-        let winsLosses: String
+        var parts: [String] = []
+        if let count = opponent.pastMatchCount, count > 0 {
+            parts.append("\(count) battle\(count == 1 ? "" : "s")")
+        }
         if let wins = opponent.wins, let losses = opponent.losses {
-            winsLosses = "\(wins)W · \(losses)L"
+            parts.append("\(wins)W · \(losses)L")
         } else {
-            winsLosses = "--W · --L"
+            parts.append("--W · --L")
         }
         let steps = opponent.todaySteps.map { "\($0.formatted()) today" } ?? "-- today"
-        return "\(winsLosses) · \(steps)"
+        parts.append(steps)
+        return parts.joined(separator: " · ")
     }
 
     private func color(from hex: String) -> Color {
@@ -189,6 +199,43 @@ struct OpponentStepView: View {
             return FitUpColors.Neon.blue
         }
         return Color(rgb: value)
+    }
+}
+
+private extension View {
+    func opponentPickerRowCard() -> some View {
+        background {
+            RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            FitUpColors.Neon.cyan.opacity(0.08),
+                            FitUpColors.Neon.purple.opacity(0.05),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.25)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    FitUpColors.Neon.cyan.opacity(0.35),
+                                    FitUpColors.Neon.purple.opacity(0.2),
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+        }
     }
 }
 

@@ -12,6 +12,8 @@ struct SearchingSection: View {
     let isCancellingSearchId: UUID?
     var onCancel: (UUID) -> Void
 
+    private static let metadataMuted = Color.white.opacity(0.78)
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: "Searching", actionTitle: "\(requests.count) live")
@@ -31,7 +33,7 @@ struct SearchingSection: View {
                                 SearchingElapsedLabel(createdAt: request.createdAt)
                             }
                                 .font(FitUpFont.body(12, weight: .medium))
-                                .foregroundStyle(HomePageStyle.muted)
+                                .foregroundStyle(Self.metadataMuted)
                         }
 
                         Spacer(minLength: 0)
@@ -41,13 +43,15 @@ struct SearchingSection: View {
                         }
                         .buttonStyle(.plain)
                         .font(FitUpFont.body(12, weight: .semibold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.92))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(
                             Capsule()
-                                .fill(Color.white.opacity(0.05))
-                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+                                .fill(FitUpColors.Neon.cyan.opacity(0.12))
+                                .overlay(
+                                    Capsule().strokeBorder(FitUpColors.Neon.cyan.opacity(0.35), lineWidth: 1)
+                                )
                         )
                         .disabled(request.isLocalPlaceholder || isCancellingSearchId == request.id)
                         .opacity((request.isLocalPlaceholder || isCancellingSearchId == request.id) ? 0.5 : 1)
@@ -55,11 +59,7 @@ struct SearchingSection: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                 }
-                .homeLiquidGlassCard(.base)
-                .overlay(
-                    RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                        .strokeBorder(FitUpColors.Neon.cyan.opacity(0.14), lineWidth: 1)
-                )
+                .neonSearchingCard()
             }
         }
     }
@@ -76,11 +76,11 @@ private struct SearchingPulseIcon: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(FitUpColors.Neon.cyan.opacity(0.12))
+                .fill(FitUpColors.Neon.purple.opacity(0.22))
                 .frame(width: 40, height: 40)
 
             Circle()
-                .strokeBorder(FitUpColors.Neon.cyan.opacity(0.45), lineWidth: 2)
+                .strokeBorder(FitUpColors.Neon.cyan.opacity(0.55), lineWidth: 2)
                 .frame(width: 20, height: 20)
                 .scaleEffect(animatePulse ? 1.35 : 0.72)
                 .opacity(animatePulse ? 0.08 : 0.7)
@@ -105,7 +105,7 @@ private struct SearchingElapsedLabel: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             Text(waitTimeText(at: context.date))
                 .font(FitUpFont.body(11, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.secondary)
+                .foregroundStyle(Color.white.opacity(0.78))
                 .monospacedDigit()
         }
     }

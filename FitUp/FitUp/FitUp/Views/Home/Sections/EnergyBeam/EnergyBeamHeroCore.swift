@@ -614,6 +614,43 @@ enum EnergyBeamHeroMockSeries {
         ]
         return baseO.map { min(1, max(0, $0 + wiggle)) }
     }
+
+    static func mockDomain(
+        timeZone: TimeZone = .current,
+        myToday: Int = 8_500,
+        theirToday: Int = 6_200,
+        wiggleUser: CGFloat = 0,
+        wiggleOpp: CGFloat = 0
+    ) -> HomeHeroSparklineDomain {
+        let userNorm = cumulativeUser(wiggle: wiggleUser)
+        let oppNorm = cumulativeOpponent(wiggle: wiggleOpp)
+        let n = max(userNorm.count, oppNorm.count)
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        let now = Date()
+        let dayStart = cal.startOfDay(for: now)
+        let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) ?? now.addingTimeInterval(86_400)
+        let spanSeconds = max(now.timeIntervalSince(dayStart), 1)
+
+        var samples: [HomeHeroSparklineSample] = []
+        for i in 0 ..< n {
+            let fraction = n == 1 ? 1.0 : Double(i) / Double(n - 1)
+            let t = dayStart.addingTimeInterval(fraction * spanSeconds)
+            let uNorm = userNorm[min(i, userNorm.count - 1)]
+            let oNorm = oppNorm[min(i, oppNorm.count - 1)]
+            let userSteps = Int((Double(myToday) * Double(uNorm)).rounded())
+            let oppSteps = Int((Double(theirToday) * Double(oNorm)).rounded())
+            samples.append(HomeHeroSparklineSample(timestamp: t, userSteps: userSteps, opponentSteps: oppSteps))
+        }
+        if let lastIndex = samples.indices.last {
+            samples[lastIndex] = HomeHeroSparklineSample(
+                timestamp: samples[lastIndex].timestamp,
+                userSteps: myToday,
+                opponentSteps: theirToday
+            )
+        }
+        return HomeHeroSparklineDomain(samples: samples, dayStart: dayStart, dayEnd: dayEnd, now: now)
+    }
 }
 
 // MARK: - Beam offset formula
@@ -2302,23 +2339,37 @@ private struct MomentumChipView: View {
 
 // MARK: - Sparkline chart
 
-/// Fake day chart: two smooth polylines + grid + endpoint dots (inputs are mock `[0…1]` series).
+/// Full-calendar-day intraday chart with time-accurate *Now markers and finger scrubbing.
 private struct DayBattleSparklinePreview: View {
-    let userValues: [CGFloat]
-    let opponentValues: [CGFloat]
+    let domain: HomeHeroSparklineDomain
     var showMockTimelineLabel: Bool = false
 
     @Environment(\.homeHeroCompactScale) private var compactScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var scrubbedFraction: CGFloat?
+    @State private var isScrubbing = false
 
     private var chartHeight: CGFloat { HomeHeroCompactLayout.scaled(68, by: compactScale) }
+    private var chartPad: CGPoint { CGPoint(x: 14, y: 14) }
+
+    private var nowFraction: CGFloat { domain.nowFraction }
+
+    private var effectiveFraction: CGFloat {
+        min(nowFraction, max(0, scrubbedFraction ?? nowFraction))
+    }
 
     var body: some View {
         VStack(spacing: HomeHeroCompactLayout.scaled(6, by: compactScale)) {
+            scrubCallout
+
             GeometryReader { geo in
                 let w = geo.size.width
                 let h = geo.size.height
-                let ptsU = sampledPoints(for: userValues, in: CGSize(width: w, height: h), pad: CGPoint(x: 14, y: 14))
-                let ptsO = sampledPoints(for: opponentValues, in: CGSize(width: w, height: h), pad: CGPoint(x: 14, y: 14))
+                let size = CGSize(width: w, height: h)
+                let ptsU = timeSampledPoints(role: .user, in: size, pad: chartPad)
+                let ptsO = timeSampledPoints(role: .opponent, in: size, pad: chartPad)
+                let markerX = chartPad.x + effectiveFraction * max(w - chartPad.x * 2, 1)
+                let nowX = chartPad.x + nowFraction * max(w - chartPad.x * 2, 1)
 
                 ZStack {
                     roundedChartBackground()
@@ -2327,21 +2378,33 @@ private struct DayBattleSparklinePreview: View {
 
                     fadedDistanceGrid(rect: CGRect(origin: .zero, size: geo.size))
 
-                    sparkline(points: ptsO, color: FitUpColors.Neon.orange.opacity(0.92), glowMultiplier: 0.85)
+                    if nowFraction > 0.01 {
+                        Path { path in
+                            path.move(to: CGPoint(x: nowX, y: chartPad.y))
+                            path.addLine(to: CGPoint(x: nowX, y: h - chartPad.y))
+                        }
+                        .stroke(FitUpColors.Neon.cyan.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    }
 
+                    if isScrubbing || scrubbedFraction != nil {
+                        Path { path in
+                            path.move(to: CGPoint(x: markerX, y: chartPad.y))
+                            path.addLine(to: CGPoint(x: markerX, y: h - chartPad.y))
+                        }
+                        .stroke(Color.white.opacity(0.55), style: StrokeStyle(lineWidth: 1.2))
+                    }
+
+                    sparkline(points: ptsO, color: FitUpColors.Neon.orange.opacity(0.92), glowMultiplier: 0.85)
                     sparkline(points: ptsU, color: FitUpColors.Neon.cyan.opacity(0.95), glowMultiplier: 1.0)
+
+                    endpointDots(ptsU: ptsU, ptsO: ptsO)
                 }
+                .contentShape(Rectangle())
+                .gesture(scrubGesture(width: w))
             }
             .frame(height: chartHeight)
 
-            HStack {
-                chartAxisLabel("12 AM")
-                Spacer()
-                chartAxisLabel("NOON")
-                Spacer()
-                chartAxisLabel("NOW")
-            }
-            .allowsHitTesting(false)
+            axisRow
 
             #if DEBUG
             if showMockTimelineLabel {
@@ -2386,40 +2449,123 @@ private struct DayBattleSparklinePreview: View {
         }
     }
 
+    @ViewBuilder
+    private var scrubCallout: some View {
+        if isScrubbing || scrubbedFraction != nil {
+            let time = time(at: effectiveFraction)
+            let steps = domain.steps(at: time)
+            Text("You: \(steps.user.formatted()) · Them: \(steps.opponent.formatted()) · \(shortTime(time))")
+                .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(10, by: compactScale), weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.88))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background {
+                    Capsule(style: .continuous)
+                        .fill(Color.black.opacity(0.62))
+                        .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    private var axisRow: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let innerW = max(w - chartPad.x * 2, 1)
+            let nowLabelX = chartPad.x + nowFraction * innerW
+
+            ZStack(alignment: .topLeading) {
+                HStack {
+                    chartAxisLabel("12 AM")
+                    Spacer()
+                    chartAxisLabel("NOON")
+                    Spacer()
+                }
+
+                chartAxisLabel("*NOW")
+                    .fixedSize()
+                    .position(x: nowLabelX, y: geo.size.height * 0.5)
+            }
+        }
+        .frame(height: HomeHeroCompactLayout.scaled(18, by: compactScale))
+        .allowsHitTesting(false)
+    }
+
+    private enum SeriesRole {
+        case user
+        case opponent
+    }
+
+    private func scrubGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                isScrubbing = true
+                let innerW = max(width - chartPad.x * 2, 1)
+                let raw = (value.location.x - chartPad.x) / innerW
+                scrubbedFraction = min(nowFraction, max(0, raw))
+            }
+            .onEnded { _ in
+                isScrubbing = false
+                if reduceMotion {
+                    scrubbedFraction = nil
+                } else {
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                        scrubbedFraction = nil
+                    }
+                }
+            }
+    }
+
+    private func time(at fraction: CGFloat) -> Date {
+        let span = domain.dayEnd.timeIntervalSince(domain.dayStart)
+        return domain.dayStart.addingTimeInterval(Double(fraction) * span)
+    }
+
+    private func shortTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: date)
+    }
+
+    private func timeSampledPoints(role: SeriesRole, in size: CGSize, pad: CGPoint) -> [CGPoint] {
+        let samples = domain.samples.filter { $0.timestamp <= domain.now }
+        guard samples.count >= 2 else { return [] }
+
+        let maxVal = max(
+            1,
+            samples.map(\.userSteps).max() ?? 0,
+            samples.map(\.opponentSteps).max() ?? 0
+        )
+        let daySpan = domain.dayEnd.timeIntervalSince(domain.dayStart)
+        guard daySpan > 0 else { return [] }
+
+        let minX = pad.x
+        let maxX = size.width - pad.x
+        let minY = pad.y
+        let maxY = size.height - pad.y
+
+        func mapY(_ steps: Int) -> CGFloat {
+            let normalized = CGFloat(min(1, max(0, Double(steps) / Double(maxVal))))
+            return maxY - normalized * (maxY - minY)
+        }
+
+        return samples.map { sample in
+            let fraction = CGFloat(sample.timestamp.timeIntervalSince(domain.dayStart) / daySpan)
+            let x = minX + fraction * (maxX - minX)
+            let y = mapY(role == .user ? sample.userSteps : sample.opponentSteps)
+            return CGPoint(x: x, y: y)
+        }
+    }
+
     /// Faint diagonal scan texture for chart sub-card depth.
     @ViewBuilder
     private func chartTextureOverlay(rect: CGRect) -> some View {
-        Path { p in
-            let step: CGFloat = 14
-            var x = rect.minX - rect.height
-            while x < rect.maxX + rect.height {
-                p.move(to: CGPoint(x: x, y: rect.maxY))
-                p.addLine(to: CGPoint(x: x + rect.height, y: rect.minY))
-                x += step
-            }
-        }
-        .stroke(Color.white.opacity(0.025), lineWidth: 1)
-        .blendMode(.plusLighter)
-    }
-
-    /// Small lightning forks along a sparkline path.
-    @ViewBuilder
-    private func lightningForks(along points: [CGPoint], color: Color) -> some View {
-        if points.count >= 4 {
-            let indices = [points.count / 4, points.count / 2, (points.count * 3) / 4]
-            ForEach(indices, id: \.self) { i in
-                let pt = points[i]
-                Path { p in
-                    p.move(to: pt)
-                    p.addLine(to: CGPoint(x: pt.x + 6, y: pt.y - 9))
-                    p.move(to: pt)
-                    p.addLine(to: CGPoint(x: pt.x - 5, y: pt.y - 7))
-                }
-                .stroke(color.opacity(0.75), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
-                .shadow(color: color.opacity(0.55), radius: 6)
-                .blendMode(.plusLighter)
-            }
-        }
+        NeonCardTexture.diagonalScanLines(in: rect)
+            .stroke(Color.white.opacity(0.025), lineWidth: 1)
+            .blendMode(.plusLighter)
     }
 
     /// Dark rounded plate behind chart paths.
@@ -2434,7 +2580,6 @@ private struct DayBattleSparklinePreview: View {
         let inset: CGFloat = 16
         let inner = rect.insetBy(dx: inset, dy: inset)
         if inner.width > 4 && inner.height > 4 {
-            // Fewer lines ⇒ larger cells; lower counts if you want even airier spacing.
             let nx = 4
             let ny = 3
             let mesh = distanceMeshPath(inner: inner, nx: nx, ny: ny)
@@ -2472,30 +2617,6 @@ private struct DayBattleSparklinePreview: View {
         return mesh
     }
 
-    /// Maps normalized series values into pixel points with padding.
-    private func sampledPoints(for values: [CGFloat], in size: CGSize, pad: CGPoint) -> [CGPoint] {
-        guard values.count >= 2 else { return [] }
-        let minX = pad.x
-        let maxX = size.width - pad.x
-        let minY = pad.y
-        let maxY = size.height - pad.y
-
-        let minV = CGFloat(0)
-        let maxV = CGFloat(1)
-
-        func mapY(_ t: CGFloat) -> CGFloat {
-            let tn = CGFloat((Double(t - minV)) / Double(max(maxV - minV, CGFloat(1e-4))))
-            return maxY - tn * (maxY - minY)
-        }
-
-        let stepCount = CGFloat(max(values.count - 1, 1))
-        return values.enumerated().map { i, value in
-            let x = minX + (CGFloat(i) / stepCount) * (maxX - minX)
-            let y = mapY(CGFloat.minimum(CGFloat.maximum(value, minV), maxV))
-            return CGPoint(x: x, y: y)
-        }
-    }
-
     /// One sparkline: thick blurred stroke + sharp overlay stroke.
     private func sparkline(points: [CGPoint], color: Color, glowMultiplier: CGFloat) -> some View {
         let path = smoothPath(for: points)
@@ -2507,7 +2628,7 @@ private struct DayBattleSparklinePreview: View {
             )
     }
 
-    /// Last-point markers for user (cyan) and opponent (orange) curves.
+    /// Last-point markers for user (cyan) and opponent (orange) curves at *Now.
     private func endpointDots(ptsU: [CGPoint], ptsO: [CGPoint]) -> some View {
         ZStack {
             if let lu = ptsU.last {
@@ -2555,7 +2676,7 @@ private struct DayBattleSparklinePreview: View {
         return path
     }
 
-    /// Axis caption under the chart (12 AM / NOON / NOW).
+    /// Axis caption under the chart (12 AM / NOON / *NOW).
     private func chartAxisLabel(_ text: String) -> some View {
         Text(text)
             .lineLimit(1)
@@ -2798,6 +2919,7 @@ struct EnergyBeamHeroGlassCardView: View {
     let unitLabel: String
     let sparklineUserValues: [CGFloat]
     let sparklineOpponentValues: [CGFloat]
+    let sparklineDomain: HomeHeroSparklineDomain
     let dayElapsedFraction: CGFloat
     let dayProgressCaption: String
     var showMockTimelineDebugLabel: Bool = false
@@ -2924,8 +3046,7 @@ struct EnergyBeamHeroGlassCardView: View {
                 .padding(.bottom, scaled(10))
 
             DayBattleSparklinePreview(
-                userValues: sparklineUserValues,
-                opponentValues: sparklineOpponentValues,
+                domain: sparklineDomain,
                 showMockTimelineLabel: showMockTimelineDebugLabel
             )
             .padding(.horizontal, scaled(14))

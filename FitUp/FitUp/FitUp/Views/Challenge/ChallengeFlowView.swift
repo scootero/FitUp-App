@@ -89,19 +89,12 @@ struct ChallengeFlowView: View {
 
     @State private var searchTask: Task<Void, Never>?
 
-    @State private var rivalStripEntries: [ChallengeRivalStripEntry] = []
-    @State private var myPublicSteps: Int?
-    @State private var myPublicCalories: Int?
-    @State private var isLoadingRivalStrip = false
-
     @State private var scoringModePreference: MatchScoringModePreference = .raw
     @State private var difficultyPreference: MatchDifficultyPreference = .fair
 
     private var isDirectedOpponent: Bool {
         !isQuickMatch && selectedOpponent != nil
     }
-
-    private let publicDailyActivityRepository = PublicDailyActivityRepository()
 
     init(
         profile: Profile?,
@@ -138,22 +131,16 @@ struct ChallengeFlowView: View {
         .onChange(of: query) { _, _ in
             reloadOpponentsForQuery()
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !isCheckingGate, entryGate?.isBlocked != true, !isSent {
+                challengeBottomChrome
+            }
+        }
     }
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
-            if !isCheckingGate, entryGate?.isBlocked != true, !isSent {
-                ChallengeRivalStripView(
-                    entries: rivalStripEntries,
-                    mySteps: myPublicSteps,
-                    myActiveCalories: myPublicCalories,
-                    isLoading: isLoadingRivalStrip,
-                    onSelect: { entry in
-                        selectRivalFromStrip(entry)
-                    }
-                )
-            }
             if isCheckingGate {
                 ProgressView("Checking battle slot...")
                     .font(FitUpFont.body(13, weight: .medium))
@@ -240,15 +227,11 @@ struct ChallengeFlowView: View {
                 onClose()
             }
         } else {
-            VStack(alignment: .leading, spacing: 12) {
-                ScrollView {
-                    flowStepContent
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-                .scrollIndicators(.hidden)
-
-                battleSetupDock
+            ScrollView {
+                flowStepContent
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            .scrollIndicators(.hidden)
         }
     }
 
@@ -295,6 +278,24 @@ struct ChallengeFlowView: View {
         default:
             EmptyView()
         }
+    }
+
+    private var challengeBottomChrome: some View {
+        battleSetupDock
+            .padding(.horizontal, FitUpLayout.floatingBottomBarHorizontalPadding)
+            .padding(.top, 8)
+            .padding(.bottom, FitUpLayout.floatingBottomBarBottomPadding)
+            .background {
+                LinearGradient(
+                    colors: [
+                        Color.clear,
+                        Color(rgb: 0x050810).opacity(0.92),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea(edges: .bottom)
+            }
     }
 
     private var battleSetupDock: some View {
@@ -370,61 +371,15 @@ struct ChallengeFlowView: View {
                 todaySteps: nil,
                 wins: nil,
                 losses: nil,
+                pastMatchCount: nil,
                 rollingStepsBaseline: nil,
                 rollingCaloriesBaseline: nil
             )
         }
 
-        async let opponentsLoad: Void = loadOpponents(query: "")
-        async let rivalStripLoad: Void = loadRivalStrip()
-        _ = await (opponentsLoad, rivalStripLoad)
+        await loadOpponents(query: "")
         hydratePrefillFromFetchedOpponents()
         applyLaunchStepIfNeeded()
-    }
-
-    @MainActor
-    private func loadRivalStrip() async {
-        guard let userId = profile?.id else { return }
-        isLoadingRivalStrip = true
-        defer { isLoadingRivalStrip = false }
-        do {
-            let viewDate = PublicDailyActivityRepository.viewerLocalDateString()
-            let (rivals, myS, myC) = try await publicDailyActivityRepository.fetchRivalStripEntries(
-                currentUserId: userId,
-                viewerLocalActiveDate: viewDate
-            )
-            rivalStripEntries = rivals
-            myPublicSteps = myS
-            myPublicCalories = myC
-        } catch {
-            rivalStripEntries = []
-            AppLogger.log(
-                category: "matchmaking",
-                level: .debug,
-                message: "rival strip load failed",
-                userId: userId,
-                metadata: ["error": error.localizedDescription]
-            )
-        }
-    }
-
-    private func selectRivalFromStrip(_ entry: ChallengeRivalStripEntry) {
-        query = entry.displayName
-        selectedOpponent = ChallengeOpponent(
-            id: entry.userId,
-            displayName: entry.displayName,
-            initials: entry.initials,
-            colorHex: entry.colorHex,
-            todaySteps: entry.steps,
-            wins: nil,
-            losses: nil,
-            rollingStepsBaseline: nil,
-            rollingCaloriesBaseline: nil
-        )
-        isQuickMatch = false
-        if stepIndex == FlowStep.opponent {
-            stepIndex = FlowStep.duration
-        }
     }
 
     @MainActor

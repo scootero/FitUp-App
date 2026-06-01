@@ -47,7 +47,7 @@ final class LiveActivityCoordinator {
             subscribeToPushTokenUpdates()
             AppLogger.log(
                 category: "notifications",
-                level: .info,
+                level: .debug,
                 message: "Live Activity resumed (same match)",
                 metadata: [
                     "path": "resume_existing",
@@ -94,7 +94,7 @@ final class LiveActivityCoordinator {
             currentActivity = activity
             AppLogger.log(
                 category: "notifications",
-                level: .info,
+                level: .debug,
                 message: "Live Activity started",
                 metadata: [
                     "path": "new_request",
@@ -136,7 +136,7 @@ final class LiveActivityCoordinator {
         )
         AppLogger.log(
             category: "notifications",
-            level: .info,
+            level: .debug,
             message: "Live Activity local update",
             metadata: [
                 "activity_id": activity.id,
@@ -162,7 +162,7 @@ final class LiveActivityCoordinator {
         Task {
             await activity.end(nil, dismissalPolicy: .immediate)
             await ProfileRepository().updatePushTokens(liveActivityPushToken: "")
-            AppLogger.log(category: "notifications", level: .info, message: "Live Activity ended")
+            AppLogger.log(category: "notifications", level: .debug, message: "Live Activity ended")
         }
         currentActivity = nil
     }
@@ -178,7 +178,7 @@ final class LiveActivityCoordinator {
                 NotificationService.shared.storeLiveActivityToken(tokenData)
                 AppLogger.log(
                     category: "notifications",
-                    level: .info,
+                    level: .debug,
                     message: "Live Activity push token refreshed"
                 )
             }

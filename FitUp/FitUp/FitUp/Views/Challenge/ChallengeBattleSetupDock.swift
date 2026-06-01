@@ -49,24 +49,23 @@ struct ChallengeBattleSetupDock: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                .fill(Color(rgb: 0x0A1020).opacity(0.92))
-                .overlay {
-                    RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    FitUpColors.Neon.cyan.opacity(0.28),
-                                    FitUpColors.Neon.orange.opacity(0.18),
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                }
+        .homeLiquidGlassCard(.pending)
+        .overlay {
+            RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            FitUpColors.Neon.cyan.opacity(0.45),
+                            FitUpColors.Neon.purple.opacity(0.3),
+                            FitUpColors.Neon.orange.opacity(0.2),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.2
+                )
         }
+        .shadow(color: FitUpColors.Neon.cyan.opacity(0.12), radius: 12, x: 0, y: 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
     }

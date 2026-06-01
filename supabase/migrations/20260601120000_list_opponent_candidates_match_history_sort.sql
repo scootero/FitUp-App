@@ -1,17 +1,6 @@
--- =============================================================================
--- list_opponent_candidates.sql  (manual — paste into Supabase SQL Editor)
--- =============================================================================
--- Challenge flow opponent picker: sort by shared completed match count,
--- optional name search, today's steps + latest W/L.
---
--- Prerequisite: authenticated app users with rows in public.profiles.
--- Does NOT modify tables. Creates/replaces one RPC only.
---
--- After apply: run list_opponent_candidates_00_readonly_checks.sql
--- Rollback: DROP FUNCTION IF EXISTS public.list_opponent_candidates(text, text, date, int);
--- =============================================================================
+-- Opponent picker: sort by shared completed match count (frequent rivals first).
+-- Must drop first: return type adds past_match_count (CREATE OR REPLACE cannot change OUT columns).
 
--- Return type adds past_match_count; drop required before recreate.
 drop function if exists public.list_opponent_candidates(text, text, date, int);
 
 create or replace function public.list_opponent_candidates(
@@ -165,9 +154,6 @@ begin
   limit v_limit;
 end;
 $function$;
-
-revoke all on function public.list_opponent_candidates(text, text, date, int) from public;
-grant execute on function public.list_opponent_candidates(text, text, date, int) to authenticated;
 
 comment on function public.list_opponent_candidates(text, text, date, int) is
   'Challenge opponent picker: frequent rivals first, then baseline-distance sort. Optional name filter.';

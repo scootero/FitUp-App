@@ -17,6 +17,7 @@ struct MatchRepositoryOpponentCandidate: Identifiable, Equatable {
     let todaySteps: Int?
     let wins: Int?
     let losses: Int?
+    let pastMatchCount: Int?
     let rollingStepsBaseline: Double?
     let rollingCaloriesBaseline: Double?
 }
@@ -107,6 +108,7 @@ final class MatchRepository {
                 todaySteps: row.today_steps,
                 wins: row.wins,
                 losses: row.losses,
+                pastMatchCount: row.past_match_count,
                 rollingStepsBaseline: row.rolling_avg_7d_steps,
                 rollingCaloriesBaseline: row.rolling_avg_7d_calories
             )
@@ -138,6 +140,10 @@ final class MatchRepository {
 
         let latestStatsByUser = try await fetchLatestLeaderboardStatsBatch(userIds: candidateIds)
         let todayStepsByUser = try await fetchLatestTodayStepsBatch(userIds: candidateIds)
+        let pastMatchCounts = try await fetchPastMatchCountsBatch(
+            currentUserId: currentUserId,
+            opponentIds: candidateIds
+        )
 
         var candidates: [MatchRepositoryOpponentCandidate] = []
         candidates.reserveCapacity(candidateIds.count)
@@ -156,15 +162,21 @@ final class MatchRepository {
                     todaySteps: todayStepsByUser[id],
                     wins: latestStats?.wins,
                     losses: latestStats?.losses,
+                    pastMatchCount: pastMatchCounts[id] ?? 0,
                     rollingStepsBaseline: baselines.steps,
                     rollingCaloriesBaseline: baselines.calories
                 )
             )
         }
 
-        let sorted = candidates.sorted {
-            scoreDistance(candidate: $0, myBaseline: myBaseline, metricType: metricType)
-                < scoreDistance(candidate: $1, myBaseline: myBaseline, metricType: metricType)
+        let sorted = candidates.sorted { lhs, rhs in
+            let lhsCount = lhs.pastMatchCount ?? 0
+            let rhsCount = rhs.pastMatchCount ?? 0
+            if lhsCount != rhsCount { return lhsCount > rhsCount }
+            let lhsDistance = scoreDistance(candidate: lhs, myBaseline: myBaseline, metricType: metricType)
+            let rhsDistance = scoreDistance(candidate: rhs, myBaseline: myBaseline, metricType: metricType)
+            if lhsDistance != rhsDistance { return lhsDistance < rhsDistance }
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
         }
         return Array(sorted.prefix(displayLimit))
     }
@@ -408,6 +420,52 @@ final class MatchRepository {
             latestStatsByUser[userId] = (int(from: row["wins"]), int(from: row["losses"]))
         }
         return latestStatsByUser
+    }
+
+    private func fetchPastMatchCountsBatch(
+        currentUserId: UUID,
+        opponentIds: [UUID]
+    ) async throws -> [UUID: Int] {
+        guard !opponentIds.isEmpty else { return [:] }
+        let opponentSet = Set(opponentIds)
+
+        let participantResponse = try await client
+            .from("match_participants")
+            .select("match_id")
+            .eq("user_id", value: currentUserId.uuidString)
+            .execute()
+
+        let matchIds = Set(jsonRows(from: participantResponse.data).compactMap { uuid(from: $0["match_id"]) })
+        guard !matchIds.isEmpty else { return [:] }
+
+        let matchesResponse = try await client
+            .from("matches")
+            .select("id")
+            .in("id", values: matchIds.map(\.uuidString))
+            .eq("state", value: "completed")
+            .execute()
+
+        let completedMatchIds = Set(jsonRows(from: matchesResponse.data).compactMap { uuid(from: $0["id"]) })
+        guard !completedMatchIds.isEmpty else { return [:] }
+
+        let allParticipantsResponse = try await client
+            .from("match_participants")
+            .select("match_id, user_id")
+            .in("match_id", values: completedMatchIds.map(\.uuidString))
+            .execute()
+
+        var counts: [UUID: Int] = [:]
+        for row in jsonRows(from: allParticipantsResponse.data) {
+            guard
+                let matchId = uuid(from: row["match_id"]),
+                completedMatchIds.contains(matchId),
+                let userId = uuid(from: row["user_id"]),
+                userId != currentUserId,
+                opponentSet.contains(userId)
+            else { continue }
+            counts[userId, default: 0] += 1
+        }
+        return counts
     }
 
     private func fetchLatestTodayStepsBatch(userIds: [UUID]) async throws -> [UUID: Int] {
@@ -678,6 +736,7 @@ private struct ListOpponentCandidatesRPCRow: Sendable {
     let today_steps: Int?
     let rolling_avg_7d_steps: Double?
     let rolling_avg_7d_calories: Double?
+    let past_match_count: Int?
 }
 
 extension ListOpponentCandidatesRPCRow: Decodable {
@@ -691,6 +750,7 @@ extension ListOpponentCandidatesRPCRow: Decodable {
         today_steps = try c.decodeIfPresent(Int.self, forKey: .today_steps)
         rolling_avg_7d_steps = try c.decodeIfPresent(Double.self, forKey: .rolling_avg_7d_steps)
         rolling_avg_7d_calories = try c.decodeIfPresent(Double.self, forKey: .rolling_avg_7d_calories)
+        past_match_count = try c.decodeIfPresent(Int.self, forKey: .past_match_count)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -702,6 +762,7 @@ extension ListOpponentCandidatesRPCRow: Decodable {
         case today_steps
         case rolling_avg_7d_steps
         case rolling_avg_7d_calories
+        case past_match_count
     }
 }
 

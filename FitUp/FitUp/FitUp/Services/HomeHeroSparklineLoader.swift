@@ -9,8 +9,59 @@
 import CoreGraphics
 import Foundation
 
+struct HomeHeroSparklineSample: Sendable, Equatable {
+    let timestamp: Date
+    let userSteps: Int
+    let opponentSteps: Int
+}
+
+struct HomeHeroSparklineDomain: Sendable, Equatable {
+    let samples: [HomeHeroSparklineSample]
+    let dayStart: Date
+    let dayEnd: Date
+    let now: Date
+
+    var nowFraction: CGFloat {
+        let span = dayEnd.timeIntervalSince(dayStart)
+        guard span > 0 else { return 0 }
+        return CGFloat(min(1, max(0, now.timeIntervalSince(dayStart) / span)))
+    }
+
+    var userSeries: [CGFloat]? {
+        guard !samples.isEmpty else { return nil }
+        let maxVal = max(1, samples.map(\.userSteps).max() ?? 0, samples.map(\.opponentSteps).max() ?? 0)
+        return samples.map { CGFloat(min(1, max(0, Double($0.userSteps) / Double(maxVal)))) }
+    }
+
+    var opponentSeries: [CGFloat] {
+        guard !samples.isEmpty else { return [] }
+        let maxVal = max(1, samples.map(\.userSteps).max() ?? 0, samples.map(\.opponentSteps).max() ?? 0)
+        return samples.map { CGFloat(min(1, max(0, Double($0.opponentSteps) / Double(maxVal)))) }
+    }
+
+    func steps(at time: Date) -> (user: Int, opponent: Int) {
+        guard !samples.isEmpty else { return (0, 0) }
+        let sorted = samples.sorted { $0.timestamp < $1.timestamp }
+        if time <= sorted[0].timestamp {
+            return (sorted[0].userSteps, sorted[0].opponentSteps)
+        }
+        if time >= sorted[sorted.count - 1].timestamp {
+            let last = sorted[sorted.count - 1]
+            return (last.userSteps, last.opponentSteps)
+        }
+        var userSteps = sorted[0].userSteps
+        var oppSteps = sorted[0].opponentSteps
+        for sample in sorted where sample.timestamp <= time {
+            userSteps = sample.userSteps
+            oppSteps = sample.opponentSteps
+        }
+        return (userSteps, oppSteps)
+    }
+}
+
 /// Normalized sparkline samples plus opponent tick freshness for Slice 6 UI.
 struct HomeHeroSparklineLoadResult: Sendable {
+    let domain: HomeHeroSparklineDomain
     let userSeries: [CGFloat]?
     /// Always real samples (flat at zero when no ticks / no steps); never mock-shaped.
     let opponentSeries: [CGFloat]
@@ -64,7 +115,7 @@ enum HomeHeroSparklineLoader {
             oppTicks = nil
         }
 
-        let built = buildNormalizedSeries(
+        let built = buildSeries(
             hkPoints: hkPoints,
             oppTicks: oppTicks,
             myToday: match.myToday,
@@ -74,46 +125,67 @@ enum HomeHeroSparklineLoader {
         )
         let latestOpp = oppTicks.flatMap { ticks in ticks.map(\.recordedAt).max() }
         return HomeHeroSparklineLoadResult(
+            domain: built.domain,
             userSeries: built.user,
             opponentSeries: built.opponent,
             opponentLatestTickRecordedAt: latestOpp
         )
     }
 
-    // MARK: - Normalize
+    // MARK: - Build series
 
-    private static func buildNormalizedSeries(
+    private static func buildSeries(
         hkPoints: [HealthIntradayCumulativePoint]?,
         oppTicks: [OpponentIntradayStepTick]?,
         myToday: Int,
         theirToday: Int,
         viewerTimeZone: TimeZone,
         pointCount: Int
-    ) -> (user: [CGFloat]?, opponent: [CGFloat]) {
+    ) -> (domain: HomeHeroSparklineDomain, user: [CGFloat]?, opponent: [CGFloat]) {
         let n = max(2, pointCount)
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = viewerTimeZone
         let now = Date()
         let dayStart = cal.startOfDay(for: now)
+        let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) ?? now.addingTimeInterval(86_400)
         let spanSeconds = max(now.timeIntervalSince(dayStart), 1)
 
+        var samples: [HomeHeroSparklineSample] = []
         var userRaw = [Int](repeating: 0, count: n)
         var oppRaw = [Int](repeating: 0, count: n)
 
         for i in 0 ..< n {
             let fraction = n == 1 ? 1.0 : Double(i) / Double(n - 1)
             let t = dayStart.addingTimeInterval(fraction * spanSeconds)
-            userRaw[i] = interpolateCumulative(points: hkPoints, at: t, endAnchor: myToday, fraction: fraction)
+            let userSteps = interpolateCumulative(points: hkPoints, at: t, endAnchor: myToday, fraction: fraction)
+            let oppSteps: Int
             if let ticks = oppTicks, !ticks.isEmpty {
-                oppRaw[i] = interpolateOpponentCumulative(ticks: ticks, at: t, endAnchor: theirToday, fraction: fraction)
+                oppSteps = interpolateOpponentCumulative(ticks: ticks, at: t, endAnchor: theirToday, fraction: fraction)
             } else {
-                // No intraday ticks: flat at today's known total (often 0). Never synthesize a ramp.
-                oppRaw[i] = max(0, theirToday)
+                oppSteps = max(0, theirToday)
             }
+            userRaw[i] = userSteps
+            oppRaw[i] = oppSteps
+            samples.append(HomeHeroSparklineSample(timestamp: t, userSteps: userSteps, opponentSteps: oppSteps))
         }
 
         userRaw[n - 1] = max(0, myToday)
         oppRaw[n - 1] = max(0, theirToday)
+        if let lastIndex = samples.indices.last {
+            let last = samples[lastIndex]
+            samples[lastIndex] = HomeHeroSparklineSample(
+                timestamp: last.timestamp,
+                userSteps: userRaw[n - 1],
+                opponentSteps: oppRaw[n - 1]
+            )
+        }
+
+        let domain = HomeHeroSparklineDomain(
+            samples: samples,
+            dayStart: dayStart,
+            dayEnd: dayEnd,
+            now: now
+        )
 
         let maxVal = max(
             1,
@@ -129,6 +201,7 @@ enum HomeHeroSparklineLoader {
         let hasUserSignal = (hkPoints?.isEmpty == false) || myToday > 0
 
         return (
+            domain: domain,
             user: hasUserSignal ? userCGFloats : nil,
             opponent: oppCGFloats
         )

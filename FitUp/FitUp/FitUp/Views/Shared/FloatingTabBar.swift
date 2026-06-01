@@ -40,8 +40,6 @@ struct FloatingTabBar: View {
     var onBattle: () -> Void
 
     private let barHeight: CGFloat = 68
-    private let horizontalPadding: CGFloat = 12
-    private let bottomPadding: CGFloat = 2
     private let battleCorner: CGFloat = 16
 
     var body: some View {
@@ -58,8 +56,8 @@ struct FloatingTabBar: View {
         .clipShape(RoundedRectangle(cornerRadius: FitUpRadius.xl, style: .continuous))
         .shadow(color: FitUpColors.Neon.cyan.opacity(0.24), radius: 18, x: 0, y: 2)
         .shadow(color: .black.opacity(0.55), radius: 20, x: 0, y: 10)
-        .padding(.horizontal, horizontalPadding)
-        .padding(.bottom, bottomPadding)
+        .padding(.horizontal, FitUpLayout.floatingBottomBarHorizontalPadding)
+        .padding(.bottom, FitUpLayout.floatingBottomBarBottomPadding)
     }
 
     private var barBackground: some View {

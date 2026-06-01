@@ -75,7 +75,7 @@ final class NotificationService: NSObject, ObservableObject {
     /// Called by `AppDelegate` when registration succeeds.
     func didRegister(deviceToken: Data) {
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
-        AppLogger.log(category: "notifications", level: .info, message: "APNs token registered", metadata: ["token_prefix": String(hex.prefix(16))])
+        AppLogger.log(category: "notifications", level: .debug, message: "APNs token registered", metadata: ["token_prefix": String(hex.prefix(16))])
         Task {
             await ProfileRepository().updatePushTokens(apnsToken: hex)
         }
@@ -91,7 +91,7 @@ final class NotificationService: NSObject, ObservableObject {
     /// Store the Live Activity push token on the profile.
     func storeLiveActivityToken(_ token: Data) {
         let hex = token.map { String(format: "%02x", $0) }.joined()
-        AppLogger.log(category: "notifications", level: .info, message: "Live Activity push token updated")
+        AppLogger.log(category: "notifications", level: .debug, message: "Live Activity push token updated")
         Task {
             await ProfileRepository().updatePushTokens(liveActivityPushToken: hex)
         }

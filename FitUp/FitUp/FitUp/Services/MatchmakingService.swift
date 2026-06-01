@@ -131,6 +131,7 @@ struct ChallengeOpponent: Identifiable, Equatable {
     let todaySteps: Int?
     let wins: Int?
     let losses: Int?
+    let pastMatchCount: Int?
     let rollingStepsBaseline: Double?
     let rollingCaloriesBaseline: Double?
 }
@@ -169,6 +170,7 @@ final class MatchmakingService {
                     todaySteps: candidate.todaySteps,
                     wins: candidate.wins,
                     losses: candidate.losses,
+                    pastMatchCount: candidate.pastMatchCount,
                     rollingStepsBaseline: candidate.rollingStepsBaseline,
                     rollingCaloriesBaseline: candidate.rollingCaloriesBaseline
                 )

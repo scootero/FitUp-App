@@ -46,3 +46,25 @@ supabase functions deploy complete-match
 - Temporarily set `RECAP_LOCAL_HOUR` / `COMEBACK_LOCAL_HOUR` in `send-daily-recap` to current local hour for one test.
 - Invoke `send-daily-recap` via Edge Function POST with service role.
 - Confirm `notification_events` rows and tap → Home inbox recap cards → Match Details.
+
+## Final-day fix verification (2026-06)
+
+`is_final_day` and `final_day_comeback` use `daysLeft === 1` (same as iOS `HomeRepository`), not scheduled future `match_days`. For an active 3-day match with 0 finalized days, `daysLeft` must be 3 and no recap teaser should contain `FINAL DAY`.
+
+Deploy after fix:
+
+```bash
+supabase functions deploy send-daily-recap
+```
+
+SQL (readonly):
+
+```sql
+SELECT m.id, m.duration_days,
+  (SELECT count(*) FROM match_days md WHERE md.match_id = m.id AND md.status = 'finalized') AS finalized,
+  m.duration_days - (SELECT count(*) FROM match_days md WHERE md.match_id = m.id AND md.status = 'finalized') AS days_left,
+  (m.duration_days - (SELECT count(*) FROM match_days md WHERE md.match_id = m.id AND md.status = 'finalized')) = 1 AS is_final_day
+FROM matches m
+WHERE m.state = 'active' AND m.duration_days = 3;
+-- Rows with finalized=0 must show is_final_day = false.
+```

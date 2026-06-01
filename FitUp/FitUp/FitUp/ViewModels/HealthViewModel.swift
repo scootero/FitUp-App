@@ -249,7 +249,7 @@ final class HealthViewModel: ObservableObject {
 
         AppLogger.log(
             category: "healthkit_read",
-            level: .info,
+            level: .debug,
             message: "health screen load started",
             userId: userId,
             metadata: [
@@ -291,7 +291,7 @@ final class HealthViewModel: ObservableObject {
         let durationMs = Int(loadStarted.timeIntervalSinceNow * -1000)
         AppLogger.log(
             category: "healthkit_read",
-            level: .info,
+            level: .debug,
             message: "health screen arcade load ok",
             userId: userId,
             metadata: [
@@ -373,7 +373,7 @@ final class HealthViewModel: ObservableObject {
         let coreDurationMs = Int(loadStarted.timeIntervalSinceNow * -1000)
         AppLogger.log(
             category: "healthkit_read",
-            level: .info,
+            level: .debug,
             message: "health screen core ok",
             userId: userId,
             metadata: [
@@ -443,7 +443,7 @@ final class HealthViewModel: ObservableObject {
         meta["optional_week_cals_ok"] = "\(wCalsResult.ok)"
         AppLogger.log(
             category: "healthkit_read",
-            level: .info,
+            level: .debug,
             message: "health screen load ok (HK + home data)",
             userId: userId,
             metadata: meta
@@ -549,7 +549,7 @@ final class HealthViewModel: ObservableObject {
         }
         AppLogger.log(
             category: "healthkit_read",
-            level: .info,
+            level: .debug,
             message: "stats range battle margin refreshed",
             userId: profileId,
             metadata: [

@@ -128,6 +128,148 @@ private struct NeonRivalryPanelModifier: ViewModifier {
     }
 }
 
+// MARK: - Shared texture
+
+enum NeonCardTexture {
+    static func diagonalScanLines(in rect: CGRect, step: CGFloat = 14) -> Path {
+        var path = Path()
+        var x = rect.minX - rect.height
+        while x < rect.maxX + rect.height {
+            path.move(to: CGPoint(x: x, y: rect.maxY))
+            path.addLine(to: CGPoint(x: x + rect.height, y: rect.minY))
+            x += step
+        }
+        return path
+    }
+}
+
+// MARK: - Active battle card (orange retro glow)
+
+private struct NeonActiveBattleCardModifier: ViewModifier {
+    var minHeight: CGFloat?
+
+    private let accent = FitUpColors.Neon.orange
+    private let warmFill = Color(red: 0.08, green: 0.04, blue: 0.02).opacity(0.72)
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: minHeight ?? NeonArcadeChrome.battleCardMinHeight)
+            .background {
+                ZStack {
+                    RoundedRectangle(cornerRadius: NeonArcadeChrome.battleCardCornerRadius, style: .continuous)
+                        .fill(warmFill)
+
+                    RoundedRectangle(cornerRadius: NeonArcadeChrome.battleCardCornerRadius, style: .continuous)
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    FitUpColors.Neon.orange.opacity(0.42),
+                                    FitUpColors.Neon.yellow.opacity(0.18),
+                                    FitUpColors.Neon.orange.opacity(0.06),
+                                    Color.clear,
+                                ],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 90
+                            )
+                        )
+
+                    GeometryReader { geo in
+                        NeonCardTexture.diagonalScanLines(in: geo.frame(in: .local))
+                            .stroke(Color.white.opacity(0.03), lineWidth: 1)
+                            .blendMode(.plusLighter)
+                    }
+
+                    FitUpLogoWatermark(opacity: 0.10, scale: 1.2)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    RoundedRectangle(cornerRadius: NeonArcadeChrome.battleCardCornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    FitUpColors.Neon.orange.opacity(0.14),
+                                    Color.clear,
+                                    Color.black.opacity(0.38),
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+
+                    RoundedRectangle(cornerRadius: NeonArcadeChrome.battleCardCornerRadius, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    FitUpColors.Neon.orange.opacity(0.92),
+                                    FitUpColors.Neon.yellow.opacity(0.55),
+                                    FitUpColors.Neon.orange.opacity(0.75),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+                .shadow(color: accent.opacity(0.35), radius: 18, x: 0, y: 0)
+                .shadow(color: accent.opacity(0.18), radius: 8, x: 0, y: 4)
+                .shadow(color: Color.black.opacity(0.55), radius: 8, x: 0, y: 5)
+            }
+    }
+}
+
+// MARK: - Searching card (purple/cyan pulse theme)
+
+private struct NeonSearchingCardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity)
+            .background {
+                ZStack {
+                    RoundedRectangle(cornerRadius: NeonArcadeChrome.battleCardCornerRadius, style: .continuous)
+                        .fill(Color(red: 0.04, green: 0.03, blue: 0.10).opacity(0.78))
+
+                    RoundedRectangle(cornerRadius: NeonArcadeChrome.battleCardCornerRadius, style: .continuous)
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    FitUpColors.Neon.purple.opacity(0.38),
+                                    FitUpColors.Neon.blue.opacity(0.12),
+                                    Color.clear,
+                                ],
+                                center: UnitPoint(x: 0.2, y: 0.3),
+                                startRadius: 0,
+                                endRadius: 120
+                            )
+                        )
+
+                    GeometryReader { geo in
+                        NeonCardTexture.diagonalScanLines(in: geo.frame(in: .local), step: 16)
+                            .stroke(FitUpColors.Neon.cyan.opacity(0.04), lineWidth: 1)
+                            .blendMode(.plusLighter)
+                    }
+
+                    RoundedRectangle(cornerRadius: NeonArcadeChrome.battleCardCornerRadius, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    FitUpColors.Neon.purple.opacity(0.55),
+                                    FitUpColors.Neon.cyan.opacity(0.28),
+                                    FitUpColors.Neon.purple.opacity(0.4),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+                .shadow(color: FitUpColors.Neon.purple.opacity(0.22), radius: 14, x: 0, y: 4)
+                .shadow(color: FitUpColors.Neon.cyan.opacity(0.08), radius: 10, x: 0, y: 0)
+                .shadow(color: Color.black.opacity(0.5), radius: 8, x: 0, y: 5)
+            }
+    }
+}
+
 // MARK: - Compact battle card shell (stat-card language, thinner border, ~25% glow)
 
 private struct NeonCompactBattleCardModifier: ViewModifier {
@@ -240,5 +382,13 @@ extension View {
 
     func neonCompactBattleCard(accent: Color, minHeight: CGFloat? = nil) -> some View {
         modifier(NeonCompactBattleCardModifier(accent: accent, minHeight: minHeight))
+    }
+
+    func neonActiveBattleCard(minHeight: CGFloat? = nil) -> some View {
+        modifier(NeonActiveBattleCardModifier(minHeight: minHeight))
+    }
+
+    func neonSearchingCard() -> some View {
+        modifier(NeonSearchingCardModifier())
     }
 }

@@ -295,6 +295,8 @@ final class MatchDetailsViewModel: ObservableObject {
     @Published private(set) var healthKitStale = false
     /// Cumulative intraday points for the in-progress “today” row (active matches with HealthKit); empty otherwise.
     @Published private(set) var intradaySeries: [HealthIntradayCumulativePoint] = []
+    /// Opponent cumulative intraday from `user_intraday_step_ticks`; empty when unavailable or calories match.
+    @Published private(set) var opponentIntradaySeries: [HealthIntradayCumulativePoint] = []
     @Published private(set) var headToHead: HeadToHeadStats?
 
     let matchId: UUID
@@ -303,6 +305,7 @@ final class MatchDetailsViewModel: ObservableObject {
     private let detailsRepository: MatchDetailsRepository
     private let homeRepository: HomeRepository
     private let headToHeadRepository: HeadToHeadRepository
+    private let intradayTicksRepository = UserIntradayStepTicksRepository()
     private var hasStarted = false
     private var pollingTask: Task<Void, Never>?
     private let pollingIntervalNs: UInt64 = 180_000_000_000
@@ -359,6 +362,7 @@ final class MatchDetailsViewModel: ObservableObject {
         hasStarted = false
         headToHeadRepository.clearMemoryCache()
         intradaySeries = []
+        opponentIntradaySeries = []
     }
 
     private func startPollingIfNeeded() {
@@ -436,6 +440,7 @@ final class MatchDetailsViewModel: ObservableObject {
             myTodayHK = nil
             healthKitStale = false
             intradaySeries = []
+            opponentIntradaySeries = []
         }
 
         headToHead = await h2hTask
@@ -478,22 +483,47 @@ final class MatchDetailsViewModel: ObservableObject {
     private func refreshIntradaySeriesIfNeeded() async {
         guard let snapshot, shouldUseLiveHealthKit(for: snapshot) else {
             intradaySeries = []
+            opponentIntradaySeries = []
             return
         }
         let calDay = snapshot.dayRows.first(where: { $0.isToday })?.calendarDate
             ?? Calendar.current.startOfDay(for: Date())
         let metric: HealthMetricType = snapshot.metricType == "active_calories" ? .activeCalories : .steps
         let tz = TimeZone(identifier: matchTimezone) ?? .current
-        do {
-            intradaySeries = try await HealthKitService.fetchIntradayCumulativeSeries(
-                metricType: metric,
-                for: calDay,
-                timeZone: tz,
-                maxPoints: 48
-            )
-        } catch {
-            intradaySeries = []
-        }
+
+        async let hkSeriesTask: [HealthIntradayCumulativePoint] = {
+            do {
+                return try await HealthKitService.fetchIntradayCumulativeSeries(
+                    metricType: metric,
+                    for: calDay,
+                    timeZone: tz,
+                    maxPoints: 48
+                )
+            } catch {
+                return []
+            }
+        }()
+
+        async let opponentSeriesTask: [HealthIntradayCumulativePoint] = {
+            guard snapshot.metricType != "active_calories" else { return [] }
+            do {
+                let ticks = try await intradayTicksRepository.fetchOpponentTicks(
+                    opponentProfileId: snapshot.opponent.id,
+                    calendarDate: calDay,
+                    opponentTimezoneIdentifier: matchTimezone,
+                    sinceRecordedAt: nil
+                )
+                return ticks
+                    .map { HealthIntradayCumulativePoint(date: $0.recordedAt, cumulative: $0.cumulativeSteps) }
+                    .sorted { $0.date < $1.date }
+            } catch {
+                return []
+            }
+        }()
+
+        let (hkSeries, opponentSeries) = await (hkSeriesTask, opponentSeriesTask)
+        intradaySeries = hkSeries
+        opponentIntradaySeries = opponentSeries
     }
 
     private func applyBundle(_ bundle: MatchDetailBundle) {
@@ -535,6 +565,7 @@ final class MatchDetailsViewModel: ObservableObject {
                 myTodayHK = nil
                 healthKitStale = false
                 intradaySeries = []
+                opponentIntradaySeries = []
             } else {
                 await refreshIntradaySeriesIfNeeded()
             }
@@ -579,6 +610,7 @@ final class MatchDetailsViewModel: ObservableObject {
                 myTodayHK = nil
                 healthKitStale = false
                 intradaySeries = []
+                opponentIntradaySeries = []
             }
             headToHead = try? await headToHeadRepository.fetchStats(
                 opponentId: bundle.snapshot.opponent.id,

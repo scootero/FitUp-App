@@ -194,7 +194,7 @@ async function buildRecapCard(
   const isBalancedSteps = scoringMode === "balanced" && metricType === "steps";
   const marginLabel = isBalancedSteps ? "Battle Score" : metricType === "active_calories" ? "cal" : "steps";
 
-  const [opponentName, seriesScores, currentTotals, yesterdayDay, isFinalDay] = await Promise.all([
+  const [opponentName, seriesScores, currentTotals, yesterdayDay] = await Promise.all([
     fetchDisplayName(opponentId),
     loadSeriesScores(matchId),
     currentDayTotals(matchId),
@@ -206,7 +206,6 @@ async function buildRecapCard(
       isBalancedSteps,
       baselines,
     ),
-    matchHasFinalCompetitionDay(matchId, Number(match.duration_days) || 1),
   ]);
 
   const myScore = seriesScores.get(userId) ?? 0;
@@ -214,6 +213,7 @@ async function buildRecapCard(
   const durationDays = Number(match.duration_days) || 1;
   const finalizedCount = await countFinalizedDays(matchId);
   const daysLeft = Math.max(0, durationDays - finalizedCount);
+  const isFinalDay = daysLeft === 1;
 
   let yesterdayWinner: RecapCard["yesterday_winner"] = "none";
   let yesterdayMargin = 0;
@@ -389,18 +389,6 @@ async function loadYesterdayFromDayRow(
   };
 }
 
-async function matchHasFinalCompetitionDay(matchId: string, durationDays: number): Promise<boolean> {
-  const { data, error } = await supabaseAdmin
-    .from("match_days")
-    .select("day_number")
-    .eq("match_id", matchId)
-    .neq("status", "finalized");
-  if (error) {
-    throw error;
-  }
-  return (data ?? []).some((row) => Number(row.day_number) >= durationDays);
-}
-
 function buildRecapTeaser(cards: RecapCard[]): string {
   const wins = cards.filter((c) => c.yesterday_winner === "you").length;
   const losses = cards.filter((c) => c.yesterday_winner === "opponent").length;
@@ -449,8 +437,9 @@ async function finalDayComebackPicks(userId: string, localDate: string): Promise
     }
     const matchId = String(row.match_id);
     const durationDays = Number(m.duration_days) || 1;
-    const onFinalDay = await matchHasFinalCompetitionDay(matchId, durationDays);
-    if (!onFinalDay) {
+    const finalizedCount = await countFinalizedDays(matchId);
+    const daysLeft = Math.max(0, durationDays - finalizedCount);
+    if (daysLeft !== 1) {
       continue;
     }
 

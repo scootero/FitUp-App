@@ -51,6 +51,29 @@ extension HomeActiveMatch {
         "Step Difference Now: \(neonComparableMarginText)"
     }
 
+    private var neonTodayMarginUnitLabel: String {
+        isBalancedStepsBattle ? "Battle Score" : "steps"
+    }
+
+    var neonTodayMarginText: String {
+        let m = comparableMargin
+        let unit = neonTodayMarginUnitLabel
+        if m > 0 {
+            return "\(abs(m).formatted()) \(unit) ahead"
+        }
+        if m < 0 {
+            return "\(abs(m).formatted()) \(unit) behind"
+        }
+        return isBalancedStepsBattle ? "Even on Battle Score today" : "Even on steps today"
+    }
+
+    var neonTodayMarginColor: Color {
+        let m = comparableMargin
+        if m > 0 { return FitUpColors.Neon.green }
+        if m < 0 { return FitUpColors.Neon.orange }
+        return Color.white.opacity(0.82)
+    }
+
     var neonComparableMarginColor: Color {
         neonCardAccentColor
     }
