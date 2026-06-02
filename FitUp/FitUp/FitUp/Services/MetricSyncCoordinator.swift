@@ -30,6 +30,8 @@ actor MetricSyncCoordinator {
     private let publicDailyActivityRepository = PublicDailyActivityRepository()
     private let intradayStepTicksRepository = UserIntradayStepTicksRepository()
     private let userDailyStepTotalsRepository = UserDailyStepTotalsRepository()
+    private let userBattleStepTotalsRepository = UserBattleStepTotalsRepository()
+    private let calendarRepository = CalendarRepository()
 
     private var activeProfile: Profile?
     private var hasObserverPipeline = false
@@ -236,6 +238,7 @@ actor MetricSyncCoordinator {
                     profileId: profile.id,
                     calendarDateStr: calendarDateStr
                 )
+                await syncProvisionalBattleStepTotals(profile: profile, endDateKey: calendarDateStr)
             } catch {
                 AppLogger.log(
                     category: "healthkit_sync",
@@ -409,6 +412,10 @@ actor MetricSyncCoordinator {
             ]
         )
 
+        await MainActor.run {
+            NotificationCenter.default.post(name: .fitupMetricSyncDidComplete, object: nil)
+        }
+
         if healthSyncPipelineFailed {
             let analyticsProps: [String: String] = [
                 "trigger": trigger.rawValue,
@@ -523,6 +530,38 @@ actor MetricSyncCoordinator {
                 return "append_failed"
             }
         }
+    }
+
+    private func syncProvisionalBattleStepTotals(profile: Profile, endDateKey: String) async {
+        let tzId = profile.timezone
+        let timeZone = (tzId.flatMap { TimeZone(identifier: $0) }) ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        guard let endDate = dateFromCalendarDateKey(endDateKey, calendar: calendar) else { return }
+        guard let startDate = calendar.date(byAdding: .day, value: -6, to: endDate) else { return }
+        let startKey = PublicDailyActivityRepository.localCalendarDateString(
+            for: startDate,
+            timeZoneIdentifier: tzId
+        )
+        let battleKeys = await calendarRepository.fetchStepsBattleDateKeys(
+            currentUserId: profile.id,
+            startDateKey: startKey,
+            endDateKey: endDateKey
+        )
+        await userBattleStepTotalsRepository.syncProvisionalBattleDays(
+            profile: profile,
+            battleDateKeys: battleKeys
+        )
+    }
+
+    private func dateFromCalendarDateKey(_ key: String, calendar: Calendar) -> Date? {
+        let parts = key.split(separator: "-")
+        guard parts.count == 3,
+              let y = Int(parts[0]),
+              let m = Int(parts[1]),
+              let d = Int(parts[2])
+        else { return nil }
+        return calendar.date(from: DateComponents(year: y, month: m, day: d))
     }
 
     private func handleHealthReadError(

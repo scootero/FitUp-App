@@ -27,7 +27,7 @@ serve(async (request) => {
     }
     const { data: dayRow, error: dayError } = await supabaseAdmin
       .from("match_days")
-      .select("id, match_id, status, day_number")
+      .select("id, match_id, status, day_number, calendar_date")
       .eq("id", matchDayId)
       .limit(1)
       .maybeSingle();
@@ -180,6 +180,29 @@ serve(async (request) => {
       .eq("id", matchDayId);
     if (finalizeError) {
       throw finalizeError;
+    }
+
+    if (metricType === "steps" && dayRow.calendar_date) {
+      const battleDate = String(dayRow.calendar_date);
+      for (const participant of participants) {
+        const hkSteps = toNumber(participant.metric_total);
+        const { error: reconcileError } = await supabaseAdmin.rpc(
+          "reconcile_user_battle_step_total",
+          {
+            p_user_id: String(participant.user_id),
+            p_battle_date: battleDate,
+            p_steps: hkSteps,
+            p_source: "finalize_match_day",
+          },
+        );
+        if (reconcileError) {
+          console.error(
+            "reconcile_user_battle_step_total failed:",
+            reconcileError.message,
+            { user_id: participant.user_id, battle_date: battleDate },
+          );
+        }
+      }
     }
 
     let leaderboardError: string | null = null;

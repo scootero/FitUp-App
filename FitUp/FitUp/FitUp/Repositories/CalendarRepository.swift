@@ -144,6 +144,64 @@ final class CalendarRepository {
         }
     }
 
+    /// Non-void `steps` battle day keys (`yyyy-MM-dd`) for the user (includes in-progress days).
+    func fetchStepsBattleDateKeys(
+        currentUserId: UUID,
+        startDateKey: String,
+        endDateKey: String
+    ) async -> Set<String> {
+        guard let client = SupabaseProvider.client else { return [] }
+        guard startDateKey <= endDateKey else { return [] }
+
+        do {
+            let participantResponse = try await client
+                .from("match_participants")
+                .select("match_id")
+                .eq("user_id", value: currentUserId.uuidString)
+                .execute()
+
+            let allMatchIds = Set(jsonRows(from: participantResponse.data).compactMap { uuid(from: $0["match_id"]) })
+            guard !allMatchIds.isEmpty else { return [] }
+
+            let stepsMatchResponse = try await client
+                .from("matches")
+                .select("id")
+                .in("id", values: Array(allMatchIds))
+                .eq("metric_type", value: "steps")
+                .in("state", values: ["active", "completed"])
+                .execute()
+
+            let stepMatchIds = Set(jsonRows(from: stepsMatchResponse.data).compactMap { uuid(from: $0["id"]) })
+            guard !stepMatchIds.isEmpty else { return [] }
+
+            let dayRowsResponse = try await client
+                .from("match_days")
+                .select("calendar_date")
+                .in("match_id", values: Array(stepMatchIds))
+                .eq("is_void", value: false)
+                .gte("calendar_date", value: startDateKey)
+                .lte("calendar_date", value: endDateKey)
+                .execute()
+
+            let keys = jsonRows(from: dayRowsResponse.data).compactMap { string(from: $0["calendar_date"]) }
+            return Set(keys.filter { !$0.isEmpty })
+        } catch {
+            if error is CancellationError { return [] }
+            AppLogger.log(
+                category: "match_state",
+                level: .warning,
+                message: "calendar steps battle day keys load failed",
+                userId: currentUserId,
+                metadata: [
+                    "error": error.localizedDescription,
+                    "start": startDateKey,
+                    "end": endDateKey,
+                ]
+            )
+            return []
+        }
+    }
+
     /// Returns finalized, non-void `steps` battle day keys (`yyyy-MM-dd`) where the current user participated.
     func fetchFinalizedStepsBattleDateKeys(
         currentUserId: UUID,

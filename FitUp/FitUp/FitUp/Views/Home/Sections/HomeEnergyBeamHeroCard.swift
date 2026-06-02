@@ -8,7 +8,7 @@
 import SwiftUI
 
 /// Local-only persistence for the last hero battle snapshot the user saw (per active match).
-private enum EnergyBeamHeroLastDisplayedSnapshotStore {
+enum EnergyBeamHeroLastDisplayedSnapshotStore {
     private static let marginKeyPrefix = "fitup.energyBeamHero.lastDisplayedComparableMargin."
     private static let userBattleScoreKeyPrefix = "fitup.energyBeamHero.lastDisplayedUserBattleScore."
     private static let opponentBattleScoreKeyPrefix = "fitup.energyBeamHero.lastDisplayedOpponentBattleScore."
@@ -43,6 +43,16 @@ private enum EnergyBeamHeroLastDisplayedSnapshotStore {
         UserDefaults.standard.set(margin, forKey: marginKey(for: matchId))
         UserDefaults.standard.set(userBattleScore, forKey: userBattleScoreKey(for: matchId))
         UserDefaults.standard.set(opponentBattleScore, forKey: opponentBattleScoreKey(for: matchId))
+    }
+
+    static func clear(for matchId: UUID) {
+        UserDefaults.standard.removeObject(forKey: marginKey(for: matchId))
+        UserDefaults.standard.removeObject(forKey: userBattleScoreKey(for: matchId))
+        UserDefaults.standard.removeObject(forKey: opponentBattleScoreKey(for: matchId))
+    }
+
+    static func clearAll(matchIds: [UUID]) {
+        matchIds.forEach(clear(for:))
     }
 }
 
@@ -396,6 +406,28 @@ struct HomeEnergyBeamHeroCard: View {
                         displayBeamCollisionMargin = resolved.margin
                         beamIntroStartedAt = nil
                         holdIntroGhostBeforeFirstPlay = !HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession
+                    } else if oldMatch.profileTodayKey != newMatch.profileTodayKey {
+                        EnergyBeamHeroLastDisplayedSnapshotStore.clear(for: newMatch.id)
+                        let resolved = Self.resolvedInitialDisplayValues(
+                            for: newMatch,
+                            gateConsumed: HeroIntroSessionGate.hasPlayedColdOpenIntroThisSession,
+                            allowPersistedSnapshot: false
+                        )
+                        displayMargin = resolved.margin
+                        displayUserBattleScore = resolved.userBattleScore
+                        displayOpponentBattleScore = resolved.opponentBattleScore
+                        displayBeamCollisionMargin = resolved.margin
+                        beamIntroStartedAt = nil
+                        logHeroAnim(
+                            message: "hero_display_reset_profile_today_key",
+                            trigger: "onChange_match",
+                            context: .matchReload,
+                            match: newMatch,
+                            extra: [
+                                "old_profile_today_key": oldMatch.profileTodayKey,
+                                "new_profile_today_key": newMatch.profileTodayKey,
+                            ]
+                        )
                     }
                     if isIntroSequenceInProgress(at: Date()) {
                         logHeroAnim(
@@ -813,14 +845,16 @@ struct HomeEnergyBeamHeroCard: View {
 
     private static func resolvedInitialDisplayValues(
         for match: HomeActiveMatch,
-        gateConsumed: Bool
+        gateConsumed: Bool,
+        allowPersistedSnapshot: Bool = true
     ) -> (margin: Double, userBattleScore: Double, opponentBattleScore: Double, source: String) {
         let liveMargin = Double(match.comparableMargin)
         let liveUser = Double(match.myBattleScore)
         let liveOpp = Double(match.theirBattleScore)
 
-        if gateConsumed {
-            return (liveMargin, liveUser, liveOpp, "live_gate_consumed")
+        if gateConsumed || !allowPersistedSnapshot {
+            let source = gateConsumed ? "live_gate_consumed" : "live_day_rollover"
+            return (liveMargin, liveUser, liveOpp, source)
         }
 
         if let stored = EnergyBeamHeroLastDisplayedSnapshotStore.load(for: match.id) {

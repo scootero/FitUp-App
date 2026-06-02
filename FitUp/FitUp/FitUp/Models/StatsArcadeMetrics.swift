@@ -44,3 +44,12 @@ enum StatsArcadeStreakDot: Equatable, Sendable {
     case loss
     case today
 }
+
+/// Top Stats card: today's live battle steps + all-time cumulative (literal HealthKit steps).
+struct StatsBattleStepsDisplay: Equatable, Sendable {
+    let todaySteps: Int
+    let allTimeSteps: Int
+    let isTodayBattleDay: Bool
+
+    static let empty = StatsBattleStepsDisplay(todaySteps: 0, allTimeSteps: 0, isTodayBattleDay: false)
+}

@@ -61,6 +61,14 @@ Tap any in-month day to open a **shimmer dock** at the bottom (tap again or chev
 - Screen key: `activity_calendar` via `trackProductScreen`
 - Additional `screen_viewed` properties on mode/month change: `mode`, `month`
 
+## Battle Steps (Stats top card)
+
+- **Scope:** steps battles only; **literal HealthKit** full-day steps (not battle score, balanced score, or opponent totals).
+- **Dedupe:** one count per profile-local calendar day even with multiple active steps matches.
+- **Storage:** `user_battle_step_totals` — absolute upsert per day (`steps` replaced, never incremented on sync).
+- **All-time:** `SUM` of finalized rows; **today** adds live HK while the day is not finalized.
+- **Sync:** provisional HK rows from `MetricSyncCoordinator`; finalized rows from `reconcile_user_battle_step_total` on `finalize-match-day`.
+
 ## Related
 
 - Deferred long-range history: [`health-history-charts-deferred.md`](health-history-charts-deferred.md)

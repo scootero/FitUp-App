@@ -124,6 +124,7 @@ final class HealthViewModel: ObservableObject {
     @Published private(set) var statsBattleImpactMetric: StatsBattleImpactMetric?
     @Published private(set) var statsMonthlyBattleBonusMetric: StatsMonthlyBattleBonusMetric?
     @Published private(set) var statsOpponentStepsRollups: StatsOpponentStepsRollups?
+    @Published private(set) var statsBattleStepsDisplay: StatsBattleStepsDisplay?
     /// `nil` = timeline fetch failed; `[]` = loaded with no qualifying battle days.
     @Published private(set) var statsArcadeStreakTimeline: [StatsArcadeStreakDot]?
 
@@ -140,6 +141,7 @@ final class HealthViewModel: ObservableObject {
     private let homeRepository = HomeRepository()
     private let activityRepository = ActivityRepository()
     private let calendarRepository = CalendarRepository()
+    private let userBattleStepTotalsRepository = UserBattleStepTotalsRepository()
     private let statsSnapshotCacheStore = StatsPageSnapshotCacheStore()
     private let statsSnapshotSoftTTL: TimeInterval = 60 * 5
 
@@ -183,6 +185,7 @@ final class HealthViewModel: ObservableObject {
             statsBattleImpactMetric = nil
             statsMonthlyBattleBonusMetric = nil
             statsOpponentStepsRollups = nil
+            statsBattleStepsDisplay = nil
             statsArcadeStreakTimeline = nil
             completedMatches = []
             completedMatchesListTask?.cancel()
@@ -279,12 +282,14 @@ final class HealthViewModel: ObservableObject {
         async let arcadeImpact = refreshArcadeImpactMetrics(userId: userId)
         async let arcadeStreak = refreshArcadeStreakTimeline(userId: userId)
         async let battleStatsLoad = refreshArcadeBattleStats()
+        async let battleStepsLoad = refreshBattleStepsMetrics(userId: userId)
 
         await rivalStatsLoad
         await arcadeImpact
         statsOpponentStepsRollups = await opponentRollups
         await arcadeStreak
         await battleStatsLoad
+        await battleStepsLoad
 
         lastLoadFinishedAt = Date()
 
@@ -494,6 +499,7 @@ final class HealthViewModel: ObservableObject {
         statsBattleImpactMetric = nil
         statsMonthlyBattleBonusMetric = nil
         statsOpponentStepsRollups = nil
+        statsBattleStepsDisplay = nil
         statsArcadeStreakTimeline = nil
         statsRangeMargins = []
         isStatsRangeMarginsRefreshing = false
@@ -560,6 +566,43 @@ final class HealthViewModel: ObservableObject {
             ]
         )
         statsSnapshotSavedAt = Date()
+    }
+
+    /// Refreshes Battle Steps card after HealthKit sync (today + all-time).
+    func refreshBattleStepsAfterSync() async {
+        guard let userId = profileId else { return }
+        await refreshBattleStepsMetrics(userId: userId)
+    }
+
+    private func refreshBattleStepsMetrics(userId: UUID) async {
+        async let snapshotTask = userBattleStepTotalsRepository.fetchCumulativeBattleSteps()
+
+        let todayHK: Int
+        do {
+            todayHK = try await healthKitRead("stats_battle_steps_today", userId: userId) {
+                try await HealthKitService.fetchTodayStepCount()
+            }
+        } catch {
+            statsBattleStepsDisplay = nil
+            return
+        }
+
+        stepsTodayValue = todayHK
+
+        guard let snapshot = await snapshotTask else {
+            statsBattleStepsDisplay = nil
+            return
+        }
+
+        let todaySteps = snapshot.isTodayBattleDay ? todayHK : 0
+        let allTime = snapshot.finalizedTotal
+            + (snapshot.isTodayBattleDay && !snapshot.isTodayFinalized ? todayHK : 0)
+
+        statsBattleStepsDisplay = StatsBattleStepsDisplay(
+            todaySteps: max(0, todaySteps),
+            allTimeSteps: max(0, allTime),
+            isTodayBattleDay: snapshot.isTodayBattleDay
+        )
     }
 
     private func refreshArcadeImpactMetrics(userId: UUID) async {

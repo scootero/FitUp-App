@@ -28,6 +28,7 @@ struct HealthView: View {
                     profileTimeZoneIdentifier: profile?.timezone,
                     battleStats: viewModel.battleStats,
                     rivalStats: viewModel.rivalStats,
+                    battleStepsDisplay: viewModel.statsBattleStepsDisplay,
                     battleImpactMetric: viewModel.statsBattleImpactMetric,
                     monthlyBattleBonusMetric: viewModel.statsMonthlyBattleBonusMetric,
                     opponentStepsRollups: viewModel.statsOpponentStepsRollups,
@@ -55,6 +56,9 @@ struct HealthView: View {
             .padding(.horizontal, 16)
         }
         .scrollIndicators(.hidden)
+        .onReceive(NotificationCenter.default.publisher(for: .fitupMetricSyncDidComplete)) { _ in
+            Task { await viewModel.refreshBattleStepsAfterSync() }
+        }
         .overlay {
             #if DEBUG
             if LegacyStatsFeature.isEnabled, let explainer = statsMetricExplainer {

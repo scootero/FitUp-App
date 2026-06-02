@@ -13,6 +13,7 @@ struct StatsArcadeSliceOneView: View {
     let profileTimeZoneIdentifier: String?
     let battleStats: HealthBattleStats
     let rivalStats: [HomeRivalStat]
+    let battleStepsDisplay: StatsBattleStepsDisplay?
     let battleImpactMetric: StatsBattleImpactMetric?
     let monthlyBattleBonusMetric: StatsMonthlyBattleBonusMetric?
     let opponentStepsRollups: StatsOpponentStepsRollups?
@@ -38,6 +39,7 @@ struct StatsArcadeSliceOneView: View {
 
     private static let battleImpactPositiveTint = Color(red: 0, green: 0.86, blue: 1)
     private static let battleImpactNegativeTint = Color(red: 1, green: 0.84, blue: 0)
+    private static let battleStepsTint = Color(red: 0.12, green: 1, blue: 0.55)
 
     private static let unresolvedPlaceholder = "—"
 
@@ -88,6 +90,7 @@ struct StatsArcadeSliceOneView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            battleStepsHeroCard
             header
             battleImpactCard
             ActivityCalendarCard(
@@ -112,6 +115,85 @@ struct StatsArcadeSliceOneView: View {
         .sheet(isPresented: $isAllRivalsSheetPresented) {
             StatsArcadeAllRivalsSheet(rivals: topRivals)
         }
+    }
+
+    private var battleStepsHeroCard: some View {
+        let display = battleStepsDisplay
+        let todaySteps = display?.todaySteps ?? 0
+        let allTimeSteps = display?.allTimeSteps ?? 0
+        let isTodayBattleDay = display?.isTodayBattleDay == true
+        let hasData = display != nil
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("BATTLE STEPS")
+                .font(.system(size: Self.statsSectionTitle, weight: .black))
+                .tracking(2.2)
+                .foregroundStyle(Self.battleStepsTint)
+
+            HStack(spacing: 8) {
+                battleStepsSubCard(
+                    title: "TODAY'S BATTLE STEPS",
+                    value: isTodayBattleDay ? todaySteps : nil,
+                    subtitle: isTodayBattleDay
+                        ? "Live steps on a battle day"
+                        : "No steps battle today",
+                    showsLiveNote: false
+                )
+                battleStepsSubCard(
+                    title: "ALL-TIME BATTLE STEPS",
+                    value: hasData ? allTimeSteps : nil,
+                    subtitle: "Total steps taken on days you were in a battle",
+                    showsLiveNote: isTodayBattleDay
+                )
+            }
+        }
+        .padding(12)
+        .glassCard(.base)
+    }
+
+    private func battleStepsSubCard(
+        title: String,
+        value: Int?,
+        subtitle: String,
+        showsLiveNote: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 9, weight: .black))
+                .tracking(0.6)
+                .foregroundStyle(Self.battleStepsTint.opacity(0.92))
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+
+            if let value {
+                StatsAnimatedStepCount(value: value, tint: Self.battleStepsTint)
+            } else {
+                Text(Self.unresolvedPlaceholder)
+                    .font(.system(size: 26, weight: .black, design: .monospaced))
+                    .foregroundStyle(Self.battleStepsTint)
+            }
+
+            Text(subtitle)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.62))
+                .fixedSize(horizontal: false, vertical: true)
+
+            if showsLiveNote {
+                Text("Includes today's live steps")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Self.battleStepsTint.opacity(0.75))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Self.battleStepsTint.opacity(0.22), lineWidth: 1)
+        )
     }
 
     private var header: some View {
@@ -1074,6 +1156,7 @@ struct StatsArcadeSliceOneView: View {
             profileTimeZoneIdentifier: nil,
             battleStats: .empty,
             rivalStats: [],
+            battleStepsDisplay: StatsBattleStepsDisplay(todaySteps: 8420, allTimeSteps: 1_204_500, isTodayBattleDay: true),
             battleImpactMetric: nil,
             monthlyBattleBonusMetric: nil,
             opponentStepsRollups: nil,
@@ -1087,4 +1170,36 @@ struct StatsArcadeSliceOneView: View {
         .padding(.horizontal, 16)
     }
     .background { BackgroundGradientView() }
+}
+
+// MARK: - Animated step count (increase-only tick)
+
+private struct StatsAnimatedStepCount: View {
+    let value: Int
+    let tint: Color
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var displayedValue: Int = 0
+
+    var body: some View {
+        Text(displayedValue.formatted())
+            .font(.system(size: 26, weight: .black, design: .monospaced))
+            .foregroundStyle(tint)
+            .shadow(color: tint.opacity(0.45), radius: 8)
+            .contentTransition(.numericText())
+            .onAppear {
+                displayedValue = value
+            }
+            .onChange(of: value) { oldValue, newValue in
+                if reduceMotion {
+                    displayedValue = newValue
+                } else if newValue > oldValue {
+                    withAnimation(.linear(duration: 0.5)) {
+                        displayedValue = newValue
+                    }
+                } else {
+                    displayedValue = newValue
+                }
+            }
+    }
 }

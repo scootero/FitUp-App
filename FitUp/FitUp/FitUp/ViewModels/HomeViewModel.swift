@@ -551,10 +551,19 @@ final class HomeViewModel: ObservableObject {
     private func performReload(userId: UUID, forceRefresh: Bool) async -> Bool {
         isLoading = true
         defer { isLoading = false }
-        handleHomeDayRolloverIfNeeded()
+        let didRollover = handleHomeDayRolloverIfNeeded()
+        let effectiveForce = forceRefresh || didRollover
 
-        if forceRefresh {
+        if effectiveForce {
             await runMetricSyncIfEligible()
+        }
+        if didRollover {
+            AppLogger.log(
+                category: "home_snapshot",
+                level: .debug,
+                message: "home_forced_reload_after_rollover",
+                userId: userId
+            )
         }
 
         let baselineFloor = max(3000, ReadinessGoals.loadFromUserDefaults().stepsGoal)
@@ -649,7 +658,7 @@ final class HomeViewModel: ObservableObject {
         }
         logHomeLayoutSnapshotIfNeeded(userId: userId)
 
-        if forceRefresh {
+        if effectiveForce {
             await refreshHomeStatsAwaiting(userId: userId)
             await executeHeroHealthKitPatch(userId: userId)
         } else {
@@ -1184,13 +1193,43 @@ final class HomeViewModel: ObservableObject {
         await MetricSyncCoordinator.shared.requestSync(trigger: .manual, force: true)
     }
 
-    private func handleHomeDayRolloverIfNeeded(currentLocalDate: String? = nil) {
+    @discardableResult
+    private func handleHomeDayRolloverIfNeeded(currentLocalDate: String? = nil) -> Bool {
         let localDate = currentLocalDate ?? snapshotCacheStore.localDateString(
             now: Date(),
             profileTimeZoneIdentifier: profileTimeZoneIdentifier
         )
         defer { lastHomeProfileLocalDate = localDate }
-        guard let previousDate = lastHomeProfileLocalDate, previousDate != localDate else { return }
+        guard let previousDate = lastHomeProfileLocalDate, previousDate != localDate else { return false }
+
+        var matchIdsToClear = activeMatches.map(\.id)
+        if let selectedId = selectedHeroStepMatchId, !matchIdsToClear.contains(selectedId) {
+            matchIdsToClear.append(selectedId)
+        }
+        EnergyBeamHeroLastDisplayedSnapshotStore.clearAll(matchIds: matchIdsToClear)
+        AppLogger.log(
+            category: "hero_anim",
+            level: .debug,
+            message: "hero_userdefaults_snapshot_cleared",
+            userId: userId,
+            metadata: [
+                "cleared_match_count": "\(matchIdsToClear.count)",
+                "previous_date": previousDate,
+                "local_date": localDate,
+            ]
+        )
+        AppLogger.log(
+            category: "home_snapshot",
+            level: .debug,
+            message: "home_day_rollover_detected",
+            userId: userId,
+            metadata: [
+                "previous_date": previousDate,
+                "local_date": localDate,
+                "cleared_match_count": "\(matchIdsToClear.count)",
+            ]
+        )
+
         heroHealthKitValueByMetric.removeAll()
         heroSparklineUserSeries = nil
         heroSparklineOpponentSeries = nil
@@ -1198,39 +1237,41 @@ final class HomeViewModel: ObservableObject {
         heroViewerHealthKitStepsReadAt = nil
         heroOpponentIntradayLatestTickAt = nil
         heroSparklineLoadGeneration &+= 1
-        guard !activeMatches.isEmpty else { return }
-        activeMatches = activeMatches.map { match in
-            HomeActiveMatch(
-                id: match.id,
-                metricType: match.metricType,
-                durationDays: match.durationDays,
-                sportLabel: match.sportLabel,
-                seriesLabel: match.seriesLabel,
-                daysLeft: match.daysLeft,
-                finalDayCutoffAt: match.finalDayCutoffAt,
-                finalDayScoreEndsAt: match.finalDayScoreEndsAt,
-                myToday: 0,
-                theirToday: 0,
-                myScore: match.myScore,
-                theirScore: match.theirScore,
-                isWinning: true,
-                opponent: match.opponent,
-                opponentTodayUpdatedAt: nil,
-                dayPips: match.dayPips,
-                scoringMode: match.scoringMode,
-                difficulty: match.difficulty,
-                myBaselineSteps: match.myBaselineSteps,
-                theirBaselineSteps: match.theirBaselineSteps,
-                battleDateRangeLabel: match.battleDateRangeLabel,
-                battleEndDateKey: match.battleEndDateKey,
-                profileTodayKey: localDate,
-                hasUnfinalizedDay: match.hasUnfinalizedDay
-            )
+        if !activeMatches.isEmpty {
+            activeMatches = activeMatches.map { match in
+                HomeActiveMatch(
+                    id: match.id,
+                    metricType: match.metricType,
+                    durationDays: match.durationDays,
+                    sportLabel: match.sportLabel,
+                    seriesLabel: match.seriesLabel,
+                    daysLeft: match.daysLeft,
+                    finalDayCutoffAt: match.finalDayCutoffAt,
+                    finalDayScoreEndsAt: match.finalDayScoreEndsAt,
+                    myToday: 0,
+                    theirToday: 0,
+                    myScore: match.myScore,
+                    theirScore: match.theirScore,
+                    isWinning: true,
+                    opponent: match.opponent,
+                    opponentTodayUpdatedAt: nil,
+                    dayPips: match.dayPips,
+                    scoringMode: match.scoringMode,
+                    difficulty: match.difficulty,
+                    myBaselineSteps: match.myBaselineSteps,
+                    theirBaselineSteps: match.theirBaselineSteps,
+                    battleDateRangeLabel: match.battleDateRangeLabel,
+                    battleEndDateKey: match.battleEndDateKey,
+                    profileTodayKey: localDate,
+                    hasUnfinalizedDay: match.hasUnfinalizedDay
+                )
+            }
         }
         syncLiveActivity()
         if let userId {
             persistFreshHeroSnapshot(profileId: userId)
         }
+        return true
     }
 
     private func normalizedHeroMetricType(_ metricType: String) -> String {
