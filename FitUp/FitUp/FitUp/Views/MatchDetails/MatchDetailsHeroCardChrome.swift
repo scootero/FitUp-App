@@ -7,6 +7,13 @@
 
 import SwiftUI
 
+/// Brighter body copy on Match Details secondary cards (vs global `Text.secondary`).
+enum MatchDetailsContentColors {
+    static let sectionTitle = Color.white.opacity(0.96)
+    static let label = Color.white.opacity(0.9)
+    static let muted = Color.white.opacity(0.72)
+}
+
 struct MatchDetailsHeroCardChrome: ViewModifier {
     let accent: Color
     let variant: GlassCardVariant
@@ -125,20 +132,34 @@ struct MatchDetailsSecondaryCardChrome: ViewModifier {
 
                     RadialGradient(
                         colors: [
-                            leadingAccent.opacity(0.12),
-                            trailingAccent?.opacity(0.08) ?? leadingAccent.opacity(0.04),
+                            leadingAccent.opacity(0.14),
+                            trailingAccent?.opacity(0.1) ?? leadingAccent.opacity(0.05),
                             Color.clear,
                         ],
                         center: .topLeading,
                         startRadius: 6,
-                        endRadius: 180
+                        endRadius: 200
                     )
+                    .clipShape(RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous))
+
+                    RadialGradient(
+                        colors: [
+                            FitUpColors.Neon.purple.opacity(0.16),
+                            FitUpColors.Neon.pink.opacity(0.06),
+                            Color.clear,
+                        ],
+                        center: .bottomTrailing,
+                        startRadius: 4,
+                        endRadius: 220
+                    )
+                    .blur(radius: 10)
                     .clipShape(RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous))
 
                     MatchDetailsHeroTextureOverlay()
                         .opacity(0.45)
                         .clipShape(RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous))
                         .blendMode(.plusLighter)
+                        .blur(radius: 0.6)
 
                     RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
                         .strokeBorder(

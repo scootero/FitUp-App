@@ -13,6 +13,7 @@ struct CalendarMonthGridView: View {
     var layout: ActivityCalendarLayout = .compact
     let selectedDayId: String?
     let battleState: (String) -> CalendarDayBattleState
+    let battleMargin: (String) -> Int?
     let stepsState: (String) -> CalendarDayStepsState?
     let onSelectDay: (CalendarDayItem) -> Void
 
@@ -40,6 +41,7 @@ struct CalendarMonthGridView: View {
                         mode: mode,
                         layout: layout,
                         battleState: battleState(item.id),
+                        battleMargin: battleMargin(item.id),
                         stepsState: stepsState(item.id),
                         isSelected: selectedDayId == item.id,
                         onTap: { onSelectDay(item) }

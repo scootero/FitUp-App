@@ -28,6 +28,7 @@ final class ActivityCalendarViewModel: ObservableObject {
     @Published var mode: ActivityCalendarMode = .battles
     @Published private(set) var gridItems: [CalendarDayItem] = []
     @Published private(set) var battleByDate: [String: CalendarDayBattleState] = [:]
+    @Published private(set) var battleMarginByDate: [String: Int] = [:]
     @Published private(set) var stepsByDate: [String: CalendarDayStepsState] = [:]
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
@@ -55,9 +56,11 @@ final class ActivityCalendarViewModel: ObservableObject {
     private let userId: UUID
     private let profileTimeZoneIdentifier: String?
     private let calendarRepository: CalendarRepository
+    private let homeRepository: HomeRepository
     private let stepsGoal: Int
 
     private var battleCache: [String: [String: CalendarDayBattleState]] = [:]
+    private var battleMarginCache: [String: [String: Int]] = [:]
     private var stepsCache: [String: [String: CalendarDayStepsState]] = [:]
     private var loadTask: Task<Void, Never>?
 
@@ -65,7 +68,8 @@ final class ActivityCalendarViewModel: ObservableObject {
         userId: UUID,
         profileTimeZoneIdentifier: String?,
         initialMonth: Date = Date(),
-        calendarRepository: CalendarRepository = CalendarRepository()
+        calendarRepository: CalendarRepository = CalendarRepository(),
+        homeRepository: HomeRepository = HomeRepository()
     ) {
         self.userId = userId
         self.profileTimeZoneIdentifier = profileTimeZoneIdentifier
@@ -74,6 +78,7 @@ final class ActivityCalendarViewModel: ObservableObject {
             profileTimeZoneIdentifier: profileTimeZoneIdentifier
         )
         self.calendarRepository = calendarRepository
+        self.homeRepository = homeRepository
         self.stepsGoal = ReadinessGoals.loadFromUserDefaults().stepsGoal
         refreshGridItems()
     }
@@ -84,6 +89,7 @@ final class ActivityCalendarViewModel: ObservableObject {
 
     func reload() {
         battleCache.removeAll()
+        battleMarginCache.removeAll()
         stepsCache.removeAll()
         loadMonthData(forceRefresh: true)
     }
@@ -118,7 +124,17 @@ final class ActivityCalendarViewModel: ObservableObject {
     }
 
     func battleState(for dateKey: String) -> CalendarDayBattleState {
-        battleByDate[dateKey] ?? .none
+        guard dateKey <= profileTodayDateKey else { return .none }
+        return battleByDate[dateKey] ?? .none
+    }
+
+    func battleMargin(for dateKey: String) -> Int? {
+        guard dateKey <= profileTodayDateKey else { return nil }
+        return battleMarginByDate[dateKey]
+    }
+
+    private var profileTodayDateKey: String {
+        CalendarMonthLayout.profileTodayDateKey(profileTimeZoneIdentifier: profileTimeZoneIdentifier)
     }
 
     func stepsState(for dateKey: String) -> CalendarDayStepsState? {
@@ -176,8 +192,10 @@ final class ActivityCalendarViewModel: ObservableObject {
 
         if !forceRefresh,
            let cachedBattles = battleCache[cacheKey],
+           let cachedMargins = battleMarginCache[cacheKey],
            let cachedSteps = stepsCache[cacheKey] {
             battleByDate = cachedBattles
+            battleMarginByDate = cachedMargins
             stepsByDate = cachedSteps
             errorMessage = nil
             return
@@ -192,17 +210,21 @@ final class ActivityCalendarViewModel: ObservableObject {
                 startDateKey: range.start,
                 endDateKey: range.end
             )
+            async let margins = loadBattleMargins(rangeStart: range.start, rangeEnd: range.end)
             async let steps = loadSteps(rangeStart: range.start, rangeEnd: range.end)
 
             let battleResult = await battles
+            let marginResult = await margins
             let stepsResult = await steps
 
             guard !Task.isCancelled else { return }
 
             battleByDate = battleResult
+            battleMarginByDate = marginResult
             stepsByDate = stepsResult.states
             showHealthAccessBanner = stepsResult.accessDenied
             battleCache[cacheKey] = battleResult
+            battleMarginCache[cacheKey] = marginResult
             stepsCache[cacheKey] = stepsResult.states
             isLoading = false
 
@@ -210,6 +232,34 @@ final class ActivityCalendarViewModel: ObservableObject {
                 errorMessage = err
             }
         }
+    }
+
+    private func loadBattleMargins(rangeStart: String, rangeEnd: String) async -> [String: Int] {
+        let todayKey = profileTodayDateKey
+        let marginEndKey = min(rangeEnd, todayKey)
+        guard rangeStart <= marginEndKey else { return [:] }
+
+        let dayCount = CalendarMonthLayout.inclusiveDayCount(
+            from: rangeStart,
+            to: marginEndKey,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
+        let endDate = CalendarMonthLayout.date(
+            from: marginEndKey,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        ) ?? Date()
+
+        let rows = await homeRepository.fetchDailyBattleMargins(
+            endDate: endDate,
+            dayCount: dayCount,
+            metricType: HomeBattleHeroCard.HeroMetric.steps.metricType,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
+        var map: [String: Int] = [:]
+        for row in rows where row.calendarDate >= rangeStart && row.calendarDate <= marginEndKey {
+            map[row.calendarDate] = row.margin
+        }
+        return map
     }
 
     private struct StepsLoadResult {

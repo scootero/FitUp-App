@@ -14,11 +14,11 @@ Per profile calendar date (`yyyy-MM-dd`, profile timezone):
 
 | State | UI | Rule |
 |-------|-----|------|
-| `none` | Gray ghost ring | No match days for the user on that date |
-| `inProgress` | Orange partial ring | Any match day on that date not finalized |
-| `wonAny` | Neon green filled circle | Won ≥1 finalized non-void match day |
-| `lostAll` | Neon red filled circle | Had finalized non-void losses, no wins |
-| `voidOnly` | Small yellow dot | Only void/tie finalized days |
+| `none` | Empty (no chip) | No match days, or calendar date is after today |
+| `inProgress` | Margin tone chip | Live day not finalized; tone from `home_daily_battle_margins` when available |
+| `wonAny` / `lostAll` / `voidOnly` | Margin tone chip | Green → cyan → purple → orange → red by signed step margin (same scale as BATTLE MARGIN chart); fallback tiers when margin row missing |
+
+Future scheduled match days (e.g. day 2–3 of a 3-day battle before that date) show **no** chip — only today and past dates.
 
 **Multi-match:** green if the user beat at least one opponent that day; red only if they had competitive finalized days and won none.
 

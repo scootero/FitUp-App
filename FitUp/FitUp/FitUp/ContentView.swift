@@ -16,9 +16,7 @@ struct ContentView: View {
         ZStack {
             BackgroundGradientView()
             if sessionStore.isLoadingSession {
-                ProgressView("Restoring session...")
-                    .font(FitUpFont.body(14, weight: .medium))
-                    .tint(FitUpColors.Neon.cyan)
+                SessionRestoreLoadingView()
             } else if !sessionStore.isAuthenticated {
                 AuthView()
             } else if !sessionStore.postAuthDisplayNameStepComplete {
@@ -294,6 +292,26 @@ private struct RootShellView: View {
             }
             .trackProductScreen("leaderboard", userId: sessionStore.currentProfile?.id)
         }
+    }
+}
+
+private struct SessionRestoreLoadingView: View {
+    var body: some View {
+        VStack(spacing: 22) {
+            FitUpBrandMark(fontSize: 32)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            HomeIntroTipView()
+
+            ProgressView("Restoring session...")
+                .font(FitUpFont.body(14, weight: .medium))
+                .tint(FitUpColors.Neon.cyan)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("FitUp. Restoring session.")
     }
 }
 

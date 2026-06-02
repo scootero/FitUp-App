@@ -44,14 +44,15 @@ struct CalendarBattleDayDetailPanel: View {
     }
 
     private func battleBody(match: CalendarDayBattleMatchDetail) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             stackedAvatars(match: match)
+                .padding(.bottom, 16)
 
             HStack(alignment: .bottom, spacing: 0) {
                 verticalStepBars(match: match)
                     .frame(minWidth: 80, alignment: .leading)
 
-                Spacer(minLength: 16)
+                Spacer(minLength: 24)
 
                 headToHeadColumn(match: match)
             }
@@ -83,7 +84,7 @@ struct CalendarBattleDayDetailPanel: View {
         let maxSteps = max(match.mySteps, match.theirSteps, 1)
         let barMaxHeight: CGFloat = 72
 
-        return HStack(alignment: .bottom, spacing: 20) {
+        return HStack(alignment: .bottom, spacing: 28) {
             verticalBar(
                 label: "YOU",
                 steps: match.mySteps,

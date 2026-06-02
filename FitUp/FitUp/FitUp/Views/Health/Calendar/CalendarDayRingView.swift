@@ -9,7 +9,7 @@ import SwiftUI
 
 enum CalendarDayRingStyle: Equatable {
     case ghost
-    case battle(CalendarDayBattleState)
+    case battle(state: CalendarDayBattleState, margin: Int?)
     case steps(CalendarDayStepsState?)
 }
 
@@ -28,20 +28,12 @@ struct CalendarDayRingView: View {
     private var stepsGoalRingColor: Color { FitUpColors.Neon.blue }
     private var stepsProgressRingColor: Color { FitUpColors.Neon.cyan }
 
-    private var battleDotScale: CGFloat {
-        layout == .expanded ? 0.82 : 0.72
-    }
-
-    private var battleLabelFontScale: CGFloat {
-        layout == .expanded ? 0.38 : 0.34
-    }
-
     var body: some View {
         switch style {
         case .ghost:
             ghostRing
-        case .battle(let state):
-            battleIndicator(state)
+        case .battle(let state, let margin):
+            battleIndicator(state, margin: margin)
         case .steps(let state):
             stepsIndicator(state)
         }
@@ -59,58 +51,23 @@ struct CalendarDayRingView: View {
     }
 
     @ViewBuilder
-    private func battleIndicator(_ state: CalendarDayBattleState) -> some View {
-        switch state {
-        case .none:
-            emptyBattlePlaceholder
-        case .wonAny:
-            battleOutcomeCircle(
-                fill: FitUpColors.Neon.green,
-                shadowColor: FitUpColors.Neon.green.opacity(0.45),
-                label: "W",
-                labelColor: Color.black.opacity(0.88)
-            )
-        case .lostAll:
-            battleOutcomeCircle(
-                fill: FitUpColors.Neon.red,
-                shadowColor: FitUpColors.Neon.red.opacity(0.4),
-                label: "L",
-                labelColor: Color.white.opacity(0.95)
-            )
-        case .inProgress:
-            ZStack {
-                ghostRing
-                Circle()
-                    .trim(from: 0, to: 0.55)
-                    .stroke(
-                        FitUpColors.Neon.orange,
-                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
-                    )
-                    .frame(width: innerDiameter, height: innerDiameter)
-                    .rotationEffect(.degrees(-90))
-            }
-        case .voidOnly:
-            Circle()
-                .fill(FitUpColors.Neon.yellow.opacity(0.55))
-                .frame(width: innerDiameter * 0.38, height: innerDiameter * 0.38)
-        }
-    }
+    private func battleIndicator(_ state: CalendarDayBattleState, margin: Int?) -> some View {
+        if state != .none,
+           let resolved = CalendarBattleMarginTone.resolvedMargin(state: state, marginByDate: margin) {
+            let fill = CalendarBattleMarginTone.fillColor(margin: resolved)
+            let glow = CalendarBattleMarginTone.glowColor(margin: resolved)
+            let chipHeight = innerDiameter * (layout == .expanded ? 0.42 : 0.38)
 
-    private func battleOutcomeCircle(
-        fill: Color,
-        shadowColor: Color,
-        label: String,
-        labelColor: Color
-    ) -> some View {
-        ZStack {
-            Circle()
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(fill)
-                .frame(width: innerDiameter * battleDotScale, height: innerDiameter * battleDotScale)
-                .shadow(color: shadowColor, radius: layout == .expanded ? 4 : 3)
-
-            Text(label)
-                .font(FitUpFont.mono(size * battleLabelFontScale, weight: .black))
-                .foregroundStyle(labelColor)
+                .frame(width: innerDiameter * 0.92, height: chipHeight)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.6)
+                }
+                .shadow(color: glow, radius: layout == .expanded ? 5 : 3)
+        } else {
+            emptyBattlePlaceholder
         }
     }
 
@@ -155,9 +112,9 @@ struct CalendarDayRingView: View {
 #Preview {
     HStack(spacing: 16) {
         CalendarDayRingView(style: .ghost)
-        CalendarDayRingView(style: .battle(.wonAny))
-        CalendarDayRingView(style: .battle(.lostAll))
-        CalendarDayRingView(style: .battle(.inProgress))
+        CalendarDayRingView(style: .battle(state: .wonAny, margin: 1200))
+        CalendarDayRingView(style: .battle(state: .lostAll, margin: -800))
+        CalendarDayRingView(style: .battle(state: .inProgress, margin: 120))
         CalendarDayRingView(style: .steps(CalendarDayStepsState(steps: 8420, stepsGoal: 12000)))
         CalendarDayRingView(style: .steps(CalendarDayStepsState(steps: 12500, stepsGoal: 12000)))
     }

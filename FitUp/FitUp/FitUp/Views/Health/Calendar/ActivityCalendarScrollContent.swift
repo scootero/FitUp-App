@@ -50,6 +50,7 @@ struct ActivityCalendarScrollContent: View {
                 layout: layout,
                 selectedDayId: viewModel.selectedDayItem?.id,
                 battleState: { viewModel.battleState(for: $0) },
+                battleMargin: { viewModel.battleMargin(for: $0) },
                 stepsState: { viewModel.stepsState(for: $0) },
                 onSelectDay: { viewModel.selectDay($0) }
             )

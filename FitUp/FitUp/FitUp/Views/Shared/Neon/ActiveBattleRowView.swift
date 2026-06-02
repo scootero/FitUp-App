@@ -46,25 +46,25 @@ struct ActiveBattleRowView: View {
         VStack(alignment: .leading, spacing: scaled(5)) {
             if !match.battleDateRangeLabel.isEmpty {
                 Text(match.battleDateRangeLabel)
-                    .font(FitUpFont.body(scaled(10), weight: .semibold))
+                    .font(FitUpFont.body(scaled(12), weight: .semibold))
                     .foregroundStyle(HomePageStyle.faint)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
             HStack(spacing: scaled(8)) {
                 opponentAvatar(accent: FitUpColors.Neon.yellow)
                 Text(match.opponent.displayName)
-                    .font(FitUpFont.body(scaled(14), weight: .bold))
+                    .font(FitUpFont.body(scaled(16), weight: .bold))
                     .foregroundStyle(HomePageStyle.offWhite)
                     .lineLimit(1)
             }
             Text(BattlePhaseCopy.pendingTitle)
-                .font(FitUpFont.body(scaled(13), weight: .bold))
+                .font(FitUpFont.body(scaled(15), weight: .bold))
                 .foregroundStyle(HomePageStyle.offWhite)
             Text(BattlePhaseCopy.pendingSubtitle)
-                .font(FitUpFont.body(scaled(11), weight: .semibold))
+                .font(FitUpFont.body(scaled(13), weight: .semibold))
                 .foregroundStyle(FitUpColors.Neon.yellow.opacity(0.9))
             Text(BattlePhaseCopy.matchScorePrefixed(myScore: match.myScore, theirScore: match.theirScore))
-                .font(FitUpFont.mono(scaled(10), weight: .semibold))
+                .font(FitUpFont.mono(scaled(12), weight: .semibold))
                 .foregroundStyle(Self.captionMuted)
         }
         .padding(.horizontal, scaled(10))
@@ -76,7 +76,7 @@ struct ActiveBattleRowView: View {
         VStack(spacing: scaled(4)) {
             if !match.battleDateRangeLabel.isEmpty {
                 Text(match.battleDateRangeLabel)
-                    .font(FitUpFont.body(scaled(10), weight: .semibold))
+                    .font(FitUpFont.body(scaled(12), weight: .semibold))
                     .foregroundStyle(HomePageStyle.faint)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -102,7 +102,7 @@ struct ActiveBattleRowView: View {
         VStack(spacing: scaled(3)) {
             userAvatar
             Text("\(match.myToday.formatted()) steps")
-                .font(FitUpFont.body(scaled(9), weight: .semibold))
+                .font(FitUpFont.body(scaled(11), weight: .semibold))
                 .foregroundStyle(FitUpColors.Neon.yellow.opacity(0.88))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -113,14 +113,14 @@ struct ActiveBattleRowView: View {
         VStack(spacing: scaled(3)) {
             HStack(spacing: scaled(4)) {
                 Text(match.opponent.displayName)
-                    .font(FitUpFont.body(scaled(10), weight: .bold))
+                    .font(FitUpFont.body(scaled(12), weight: .bold))
                     .foregroundStyle(HomePageStyle.offWhite)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 opponentAvatar(accent: FitUpColors.Neon.orange)
             }
             Text("\(match.theirToday.formatted()) steps")
-                .font(FitUpFont.body(scaled(9), weight: .semibold))
+                .font(FitUpFont.body(scaled(11), weight: .semibold))
                 .foregroundStyle(FitUpColors.Neon.yellow.opacity(0.88))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -130,25 +130,25 @@ struct ActiveBattleRowView: View {
     private var centerColumn: some View {
         VStack(spacing: scaled(2)) {
             Text(match.matchStatusLabel)
-                .font(FitUpFont.body(scaled(9), weight: .heavy))
+                .font(FitUpFont.body(scaled(11), weight: .heavy))
                 .foregroundStyle(match.matchStatusColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
 
             Text(match.matchScoreText)
-                .font(FitUpFont.display(scaled(18), weight: .black))
+                .font(FitUpFont.display(scaled(21), weight: .black))
                 .foregroundStyle(HomePageStyle.offWhite)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
             Text(BattlePhaseCopy.matchScoreCaption.uppercased())
-                .font(FitUpFont.mono(scaled(8), weight: .semibold))
+                .font(FitUpFont.mono(scaled(10), weight: .semibold))
                 .foregroundStyle(Self.captionMuted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
             Text(match.neonTodayMarginText)
-                .font(FitUpFont.body(scaled(9), weight: .bold))
+                .font(FitUpFont.body(scaled(11), weight: .bold))
                 .foregroundStyle(match.neonTodayMarginColor)
                 .lineLimit(2)
                 .minimumScaleFactor(0.65)

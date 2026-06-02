@@ -234,6 +234,8 @@ final class MatchDetailsRepository {
         let rowsForScoring = visibleDayRows.isEmpty ? derivedDayRows : visibleDayRows
         let scoreTuple = deriveScore(from: rowsForScoring)
         let todayTotals = deriveTodayTotals(from: rowsForScoring)
+        // Full series for charts/record dots (includes future days); scoring uses `rowsForScoring` only.
+        let allDayRows = derivedDayRows.isEmpty ? rowsForScoring : derivedDayRows
         let todayRow = rowsForScoring.first(where: { $0.isToday })
         let opponentTodayLastSyncedAt = todayRow?.opponentLastUpdatedAt
         let myTodayLastSyncedAt = todayRow?.myLastUpdatedAt
@@ -283,7 +285,7 @@ final class MatchDetailsRepository {
             myToday: todayTotals.myToday,
             theirToday: todayTotals.theirToday,
             isWinning: winning,
-            dayRows: rowsForScoring,
+            dayRows: allDayRows,
             scoringMode: scoringMode,
             difficulty: difficulty,
             myBaselineSteps: myBaselineSteps,

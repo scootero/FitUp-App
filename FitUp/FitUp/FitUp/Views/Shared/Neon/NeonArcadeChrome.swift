@@ -181,9 +181,6 @@ private struct NeonActiveBattleCardModifier: ViewModifier {
                             .blendMode(.plusLighter)
                     }
 
-                    FitUpLogoWatermark(opacity: 0.10, scale: 1.2)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
                     RoundedRectangle(cornerRadius: NeonArcadeChrome.battleCardCornerRadius, style: .continuous)
                         .fill(
                             LinearGradient(

@@ -1060,7 +1060,7 @@ struct MatchDetailsView: View {
 
     private func recordDotsRow(dm: MatchDetailDisplayModel) -> some View {
         HStack(spacing: 5) {
-            ForEach(dm.mergedDayRows) { day in
+            ForEach(dm.chartDayRows) { day in
                 recordDot(day: day, dm: dm)
             }
         }
@@ -1148,26 +1148,26 @@ struct MatchDetailsView: View {
                         .font(FitUpFont.body(11, weight: .heavy))
                         .foregroundStyle(FitUpColors.Neon.cyan)
                     Text("Actual Steps")
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .font(FitUpFont.mono(10, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.label)
                     Text("\(dm.myTodayDisplay)")
                         .font(FitUpFont.display(18, weight: .heavy))
                         .foregroundStyle(FitUpColors.Text.primary)
                     Text(BattlePhaseCopy.stepScoreCaption)
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .font(FitUpFont.mono(10, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.muted)
                     Text("\(myB)")
                         .font(FitUpFont.display(28, weight: .black))
                         .foregroundStyle(FitUpColors.Neon.cyan)
                     Text("Daily Avg")
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .font(FitUpFont.mono(10, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.label)
                     Text(formatBaselineSteps(dm.snapshot.myBaselineSteps))
                         .font(FitUpFont.display(16, weight: .heavy))
                         .foregroundStyle(FitUpColors.Text.primary)
                     Text("Balance")
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .font(FitUpFont.mono(10, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.label)
                     Text(myBalance)
                         .font(FitUpFont.display(16, weight: .heavy))
                         .foregroundStyle(FitUpColors.Text.primary)
@@ -1188,26 +1188,26 @@ struct MatchDetailsView: View {
                         .foregroundStyle(opponentTint)
                         .lineLimit(1)
                     Text("Actual Steps")
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .font(FitUpFont.mono(10, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.label)
                     Text("\(dm.theirToday)")
                         .font(FitUpFont.display(18, weight: .heavy))
                         .foregroundStyle(FitUpColors.Text.primary)
                     Text(BattlePhaseCopy.stepScoreCaption)
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .font(FitUpFont.mono(10, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.muted)
                     Text("\(theirB)")
                         .font(FitUpFont.display(28, weight: .black))
                         .foregroundStyle(opponentTint.opacity(0.95))
                     Text("Daily Avg")
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .font(FitUpFont.mono(10, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.label)
                     Text(formatBaselineSteps(dm.snapshot.theirBaselineSteps))
                         .font(FitUpFont.display(16, weight: .heavy))
                         .foregroundStyle(FitUpColors.Text.primary)
                     Text("Balance")
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .font(FitUpFont.mono(10, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.label)
                     Text(theirBalance)
                         .font(FitUpFont.display(16, weight: .heavy))
                         .foregroundStyle(FitUpColors.Text.primary)
@@ -1229,9 +1229,9 @@ struct MatchDetailsView: View {
         return HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(dm.metricIsCalories ? "ACTIVE CALORIES" : "STEPS TODAY")
-                    .font(FitUpFont.body(10, weight: .heavy))
+                    .font(FitUpFont.body(11, weight: .heavy))
                     .tracking(1.5)
-                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .foregroundStyle(MatchDetailsContentColors.label)
 
                 Text("\(dm.myTodayDisplay)")
                     .font(FitUpFont.display(26, weight: .heavy))
@@ -1239,18 +1239,18 @@ struct MatchDetailsView: View {
 
                 if showRawStepsMeta {
                     Text("Daily Avg")
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .font(FitUpFont.mono(10, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.muted)
                     Text(formatBaselineSteps(dm.snapshot.myBaselineSteps))
                         .font(FitUpFont.display(16, weight: .heavy))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(MatchDetailsContentColors.label)
                     if let diff = dm.snapshot.rawDifficultyPillLabel {
                         Text("Difficulty")
-                            .font(FitUpFont.mono(9, weight: .bold))
-                            .foregroundStyle(FitUpColors.Text.tertiary)
+                            .font(FitUpFont.mono(10, weight: .bold))
+                            .foregroundStyle(MatchDetailsContentColors.muted)
                         Text(diff)
                             .font(FitUpFont.display(16, weight: .heavy))
-                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .foregroundStyle(MatchDetailsContentColors.label)
                     }
                 }
 
@@ -1279,11 +1279,11 @@ struct MatchDetailsView: View {
                     .lineLimit(1)
                 if showRawStepsMeta {
                     Text("Daily Avg")
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .font(FitUpFont.mono(10, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.muted)
                     Text(formatBaselineSteps(dm.snapshot.theirBaselineSteps))
                         .font(FitUpFont.display(16, weight: .heavy))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .foregroundStyle(MatchDetailsContentColors.label)
                 }
             }
         }
@@ -1296,8 +1296,8 @@ struct MatchDetailsView: View {
             Text(winning ? "✓" : "!")
                 .font(FitUpFont.body(16, weight: .bold))
             Text(winning ? dm.winningAlertText : dm.losingAlertText)
-                .font(FitUpFont.body(12, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.secondary)
+                .font(FitUpFont.body(13, weight: .medium))
+                .foregroundStyle(MatchDetailsContentColors.label)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
@@ -1326,30 +1326,30 @@ struct MatchDetailsView: View {
     private func dayBreakdownCallout(day: MatchDetailsDayRow, dm: MatchDetailDisplayModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(MatchDurationCopy.dayProgress(current: day.dayNumber, total: dm.snapshot.durationDays))
-                .font(FitUpFont.body(10, weight: .heavy))
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .font(FitUpFont.body(12, weight: .heavy))
+                .foregroundStyle(MatchDetailsContentColors.muted)
             if day.isFuture {
                 Text("Not started yet.")
-                    .font(FitUpFont.body(12, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .font(FitUpFont.body(14, weight: .medium))
+                    .foregroundStyle(MatchDetailsContentColors.label)
             } else {
                 HStack {
                     Text("You")
-                        .font(FitUpFont.body(12, weight: .semibold))
+                        .font(FitUpFont.body(14, weight: .semibold))
                         .foregroundStyle(FitUpColors.Neon.cyan)
                     Spacer()
                     Text(formatBreakdownMetricValue(dm.myValue(for: day), calories: dm.metricIsCalories))
-                        .font(FitUpFont.mono(12, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.primary)
+                        .font(FitUpFont.mono(14, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.sectionTitle)
                 }
                 HStack {
                     Text(dm.opponentFirstName)
-                        .font(FitUpFont.body(12, weight: .semibold))
+                        .font(FitUpFont.body(14, weight: .semibold))
                         .foregroundStyle(color(from: dm.snapshot.opponent.colorHex))
                     Spacer()
                     Text(formatBreakdownMetricValue(day.theirValue, calories: dm.metricIsCalories))
-                        .font(FitUpFont.mono(12, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.primary)
+                        .font(FitUpFont.mono(14, weight: .bold))
+                        .foregroundStyle(MatchDetailsContentColors.sectionTitle)
                 }
             }
         }
@@ -1399,15 +1399,29 @@ struct MatchDetailsView: View {
             }
         }()
 
+        let columnHighlight = day.isToday
+            ? FitUpColors.Neon.green.opacity(0.22)
+            : (isColumnHighlighted ? Color.white.opacity(0.08) : Color.clear)
+        let columnBorder: Color = {
+            if day.isToday { return FitUpColors.Neon.green.opacity(0.5) }
+            if outcome != nil { return outcomeBorder }
+            return Color.white.opacity(isColumnHighlighted ? 0.22 : 0)
+        }()
+
         return VStack(spacing: 4) {
             if let outcomeLabel {
                 Text(outcomeLabel)
-                    .font(FitUpFont.body(8, weight: .heavy))
+                    .font(FitUpFont.body(9, weight: .heavy))
                     .tracking(0.8)
                     .foregroundStyle(outcomeColor)
+            } else if day.isToday {
+                Text("TODAY")
+                    .font(FitUpFont.body(9, weight: .heavy))
+                    .tracking(0.6)
+                    .foregroundStyle(FitUpColors.Neon.green)
             } else {
                 Text(" ")
-                    .font(FitUpFont.body(8, weight: .heavy))
+                    .font(FitUpFont.body(9, weight: .heavy))
             }
 
             HStack(alignment: .bottom, spacing: 3) {
@@ -1435,16 +1449,13 @@ struct MatchDetailsView: View {
             .padding(.vertical, 3)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isColumnHighlighted ? Color.white.opacity(0.06) : Color.clear)
+                    .fill(columnHighlight)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(
-                        outcome != nil ? outcomeBorder : Color.white.opacity(isColumnHighlighted ? 0.22 : 0),
-                        lineWidth: outcome != nil ? 1.5 : 1
-                    )
+                    .strokeBorder(columnBorder, lineWidth: (day.isToday || outcome != nil) ? 1.5 : 1)
             )
-            .frame(height: maxH + 22, alignment: .bottom)
+            .frame(height: maxH + 26, alignment: .bottom)
         }
     }
 
@@ -1457,26 +1468,33 @@ struct MatchDetailsView: View {
     ) -> some View {
         VStack(spacing: 3) {
             Text(valueLabel)
-                .font(FitUpFont.mono(8, weight: .bold))
-                .foregroundStyle(FitUpColors.Text.secondary)
+                .font(FitUpFont.mono(11, weight: .bold))
+                .foregroundStyle(MatchDetailsContentColors.label)
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
-                .frame(width: barWidth + 6)
+                .frame(width: barWidth + 10)
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(fill)
                 .frame(width: barWidth, height: barHeight)
         }
-        .frame(height: maxHeight + 18, alignment: .bottom)
+        .frame(height: maxHeight + 22, alignment: .bottom)
     }
 
     private func dayBreakdownFutureBar(width: CGFloat, height: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(Color.white.opacity(0.06))
-            .frame(width: width, height: height)
-            .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.1), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-            )
+        VStack(spacing: 3) {
+            Text("—")
+                .font(FitUpFont.mono(11, weight: .bold))
+                .foregroundStyle(MatchDetailsContentColors.muted)
+                .frame(width: width + 10)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .frame(width: width, height: max(8, height * 0.22))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.14), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                )
+        }
+        .frame(height: height + 22, alignment: .bottom)
     }
 
     private func dayBreakdownAccessibilityLabel(day: MatchDetailsDayRow, dm: MatchDetailDisplayModel) -> String {
@@ -1489,27 +1507,52 @@ struct MatchDetailsView: View {
         return "\(progress), you \(mine), \(dm.opponentFirstName) \(theirs)"
     }
 
+    private func dayBreakdownDayLabel(day: MatchDetailsDayRow) -> some View {
+        VStack(spacing: 2) {
+            Text(day.dayLabel)
+                .font(FitUpFont.mono(12, weight: .bold))
+                .foregroundStyle(
+                    day.isToday
+                        ? FitUpColors.Neon.green
+                        : (day.isFuture ? MatchDetailsContentColors.muted : MatchDetailsContentColors.label)
+                )
+            Text("Day \(day.dayNumber)")
+                .font(FitUpFont.body(10, weight: .semibold))
+                .foregroundStyle(
+                    day.isToday
+                        ? FitUpColors.Neon.green.opacity(0.85)
+                        : MatchDetailsContentColors.muted
+                )
+        }
+    }
+
     private func dayByDayChart(dm: MatchDetailDisplayModel) -> some View {
         let opponentTint = color(from: dm.snapshot.opponent.colorHex)
+        let chartDays = dm.chartDayRows
         return VStack(alignment: .leading, spacing: 14) {
-            Text("DAY-BY-DAY BREAKDOWN")
-                .font(FitUpFont.body(10, weight: .heavy))
-                .tracking(2)
-                .foregroundStyle(FitUpColors.Text.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("DAY-BY-DAY BREAKDOWN")
+                    .font(FitUpFont.body(12, weight: .heavy))
+                    .tracking(1.6)
+                    .foregroundStyle(MatchDetailsContentColors.sectionTitle)
+                Text("\(chartDays.count) \(chartDays.count == 1 ? "day" : "days") · tap a column for totals")
+                    .font(FitUpFont.body(12, weight: .medium))
+                    .foregroundStyle(MatchDetailsContentColors.muted)
+            }
 
             if let dayNum = activeBreakdownDayNumber,
-               let row = dm.mergedDayRows.first(where: { $0.dayNumber == dayNum }) {
+               let row = chartDays.first(where: { $0.dayNumber == dayNum }) {
                 dayBreakdownCallout(day: row, dm: dm)
             }
 
             GeometryReader { outer in
-                let dayCount = max(dm.mergedDayRows.count, 1)
+                let dayCount = max(chartDays.count, 1)
                 let slotW = outer.size.width / CGFloat(dayCount)
-                let barW = max(8, min(slotW * (dayCount == 1 ? 0.34 : 0.18), 52))
-                let maxH: CGFloat = 72
-                VStack(spacing: 8) {
+                let barW = max(10, min(slotW * (dayCount == 1 ? 0.34 : 0.2), 56))
+                let maxH: CGFloat = 84
+                VStack(spacing: 10) {
                     HStack(alignment: .bottom, spacing: 0) {
-                        ForEach(dm.mergedDayRows) { day in
+                        ForEach(chartDays) { day in
                             dayBreakdownColumn(
                                 day: day,
                                 dm: dm,
@@ -1547,16 +1590,14 @@ struct MatchDetailsView: View {
                         }
                     }
                     HStack(alignment: .top, spacing: 0) {
-                        ForEach(dm.mergedDayRows) { day in
-                            Text(day.dayLabel)
-                                .font(FitUpFont.mono(9, weight: .medium))
-                                .foregroundStyle(FitUpColors.Text.tertiary)
+                        ForEach(chartDays) { day in
+                            dayBreakdownDayLabel(day: day)
                                 .frame(maxWidth: .infinity)
                         }
                     }
                 }
             }
-            .frame(height: 148)
+            .frame(height: 168)
 
             HStack(spacing: 16) {
                 HStack(spacing: 6) {
@@ -1564,17 +1605,26 @@ struct MatchDetailsView: View {
                         .fill(FitUpColors.Neon.cyan)
                         .frame(width: 10, height: 10)
                     Text("You")
-                        .font(FitUpFont.body(11, weight: .semibold))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .font(FitUpFont.body(13, weight: .semibold))
+                        .foregroundStyle(MatchDetailsContentColors.label)
                 }
                 HStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(opponentTint)
                         .frame(width: 10, height: 10)
                     Text(dm.snapshot.opponent.displayName)
-                        .font(FitUpFont.body(11, weight: .semibold))
-                        .foregroundStyle(opponentTint.opacity(0.92))
+                        .font(FitUpFont.body(13, weight: .semibold))
+                        .foregroundStyle(opponentTint.opacity(0.95))
                         .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                HStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.2), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        .frame(width: 10, height: 10)
+                    Text("Upcoming")
+                        .font(FitUpFont.body(11, weight: .medium))
+                        .foregroundStyle(MatchDetailsContentColors.muted)
                 }
             }
             .padding(.top, 10)
@@ -1592,9 +1642,9 @@ struct MatchDetailsView: View {
         let opponentTint = color(from: dm.snapshot.opponent.colorHex)
         return VStack(alignment: .leading, spacing: 10) {
             Text("MATCH STATS")
-                .font(FitUpFont.body(11, weight: .heavy))
+                .font(FitUpFont.body(12, weight: .heavy))
                 .tracking(1.5)
-                .foregroundStyle(FitUpColors.Text.secondary)
+                .foregroundStyle(MatchDetailsContentColors.sectionTitle)
                 .padding(.horizontal, 4)
 
             HStack(spacing: 8) {
@@ -1674,8 +1724,8 @@ struct MatchDetailsView: View {
     private func statStatRow(title: String, left: String, right: String, opponentTint: Color) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title.uppercased())
-                .font(FitUpFont.body(9, weight: .heavy))
-                .foregroundStyle(FitUpColors.Text.secondary)
+                .font(FitUpFont.body(11, weight: .heavy))
+                .foregroundStyle(MatchDetailsContentColors.label)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 8) {
                 Text(left)
@@ -1715,9 +1765,9 @@ struct MatchDetailsView: View {
         let opponentTint = color(from: dm.snapshot.opponent.colorHex)
         return VStack(alignment: .leading, spacing: 12) {
             Text("ALL-TIME VS \(dm.snapshot.opponent.displayName.uppercased())")
-                .font(FitUpFont.body(10, weight: .heavy))
+                .font(FitUpFont.body(12, weight: .heavy))
                 .tracking(1.5)
-                .foregroundStyle(FitUpColors.Text.secondary)
+                .foregroundStyle(MatchDetailsContentColors.sectionTitle)
 
             if let h = dm.headToHead {
                 HStack {
@@ -1726,17 +1776,17 @@ struct MatchDetailsView: View {
                             .font(FitUpFont.display(32, weight: .heavy))
                             .foregroundStyle(FitUpColors.Neon.cyan)
                         Text("You")
-                            .font(FitUpFont.body(11, weight: .semibold))
-                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .font(FitUpFont.body(12, weight: .semibold))
+                            .foregroundStyle(MatchDetailsContentColors.label)
                     }
                     .frame(maxWidth: .infinity)
                     VStack {
                         Text("\(h.seriesTies)")
                             .font(FitUpFont.display(32, weight: .heavy))
-                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .foregroundStyle(MatchDetailsContentColors.label)
                         Text("Ties")
-                            .font(FitUpFont.body(11, weight: .semibold))
-                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .font(FitUpFont.body(12, weight: .semibold))
+                            .foregroundStyle(MatchDetailsContentColors.muted)
                     }
                     .frame(maxWidth: .infinity)
                     VStack {
@@ -1744,8 +1794,8 @@ struct MatchDetailsView: View {
                             .font(FitUpFont.display(32, weight: .heavy))
                             .foregroundStyle(opponentTint)
                         Text("Them")
-                            .font(FitUpFont.body(11, weight: .semibold))
-                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .font(FitUpFont.body(12, weight: .semibold))
+                            .foregroundStyle(MatchDetailsContentColors.label)
                     }
                     .frame(maxWidth: .infinity)
                 }

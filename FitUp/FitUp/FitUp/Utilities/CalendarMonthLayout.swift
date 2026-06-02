@@ -84,6 +84,27 @@ enum CalendarMonthLayout {
     }
 
     /// Inclusive `yyyy-MM-dd` keys for the visible grid (through last day of `displayedMonth`).
+    /// Inclusive day count between two `yyyy-MM-dd` keys (profile TZ).
+    static func inclusiveDayCount(
+        from startKey: String,
+        to endKey: String,
+        profileTimeZoneIdentifier: String?
+    ) -> Int {
+        guard startKey <= endKey,
+              let start = date(from: startKey, profileTimeZoneIdentifier: profileTimeZoneIdentifier),
+              let end = date(from: endKey, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
+        else { return 1 }
+        let tz = profileTimeZoneIdentifier.flatMap { TimeZone(identifier: $0) } ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = tz
+        let days = calendar.dateComponents([.day], from: start, to: end).day ?? 0
+        return max(1, days + 1)
+    }
+
+    static func profileTodayDateKey(profileTimeZoneIdentifier: String?) -> String {
+        HomeRepository.formatProfileCalendarDate(Date(), profileTimeZoneIdentifier: profileTimeZoneIdentifier)
+    }
+
     static func gridDateKeyRange(
         for displayedMonth: Date,
         profileTimeZoneIdentifier: String?
@@ -116,5 +137,17 @@ enum CalendarMonthLayout {
         let year = calendar.component(.year, from: date)
         let month = calendar.component(.month, from: date)
         return String(format: "%04d-%02d", year, month)
+    }
+
+    static func date(from key: String, profileTimeZoneIdentifier: String?) -> Date? {
+        let tz = profileTimeZoneIdentifier.flatMap { TimeZone(identifier: $0) } ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = tz
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = tz
+        return formatter.date(from: key)
     }
 }

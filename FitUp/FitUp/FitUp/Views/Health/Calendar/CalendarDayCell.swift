@@ -12,6 +12,7 @@ struct CalendarDayCell: View {
     let mode: ActivityCalendarMode
     var layout: ActivityCalendarLayout = .compact
     let battleState: CalendarDayBattleState
+    let battleMargin: Int?
     let stepsState: CalendarDayStepsState?
     let isSelected: Bool
     let onTap: () -> Void
@@ -69,7 +70,11 @@ struct CalendarDayCell: View {
         Group {
             switch mode {
             case .battles:
-                CalendarDayRingView(style: .battle(battleState), size: ringSize, layout: layout)
+                CalendarDayRingView(
+                    style: .battle(state: battleState, margin: battleMargin),
+                    size: ringSize,
+                    layout: layout
+                )
             case .steps:
                 CalendarDayRingView(style: .steps(stepsState), size: ringSize, layout: layout)
             }

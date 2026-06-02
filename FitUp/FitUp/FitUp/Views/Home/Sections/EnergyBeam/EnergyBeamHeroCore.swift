@@ -2339,7 +2339,7 @@ private struct MomentumChipView: View {
 
 // MARK: - Sparkline chart
 
-/// Full-calendar-day intraday chart with time-accurate *Now markers and finger scrubbing.
+/// Intraday chart on a fixed full-day axis (12 AM → midnight) with a top NOW marker and finger scrubbing.
 private struct DayBattleSparklinePreview: View {
     let domain: HomeHeroSparklineDomain
     var showMockTimelineLabel: Bool = false
@@ -2349,8 +2349,13 @@ private struct DayBattleSparklinePreview: View {
     @State private var scrubbedFraction: CGFloat?
     @State private var isScrubbing = false
 
-    private var chartHeight: CGFloat { HomeHeroCompactLayout.scaled(68, by: compactScale) }
-    private var chartPad: CGPoint { CGPoint(x: 14, y: 14) }
+    private var chartHeight: CGFloat { HomeHeroCompactLayout.scaled(96, by: compactScale) }
+    private var topBandHeight: CGFloat { HomeHeroCompactLayout.scaled(26, by: compactScale) }
+    private var chartPad: CGPoint { CGPoint(x: 14, y: 10) }
+
+    private var daySpan: TimeInterval {
+        max(domain.dayEnd.timeIntervalSince(domain.dayStart), 1)
+    }
 
     private var nowFraction: CGFloat { domain.nowFraction }
 
@@ -2360,36 +2365,44 @@ private struct DayBattleSparklinePreview: View {
 
     var body: some View {
         VStack(spacing: HomeHeroCompactLayout.scaled(6, by: compactScale)) {
-            scrubCallout
-
             GeometryReader { geo in
                 let w = geo.size.width
                 let h = geo.size.height
-                let size = CGSize(width: w, height: h)
-                let ptsU = timeSampledPoints(role: .user, in: size, pad: chartPad)
-                let ptsO = timeSampledPoints(role: .opponent, in: size, pad: chartPad)
-                let markerX = chartPad.x + effectiveFraction * max(w - chartPad.x * 2, 1)
-                let nowX = chartPad.x + nowFraction * max(w - chartPad.x * 2, 1)
+                let plotOrigin = CGPoint(x: 0, y: topBandHeight)
+                let plotSize = CGSize(width: w, height: max(h - topBandHeight, 1))
+                let plotRect = CGRect(origin: plotOrigin, size: plotSize)
+                let pad = chartPad
+                let innerW = max(plotSize.width - pad.x * 2, 1)
+                let ptsU = timeSampledPoints(role: .user, plotRect: plotRect, pad: pad)
+                let ptsO = timeSampledPoints(role: .opponent, plotRect: plotRect, pad: pad)
+                let markerX = plotRect.minX + pad.x + effectiveFraction * innerW
+                let nowX = plotRect.minX + pad.x + nowFraction * innerW
+                let plotBottom = plotRect.maxY - pad.y
 
-                ZStack {
+                ZStack(alignment: .topLeading) {
                     roundedChartBackground()
+                        .frame(width: w, height: h)
 
-                    chartTextureOverlay(rect: CGRect(origin: .zero, size: geo.size))
+                    chartTextureOverlay(rect: plotRect)
+                    fadedDistanceGrid(rect: plotRect)
+                    noonGuideLine(plotRect: plotRect, pad: pad, innerW: innerW)
+                    timeAxisTicks(rect: plotRect, pad: pad)
 
-                    fadedDistanceGrid(rect: CGRect(origin: .zero, size: geo.size))
+                    sparklineAreaFill(points: ptsU, color: FitUpColors.Neon.cyan, in: plotRect, pad: pad)
+                    sparklineAreaFill(points: ptsO, color: FitUpColors.Neon.orange, in: plotRect, pad: pad)
 
-                    if nowFraction > 0.01 {
+                    if nowFraction > 0.005 {
                         Path { path in
-                            path.move(to: CGPoint(x: nowX, y: chartPad.y))
-                            path.addLine(to: CGPoint(x: nowX, y: h - chartPad.y))
+                            path.move(to: CGPoint(x: nowX, y: plotRect.minY + pad.y))
+                            path.addLine(to: CGPoint(x: nowX, y: plotBottom))
                         }
-                        .stroke(FitUpColors.Neon.cyan.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                        .stroke(FitUpColors.Neon.cyan.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     }
 
                     if isScrubbing || scrubbedFraction != nil {
                         Path { path in
-                            path.move(to: CGPoint(x: markerX, y: chartPad.y))
-                            path.addLine(to: CGPoint(x: markerX, y: h - chartPad.y))
+                            path.move(to: CGPoint(x: markerX, y: plotRect.minY + pad.y))
+                            path.addLine(to: CGPoint(x: markerX, y: plotBottom))
                         }
                         .stroke(Color.white.opacity(0.55), style: StrokeStyle(lineWidth: 1.2))
                     }
@@ -2398,6 +2411,15 @@ private struct DayBattleSparklinePreview: View {
                     sparkline(points: ptsU, color: FitUpColors.Neon.cyan.opacity(0.95), glowMultiplier: 1.0)
 
                     endpointDots(ptsU: ptsU, ptsO: ptsO)
+
+                    if !(isScrubbing || scrubbedFraction != nil), nowFraction > 0.005 {
+                        chartAxisLabel("NOW")
+                            .fixedSize()
+                            .position(x: nowX, y: topBandHeight * 0.46)
+                    }
+
+                    scrubCalloutOverlay(width: w)
+                        .frame(height: topBandHeight, alignment: .center)
                 }
                 .contentShape(Rectangle())
                 .gesture(scrubGesture(width: w))
@@ -2450,47 +2472,66 @@ private struct DayBattleSparklinePreview: View {
     }
 
     @ViewBuilder
-    private var scrubCallout: some View {
+    private func scrubCalloutOverlay(width: CGFloat) -> some View {
         if isScrubbing || scrubbedFraction != nil {
             let time = time(at: effectiveFraction)
             let steps = domain.steps(at: time)
-            Text("You: \(steps.user.formatted()) · Them: \(steps.opponent.formatted()) · \(shortTime(time))")
-                .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(10, by: compactScale), weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.88))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background {
-                    Capsule(style: .continuous)
-                        .fill(Color.black.opacity(0.62))
-                        .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
+            VStack(spacing: HomeHeroCompactLayout.scaled(3, by: compactScale)) {
+                Text("You: \(steps.user.formatted())  ·  Them: \(steps.opponent.formatted())")
+                    .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(12, by: compactScale), weight: .bold))
+                Text(shortTime(time))
+                    .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(11, by: compactScale), weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.72))
+            }
+            .foregroundStyle(Color.white.opacity(0.94))
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, HomeHeroCompactLayout.scaled(14, by: compactScale))
+            .padding(.vertical, HomeHeroCompactLayout.scaled(7, by: compactScale))
+            .background {
+                RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(10, by: compactScale), style: .continuous)
+                    .fill(Color.black.opacity(0.72))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(10, by: compactScale), style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+                    }
+            }
+            .frame(width: min(width - 24, 280))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
         }
     }
 
     private var axisRow: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let innerW = max(w - chartPad.x * 2, 1)
-            let nowLabelX = chartPad.x + nowFraction * innerW
-
-            ZStack(alignment: .topLeading) {
-                HStack {
-                    chartAxisLabel("12 AM")
-                    Spacer()
-                    chartAxisLabel("NOON")
-                    Spacer()
-                }
-
-                chartAxisLabel("*NOW")
-                    .fixedSize()
-                    .position(x: nowLabelX, y: geo.size.height * 0.5)
+        ZStack {
+            HStack {
+                chartAxisLabel("12 AM")
+                Spacer(minLength: 8)
+                chartAxisLabel("MIDNIGHT")
             }
+            noonAxisLabels
+                .frame(maxWidth: .infinity)
         }
-        .frame(height: HomeHeroCompactLayout.scaled(18, by: compactScale))
+        .frame(height: HomeHeroCompactLayout.scaled(22, by: compactScale))
         .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("12 AM to midnight. Noon and 12 PM at center.")
+    }
+
+    private var noonAxisLabels: some View {
+        VStack(spacing: 1) {
+            chartAxisLabel("NOON")
+            Text("12 PM")
+                .font(FitUpFont.body(HomeHeroCompactLayout.scaled(10, by: compactScale), weight: .heavy))
+                .foregroundStyle(Color.white.opacity(0.48))
+                .tracking(1.6 * compactScale)
+                .lineLimit(1)
+        }
+    }
+
+    private func timeFraction(_ date: Date) -> CGFloat {
+        CGFloat(min(1, max(0, date.timeIntervalSince(domain.dayStart) / daySpan)))
     }
 
     private enum SeriesRole {
@@ -2519,8 +2560,7 @@ private struct DayBattleSparklinePreview: View {
     }
 
     private func time(at fraction: CGFloat) -> Date {
-        let span = domain.dayEnd.timeIntervalSince(domain.dayStart)
-        return domain.dayStart.addingTimeInterval(Double(fraction) * span)
+        domain.dayStart.addingTimeInterval(Double(fraction) * daySpan)
     }
 
     private func shortTime(_ date: Date) -> String {
@@ -2530,7 +2570,7 @@ private struct DayBattleSparklinePreview: View {
         return formatter.string(from: date)
     }
 
-    private func timeSampledPoints(role: SeriesRole, in size: CGSize, pad: CGPoint) -> [CGPoint] {
+    private func timeSampledPoints(role: SeriesRole, plotRect: CGRect, pad: CGPoint) -> [CGPoint] {
         let samples = domain.samples.filter { $0.timestamp <= domain.now }
         guard samples.count >= 2 else { return [] }
 
@@ -2539,13 +2579,11 @@ private struct DayBattleSparklinePreview: View {
             samples.map(\.userSteps).max() ?? 0,
             samples.map(\.opponentSteps).max() ?? 0
         )
-        let daySpan = domain.dayEnd.timeIntervalSince(domain.dayStart)
-        guard daySpan > 0 else { return [] }
 
-        let minX = pad.x
-        let maxX = size.width - pad.x
-        let minY = pad.y
-        let maxY = size.height - pad.y
+        let minX = plotRect.minX + pad.x
+        let maxX = plotRect.maxX - pad.x
+        let minY = plotRect.minY + pad.y
+        let maxY = plotRect.maxY - pad.y
 
         func mapY(_ steps: Int) -> CGFloat {
             let normalized = CGFloat(min(1, max(0, Double(steps) / Double(maxVal))))
@@ -2553,19 +2591,99 @@ private struct DayBattleSparklinePreview: View {
         }
 
         return samples.map { sample in
-            let fraction = CGFloat(sample.timestamp.timeIntervalSince(domain.dayStart) / daySpan)
+            let fraction = timeFraction(sample.timestamp)
             let x = minX + fraction * (maxX - minX)
             let y = mapY(role == .user ? sample.userSteps : sample.opponentSteps)
             return CGPoint(x: x, y: y)
         }
     }
 
-    /// Faint diagonal scan texture for chart sub-card depth.
+    /// Soft area fill under each series for a more chart-like read.
+    @ViewBuilder
+    private func sparklineAreaFill(points: [CGPoint], color: Color, in plotRect: CGRect, pad: CGPoint) -> some View {
+        if points.count >= 2, let first = points.first, let last = points.last {
+            let baselineY = plotRect.maxY - pad.y
+            filledAreaPath(points: points, baselineY: baselineY)
+                .fill(
+                    LinearGradient(
+                        colors: [color.opacity(0.2), color.opacity(0.02)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+        }
+    }
+
+    private func filledAreaPath(points: [CGPoint], baselineY: CGFloat) -> Path {
+        var path = smoothPath(for: points)
+        guard let last = points.last, let first = points.first else { return path }
+        path.addLine(to: CGPoint(x: last.x, y: baselineY))
+        path.addLine(to: CGPoint(x: first.x, y: baselineY))
+        path.closeSubpath()
+        return path
+    }
+
+    /// Diagonal scan + horizontal chart guides for depth.
     @ViewBuilder
     private func chartTextureOverlay(rect: CGRect) -> some View {
-        NeonCardTexture.diagonalScanLines(in: rect)
-            .stroke(Color.white.opacity(0.025), lineWidth: 1)
-            .blendMode(.plusLighter)
+        ZStack {
+            NeonCardTexture.diagonalScanLines(in: rect)
+                .stroke(Color.white.opacity(0.022), lineWidth: 1)
+                .blendMode(.plusLighter)
+
+            Canvas { context, size in
+                let inset = rect.insetBy(dx: 12, dy: 8)
+                guard inset.width > 8, inset.height > 8 else { return }
+                let rowCount = 4
+                for i in 1 ..< rowCount {
+                    let t = CGFloat(i) / CGFloat(rowCount)
+                    let y = inset.minY + t * inset.height
+                    var line = Path()
+                    line.move(to: CGPoint(x: inset.minX, y: y))
+                    line.addLine(to: CGPoint(x: inset.maxX, y: y))
+                    context.stroke(
+                        line,
+                        with: .color(Color.white.opacity(0.04)),
+                        style: StrokeStyle(lineWidth: 0.6, lineCap: .round, dash: [2, 5])
+                    )
+                }
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    /// Faint noon guide at 50% of the fixed full-day axis (12 PM position).
+    private func noonGuideLine(plotRect: CGRect, pad: CGPoint, innerW: CGFloat) -> some View {
+        let noonX = plotRect.minX + pad.x + 0.5 * innerW
+        let plotBottom = plotRect.maxY - pad.y
+        return Path { path in
+            path.move(to: CGPoint(x: noonX, y: plotRect.minY + pad.y))
+            path.addLine(to: CGPoint(x: noonX, y: plotBottom))
+        }
+        .stroke(Color.white.opacity(0.07), style: StrokeStyle(lineWidth: 0.8, dash: [3, 6]))
+        .allowsHitTesting(false)
+    }
+
+    /// Small ticks along the bottom inner edge (fixed 24-hour scale).
+    private func timeAxisTicks(rect: CGRect, pad: CGPoint) -> some View {
+        Canvas { context, _ in
+            let inner = rect.insetBy(dx: pad.x, dy: pad.y)
+            guard inner.width > 8 else { return }
+            let tickCount = 8
+            for i in 0 ... tickCount {
+                let t = CGFloat(i) / CGFloat(tickCount)
+                let x = inner.minX + t * inner.width
+                var tick = Path()
+                tick.move(to: CGPoint(x: x, y: inner.maxY))
+                tick.addLine(to: CGPoint(x: x, y: inner.maxY + 4))
+                context.stroke(
+                    tick,
+                    with: .color(Color.white.opacity(0.14)),
+                    style: StrokeStyle(lineWidth: 0.8, lineCap: .round)
+                )
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     /// Dark rounded plate behind chart paths.
@@ -2676,7 +2794,7 @@ private struct DayBattleSparklinePreview: View {
         return path
     }
 
-    /// Axis caption under the chart (12 AM / NOON / *NOW).
+    /// Axis caption (12 AM / NOON / MIDNIGHT) and top-of-chart NOW marker.
     private func chartAxisLabel(_ text: String) -> some View {
         Text(text)
             .lineLimit(1)

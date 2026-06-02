@@ -19,16 +19,18 @@ struct IntradayCumulativeChartView: View {
 
     @State private var selectedDate: Date?
 
-    private var hasOpponentSeries: Bool { opponentPoints.count >= 2 }
+    private var sortedOpponentPoints: [HealthIntradayCumulativePoint] {
+        opponentPoints.sorted { $0.date < $1.date }
+    }
+
+    private var hasOpponentLineSeries: Bool { sortedOpponentPoints.count >= 2 }
 
     private var chartStart: Date {
-        let dates = points.map(\.date) + opponentPoints.map(\.date)
-        return dates.min() ?? Date()
+        points.first?.date ?? Date()
     }
 
     private var chartEnd: Date {
-        let dates = points.map(\.date) + opponentPoints.map(\.date)
-        return dates.max() ?? Date()
+        points.last?.date ?? Date()
     }
 
     private var yMax: Double {
@@ -42,34 +44,40 @@ struct IntradayCumulativeChartView: View {
             Text("TODAY'S PACE")
                 .font(FitUpFont.body(10, weight: .heavy))
                 .tracking(2)
-                .foregroundStyle(FitUpColors.Text.secondary)
-
-            HStack(spacing: 16) {
-                legendSwatch(color: FitUpColors.Neon.cyan, label: "You", dashed: false)
-                legendSwatch(
-                    color: opponentColor,
-                    label: opponentName,
-                    dashed: !hasOpponentSeries
-                )
-            }
+                .foregroundStyle(FitUpColors.Text.tertiary)
 
             ZStack(alignment: .topLeading) {
                 Chart {
-                    if !hasOpponentSeries, chartEnd > chartStart, opponentTotal >= 0 {
+                    if !hasOpponentLineSeries, chartEnd > chartStart, opponentTotal >= 0 {
                         RuleMark(y: .value("Them", opponentTotal))
                             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                             .foregroundStyle(opponentColor.opacity(0.9))
                     }
 
-                    if hasOpponentSeries {
-                        ForEach(Array(opponentPoints.enumerated()), id: \.offset) { _, pt in
+                    if hasOpponentLineSeries {
+                        ForEach(Array(sortedOpponentPoints.enumerated()), id: \.offset) { _, pt in
                             LineMark(
                                 x: .value("Time", pt.date),
                                 y: .value("Them", pt.cumulative)
                             )
                             .interpolationMethod(.linear)
-                            .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round, dash: [6, 4]))
-                            .foregroundStyle(opponentColor.opacity(0.95))
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: [6, 4]))
+                            .foregroundStyle(opponentColor.opacity(0.9))
+                        }
+                    }
+
+                    if !sortedOpponentPoints.isEmpty {
+                        ForEach(Array(sortedOpponentPoints.enumerated()), id: \.offset) { _, pt in
+                            PointMark(
+                                x: .value("Time", pt.date),
+                                y: .value("Them", pt.cumulative)
+                            )
+                            .symbolSize(30)
+                            .symbol {
+                                Triangle()
+                                    .fill(opponentColor)
+                                    .frame(width: 7, height: 7)
+                            }
                         }
                     }
 
@@ -97,19 +105,36 @@ struct IntradayCumulativeChartView: View {
                         .foregroundStyle(FitUpColors.Neon.cyan)
                         .shadow(color: FitUpColors.Neon.cyan.opacity(0.45), radius: 4, y: 0)
                     }
+                    ForEach(Array(points.enumerated()), id: \.offset) { _, pt in
+                        PointMark(
+                            x: .value("Time", pt.date),
+                            y: .value("You", pt.cumulative)
+                        )
+                        .symbolSize(36)
+                        .symbol {
+                            ZStack {
+                                Circle()
+                                    .fill(FitUpColors.Neon.cyan)
+                                    .frame(width: 6, height: 6)
+                                Circle()
+                                    .stroke(FitUpColors.Neon.cyan.opacity(0.4), lineWidth: 1)
+                                    .frame(width: 10, height: 10)
+                            }
+                        }
+                    }
                 }
-                .chartXScale(domain: chartStart...max(chartEnd, chartStart.addingTimeInterval(60)))
+                .chartXScale(domain: chartStart...chartEnd)
                 .chartYScale(domain: 0...yMax)
                 .chartXSelection(value: $selectedDate)
                 .chartXAxis {
                     AxisMarks(values: .stride(by: .hour, count: 3)) { value in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.white.opacity(0.1))
+                            .foregroundStyle(Color.white.opacity(0.08))
                         if let d = value.as(Date.self) {
                             AxisValueLabel {
                                 Text(shortTime(d))
                                     .font(FitUpFont.mono(9, weight: .medium))
-                                    .foregroundStyle(FitUpColors.Text.secondary)
+                                    .foregroundStyle(FitUpColors.Text.tertiary)
                             }
                         }
                     }
@@ -117,12 +142,12 @@ struct IntradayCumulativeChartView: View {
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.white.opacity(0.08))
+                            .foregroundStyle(Color.white.opacity(0.06))
                         let n = value.as(Double.self).map { Int($0.rounded()) } ?? 0
                         AxisValueLabel {
                             Text(formatY(n))
                                 .font(FitUpFont.mono(9, weight: .medium))
-                                .foregroundStyle(FitUpColors.Text.secondary)
+                                .foregroundStyle(FitUpColors.Text.tertiary)
                         }
                     }
                 }
@@ -130,7 +155,7 @@ struct IntradayCumulativeChartView: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.07), Color.white.opacity(0.02)],
+                                colors: [Color.white.opacity(0.05), Color.white.opacity(0.02)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -149,7 +174,7 @@ struct IntradayCumulativeChartView: View {
                                 .padding(.vertical, 6)
                                 .background(
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(Color.black.opacity(0.55))
+                                        .fill(Color.black.opacity(0.5))
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 8, style: .continuous)
                                                 .strokeBorder(FitUpColors.Neon.cyan.opacity(0.35), lineWidth: 1)
@@ -164,31 +189,15 @@ struct IntradayCumulativeChartView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilitySummary)
         }
-        .matchDetailsSecondaryCard(
-            leadingAccent: FitUpColors.Neon.cyan,
-            trailingAccent: opponentColor
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                )
         )
-    }
-
-    private func legendSwatch(color: Color, label: String, dashed: Bool) -> some View {
-        HStack(spacing: 6) {
-            Group {
-                if dashed {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .strokeBorder(color, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
-                        .frame(width: 14, height: 0)
-                        .frame(height: 10)
-                } else {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(color)
-                        .frame(width: 14, height: 3)
-                }
-            }
-            Text(label)
-                .font(FitUpFont.body(11, weight: .semibold))
-                .foregroundStyle(FitUpColors.Text.secondary)
-                .lineLimit(1)
-        }
     }
 
     private var calloutText: String? {
@@ -202,9 +211,14 @@ struct IntradayCumulativeChartView: View {
         if points.isEmpty { return "No intraday data" }
         let last = points.last!.cumulative
         let unit = isCalories ? "kilocalories" : "steps"
-        let opponentNote = hasOpponentSeries
-            ? " Opponent pace is plotted from synced samples."
-            : " Opponent total shown as a flat line at \(opponentTotal) \(unit)."
+        let opponentNote: String
+        if hasOpponentLineSeries {
+            opponentNote = " \(opponentName) pace is plotted from synced samples."
+        } else if !sortedOpponentPoints.isEmpty {
+            opponentNote = " \(opponentName) has one synced sample on the chart."
+        } else {
+            opponentNote = " \(opponentName) total shown as a flat line at \(opponentTotal) \(unit)."
+        }
         return "Your cumulative total so far, \(formatValue(last)) \(unit), chart from midnight to now.\(opponentNote)"
     }
 
@@ -233,5 +247,17 @@ struct IntradayCumulativeChartView: View {
     private func formatValue(_ v: Int) -> String {
         if isCalories { return "\(v.formatted()) kcal" }
         return v.formatted()
+    }
+}
+
+/// Upward-pointing triangle for opponent tick markers.
+private struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }

@@ -62,17 +62,27 @@ struct StatsArcadeSliceOneView: View {
 
     private var rematchButtonTint: Color { Color(red: 0.05, green: 0.92, blue: 0.38) }
 
+    /// Series losses only — excludes rivals you have never lost a completed battle to.
     private var toughestRival: HomeRivalStat? {
-        topRivals.max {
-            if $0.matchLosses != $1.matchLosses { return $0.matchLosses < $1.matchLosses }
-            return $0.finalizedDaysCompeted < $1.finalizedDaysCompeted
+        let candidates = topRivals.filter { $0.matchLosses > 0 }
+        return candidates.max { a, b in
+            if a.matchLosses != b.matchLosses { return a.matchLosses < b.matchLosses }
+            let marginA = opponentBeatMarginSteps(for: a) ?? Int.max
+            let marginB = opponentBeatMarginSteps(for: b) ?? Int.max
+            if marginA != marginB { return marginA > marginB }
+            return a.finalizedDaysCompeted < b.finalizedDaysCompeted
         }
     }
 
+    /// Series wins only — excludes rivals you have never beaten in a completed battle.
     private var dominatedRival: HomeRivalStat? {
-        topRivals.max {
-            if $0.matchWins != $1.matchWins { return $0.matchWins < $1.matchWins }
-            return $0.finalizedDaysCompeted < $1.finalizedDaysCompeted
+        let candidates = topRivals.filter { $0.matchWins > 0 }
+        return candidates.max { a, b in
+            if a.matchWins != b.matchWins { return a.matchWins < b.matchWins }
+            let marginA = viewerBeatMarginSteps(for: a) ?? 0
+            let marginB = viewerBeatMarginSteps(for: b) ?? 0
+            if marginA != marginB { return marginA < marginB }
+            return a.finalizedDaysCompeted < b.finalizedDaysCompeted
         }
     }
 
@@ -365,67 +375,79 @@ struct StatsArcadeSliceOneView: View {
 
     private var toughestCard: some View {
         opponentsDetailCard(
-            title: "TOUGHEST OPPONENT",
+            kind: .toughest,
             tint: Color(red: 1, green: 0.31, blue: 0.31),
             cornerLabel: "BATTLES\nAGAINST YOU",
             pastMatchesExpanded: $isToughestPastMatchesExpanded,
-            rival: toughestRival,
-            winsByThem: toughestRival?.matchLosses ?? 0,
-            winsByYou: toughestRival?.matchWins ?? 0,
-            marginHeadline: "They typically beat you by"
+            rival: toughestRival
         )
     }
 
     private var dominatedCard: some View {
         opponentsDetailCard(
-            title: "MOST DOMINATED",
+            kind: .dominated,
             tint: Color(red: 0, green: 0.86, blue: 0.78),
             cornerLabel: "MOST BATTLES\nWON BY YOU",
             pastMatchesExpanded: $isDominatedPastMatchesExpanded,
-            rival: dominatedRival,
-            winsByThem: dominatedRival?.matchLosses ?? 0,
-            winsByYou: dominatedRival?.matchWins ?? 0,
-            marginHeadline: "You typically beat them by"
+            rival: dominatedRival
         )
     }
 
+    private enum OpponentDetailCardKind {
+        case toughest
+        case dominated
+
+        var title: String {
+            switch self {
+            case .toughest: return "TOUGHEST OPPONENT"
+            case .dominated: return "MOST DOMINATED"
+            }
+        }
+
+        var marginHeadline: String {
+            switch self {
+            case .toughest: return "They typically beat you by"
+            case .dominated: return "You typically beat them by"
+            }
+        }
+
+        var emptyMessage: String {
+            switch self {
+            case .toughest: return "No series losses yet — your toughest rival will show up here."
+            case .dominated: return "No series wins yet — dominate someone to show up here."
+            }
+        }
+    }
+
     private func opponentsDetailCard(
-        title: String,
+        kind: OpponentDetailCardKind,
         tint: Color,
         cornerLabel: String,
         pastMatchesExpanded: Binding<Bool>,
-        rival: HomeRivalStat?,
-        winsByThem: Int,
-        winsByYou: Int,
-        marginHeadline: String
+        rival: HomeRivalStat?
     ) -> some View {
         opponentsGlassCard(
-            title: title,
+            title: kind.title,
             tint: tint,
             cornerLabel: cornerLabel,
             compact: true
         ) {
             if let rival {
                 let totalSeries = rival.matchWins + rival.matchLosses + rival.matchTies
-                let marginSteps = abs(Int((rival.avgFinalizedDailyMargin ?? 0).rounded()))
+                let winsByThem = rival.matchLosses
+                let winsByYou = rival.matchWins
+                let marginSteps = heroMarginSteps(for: rival, kind: kind)
                 let battleDays = max(0, rival.finalizedDaysCompeted)
                 let theyWonDays = max(0, rival.daysWonByOpponent ?? 0)
                 let youWonDays = max(0, rival.daysWonByViewer ?? 0)
-                let avgWinningMargin: Int = {
-                    if title == "TOUGHEST OPPONENT" {
-                        return max(0, Int((rival.avgMarginOnOpponentWinDays ?? 0).rounded()))
-                    }
-                    return max(0, Int((rival.avgMarginOnViewerWinDays ?? 0).rounded()))
-                }()
-                let hasSlice3ADetail = rival.daysWonByViewer != nil
-                    && rival.daysWonByOpponent != nil
-                    && (rival.avgMarginOnOpponentWinDays != nil || rival.avgMarginOnViewerWinDays != nil)
+                let avgWinningMargin = heroMarginSteps(for: rival, kind: kind) ?? 0
+                let hasSlice3ADetail = hasRivalDetailMargins(rival, kind: kind)
 
                 VStack(alignment: .leading, spacing: 7) {
                     centeredOpponentProfile(rival: rival, avatarSize: 36)
 
                     VStack(spacing: 6) {
-                        Text(marginHeadline)
+                        Text(kind.marginHeadline)
                             .font(.system(size: 13, weight: .black))
                             .tracking(0.6)
                             .multilineTextAlignment(.center)
@@ -434,7 +456,7 @@ struct StatsArcadeSliceOneView: View {
 
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Spacer(minLength: 0)
-                            Text(signedValue(marginSteps))
+                            Text(marginSteps.map { signedValue($0) } ?? Self.unresolvedPlaceholder)
                                 .font(.system(size: 26, weight: .black, design: .monospaced))
                                 .tracking(0.8)
                                 .foregroundStyle(tint)
@@ -488,8 +510,41 @@ struct StatsArcadeSliceOneView: View {
                     )
                 }
             } else {
-                unresolvedPill("No rival stats available yet.")
+                unresolvedPill(kind.emptyMessage)
             }
+        }
+    }
+
+    /// Average steps the opponent beats you by on days they won (viewer − opponent is negative).
+    private func opponentBeatMarginSteps(for rival: HomeRivalStat) -> Int? {
+        guard let margin = rival.avgMarginOnOpponentWinDays else { return nil }
+        let steps = abs(Int(margin.rounded()))
+        return steps > 0 ? steps : nil
+    }
+
+    /// Average steps you beat the opponent by on days you won.
+    private func viewerBeatMarginSteps(for rival: HomeRivalStat) -> Int? {
+        guard let margin = rival.avgMarginOnViewerWinDays else { return nil }
+        let steps = Int(margin.rounded())
+        return steps > 0 ? steps : nil
+    }
+
+    private func heroMarginSteps(for rival: HomeRivalStat, kind: OpponentDetailCardKind) -> Int? {
+        switch kind {
+        case .toughest:
+            return opponentBeatMarginSteps(for: rival)
+        case .dominated:
+            return viewerBeatMarginSteps(for: rival)
+        }
+    }
+
+    private func hasRivalDetailMargins(_ rival: HomeRivalStat, kind: OpponentDetailCardKind) -> Bool {
+        guard rival.daysWonByViewer != nil, rival.daysWonByOpponent != nil else { return false }
+        switch kind {
+        case .toughest:
+            return (rival.daysWonByOpponent ?? 0) > 0 && rival.avgMarginOnOpponentWinDays != nil
+        case .dominated:
+            return (rival.daysWonByViewer ?? 0) > 0 && rival.avgMarginOnViewerWinDays != nil
         }
     }
 

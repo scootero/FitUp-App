@@ -35,6 +35,11 @@ struct MatchDetailDisplayModel {
     let mergedDayRows: [MatchDetailsDayRow]
     let phase: MatchDetailsScreenPhase
 
+    /// Every scheduled day in the match (pads placeholders when DB rows are not created yet).
+    var chartDayRows: [MatchDetailsDayRow] {
+        Self.completeDayRows(rows: mergedDayRows, totalDays: snapshot.durationDays)
+    }
+
     var metricIsCalories: Bool {
         snapshot.metricType == "active_calories"
     }
@@ -237,8 +242,37 @@ struct MatchDetailDisplayModel {
 
     /// Relative bar height 0...1 for chart (max of both players' best day or totals).
     var chartMaxValue: Double {
-        let m = Double(mergedDayRows.map { max(myValue(for: $0), $0.theirValue) }.max() ?? 1)
+        let m = Double(chartDayRows.map { max(myValue(for: $0), $0.theirValue) }.max() ?? 1)
         return max(m, 1)
+    }
+
+    static func completeDayRows(rows: [MatchDetailsDayRow], totalDays: Int) -> [MatchDetailsDayRow] {
+        let target = max(totalDays, 1)
+        guard !rows.isEmpty else {
+            return (1...target).map { placeholderDayRow(dayNumber: $0) }
+        }
+        var byNumber = Dictionary(uniqueKeysWithValues: rows.map { ($0.dayNumber, $0) })
+        for dayNumber in 1...target where byNumber[dayNumber] == nil {
+            byNumber[dayNumber] = placeholderDayRow(dayNumber: dayNumber)
+        }
+        return (1...target).compactMap { byNumber[$0] }
+    }
+
+    private static func placeholderDayRow(dayNumber: Int) -> MatchDetailsDayRow {
+        MatchDetailsDayRow(
+            dayNumber: dayNumber,
+            dayLabel: "D\(dayNumber)",
+            calendarDate: nil,
+            myValue: 0,
+            theirValue: 0,
+            isFinalized: false,
+            isToday: false,
+            isFuture: true,
+            opponentLastUpdatedAt: nil,
+            myLastUpdatedAt: nil,
+            myWon: nil,
+            isTie: false
+        )
     }
 
     func barHeight(value: Int) -> CGFloat {
