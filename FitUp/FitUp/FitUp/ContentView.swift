@@ -97,14 +97,38 @@ private struct RootShellView: View {
                 matchDetailsContext = MatchDetailsContext(matchId: matchId)
             }
         ) {
-            mainTabShell
+            ZStack {
+                mainTabShell
+
+                if let context = matchDetailsContext {
+                    MatchDetailsView(
+                        matchId: context.matchId,
+                        profile: profile,
+                        onClose: { matchDetailsContext = nil },
+                        onRematch: { launchContext in
+                            matchDetailsContext = nil
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                challengeLaunchContext = launchContext
+                            }
+                        }
+                    )
+                    .trackProductScreen("match_detail", userId: sessionStore.currentProfile?.id)
+                    .transition(.opacity)
+                    .zIndex(1)
+                }
+            }
         }
+        .animation(.easeInOut(duration: 0.22), value: matchDetailsContext != nil)
         .environmentObject(sessionStore)
         .environmentObject(notificationService)
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             FloatingTabBar(selected: $selectedTab) {
                 challengeLaunchContext = .battleEntry
             }
+            .ignoresSafeArea(edges: .bottom)
+        }
+        .onChange(of: selectedTab) { _, _ in
+            matchDetailsContext = nil
         }
         .fullScreenCover(item: $challengeLaunchContext) { launchContext in
             FitUpAppChromeContainer(
@@ -133,36 +157,6 @@ private struct RootShellView: View {
                 }
                 .environmentObject(sessionStore)
                 .trackProductScreen("challenge_flow", userId: sessionStore.currentProfile?.id)
-            }
-            .environmentObject(sessionStore)
-            .environmentObject(notificationService)
-        }
-        .fullScreenCover(item: $matchDetailsContext) { context in
-            FitUpAppChromeContainer(
-                profile: profile,
-                showsGreeting: false,
-                onOpenChallenge: {
-                    matchDetailsContext = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        challengeLaunchContext = .battleEntry
-                    }
-                },
-                onOpenMatchDetails: { matchId, _ in
-                    matchDetailsContext = MatchDetailsContext(matchId: matchId)
-                }
-            ) {
-                MatchDetailsView(
-                    matchId: context.matchId,
-                    profile: profile
-                ) {
-                    matchDetailsContext = nil
-                } onRematch: { launchContext in
-                    matchDetailsContext = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        challengeLaunchContext = launchContext
-                    }
-                }
-                .trackProductScreen("match_detail", userId: sessionStore.currentProfile?.id)
             }
             .environmentObject(sessionStore)
             .environmentObject(notificationService)
@@ -271,7 +265,10 @@ private struct RootShellView: View {
         case .health:
             HealthView(
                 profile: profile,
-                onOpenChallenge: { opponent in
+                onOpenChallenge: {
+                    challengeLaunchContext = .battleEntry
+                },
+                onRematchRival: { opponent in
                     challengeLaunchContext = .prefilled(opponent: opponent)
                 },
                 onOpenMatchDetails: { matchId, _ in

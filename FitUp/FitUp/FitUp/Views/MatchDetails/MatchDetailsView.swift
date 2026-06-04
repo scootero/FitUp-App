@@ -70,6 +70,7 @@ struct MatchDetailsView: View {
     @State private var showFriendRequestSentToast = false
     @State private var friendRequestToastTask: Task<Void, Never>?
     @State private var chatThreadPresentation: MatchChatPresentation?
+    @State private var paceChartScrubbing = false
     private let profile: Profile?
 
     private var activeBreakdownDayNumber: Int? {
@@ -135,6 +136,7 @@ struct MatchDetailsView: View {
                 .padding(.bottom, 24)
             }
             .scrollIndicators(.hidden)
+            .scrollDisabled(paceChartScrubbing)
             .refreshable {
                 await viewModel.refresh(showLoading: false)
             }
@@ -149,7 +151,18 @@ struct MatchDetailsView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .allowsHitTesting(true)
             }
+
+            if let item = peerProfileSheet, let profile {
+                PeerProfileView(
+                    peerId: item.peerId,
+                    viewer: profile,
+                    onClose: { peerProfileSheet = nil }
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .zIndex(2)
+            }
         }
+        .animation(.spring(response: 0.36, dampingFraction: 0.86), value: peerProfileSheet != nil)
         .animation(.spring(response: 0.36, dampingFraction: 0.86), value: showFriendRequestSentToast)
         .task {
             viewModel.start()
@@ -190,11 +203,6 @@ struct MatchDetailsView: View {
         }
         .task(id: viewModel.snapshot?.opponent.id) {
             await refreshOpponentFriendshipPhase()
-        }
-        .sheet(item: $peerProfileSheet) { item in
-            if let profile {
-                PeerProfileView(peerId: item.peerId, viewer: profile)
-            }
         }
         .onChange(of: peerProfileSheet) { _, new in
             if new == nil {
@@ -611,7 +619,8 @@ struct MatchDetailsView: View {
                 opponentTotal: dm.theirToday,
                 isCalories: dm.metricIsCalories,
                 opponentColor: color(from: dm.snapshot.opponent.colorHex),
-                opponentName: dm.snapshot.opponent.displayName
+                opponentName: dm.snapshot.opponent.displayName,
+                isScrubbing: $paceChartScrubbing
             )
         }
         dayByDayChart(dm: dm)

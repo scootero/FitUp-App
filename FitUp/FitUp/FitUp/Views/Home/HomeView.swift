@@ -12,6 +12,8 @@ private let useEnergyBeamHomeHero = true
 private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 345
 /// Horizontal inset for the energy beam hero only (slightly tighter than the rest of Home).
 private let homeHeroHorizontalPadding: CGFloat = 15
+/// Fixed side gutters for hero battle chevrons — reserved even when a direction is unavailable so the card stays centered.
+private let homeHeroChevronGutterWidth: CGFloat = 22
 
 struct HomeView: View {
     @ObservedObject var viewModel: HomeViewModel
@@ -36,6 +38,7 @@ struct HomeView: View {
     @State private var handoffOpponentRevealKickoff = UUID()
     @State private var handoffKeepOpponentBlackedOut = false
     @State private var handoffFinishTask: Task<Void, Never>?
+    @State private var blocksHeroCardNavigation = false
 
     /// App description card above the empty hero when there is no live featured step battle.
     private var showsPersistentHomeIntroTip: Bool {
@@ -314,6 +317,7 @@ struct HomeView: View {
             sparklineDomain: viewModel.heroSparklineDomain,
             viewerIntradayHealthKitSyncedAt: viewModel.heroViewerHealthKitStepsReadAt,
             opponentIntradayLatestTickAt: viewModel.heroOpponentIntradayLatestTickAt,
+            blocksHeroCardNavigation: $blocksHeroCardNavigation,
             handoffRevealActive: handoffRevealActive,
             handoffIntroKickoff: handoffIntroKickoff,
             handoffOpponentRevealKickoff: handoffOpponentRevealKickoff,
@@ -341,6 +345,7 @@ struct HomeView: View {
 
             if let activeMatch {
                 Button {
+                    guard !blocksHeroCardNavigation else { return }
                     onOpenMatchDetails(activeMatch.id, activeMatch.opponent.displayName)
                 } label: {
                     energyBeamHeroCard(
@@ -372,6 +377,98 @@ struct HomeView: View {
         }
     }
 
+    private var showsHeroBattleNavigation: Bool {
+        !viewModel.isHeroLoading
+            && viewModel.heroOpponentHandoff == nil
+            && viewModel.sortedActiveStepMatchesForHero.count > 1
+            && energyBeamHeroActiveMatch != nil
+    }
+
+    private var heroBattlePositionIndicator: String? {
+        let matches = viewModel.sortedActiveStepMatchesForHero
+        guard matches.count > 1,
+              let featuredId = viewModel.featuredHomeStepMatch?.id,
+              let index = matches.firstIndex(where: { $0.id == featuredId }) else { return nil }
+        return "Battle \(index + 1) of \(matches.count)"
+    }
+
+    private func heroBattleNavigationChevron(
+        systemName: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.white.opacity(0.9))
+                .frame(width: 26, height: 26)
+                .background(
+                    Circle()
+                        .fill(Color.black.opacity(0.38))
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    @ViewBuilder
+    private func heroBattleNavigationSlot(
+        visible: Bool,
+        systemName: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        ZStack {
+            if visible {
+                heroBattleNavigationChevron(
+                    systemName: systemName,
+                    accessibilityLabel: accessibilityLabel,
+                    action: action
+                )
+            }
+        }
+        .frame(width: homeHeroChevronGutterWidth)
+        .accessibilityHidden(!visible)
+    }
+
+    @ViewBuilder
+    private var energyBeamHeroCardStack: some View {
+        let handoff = viewModel.heroOpponentHandoff
+
+        energyBeamHeroHandoffStack
+            .frame(maxWidth: .infinity)
+            .overlay {
+                if let handoff {
+                    HomeFeaturedOpponentHandoffOverlay(
+                        newOpponentName: handoff.newMatch.opponent.displayName,
+                        reduceMotion: reduceMotion,
+                        crossfadeProgress: $handoffCrossfadeProgress,
+                        onBeginReveal: {
+                            handoffFinishTask?.cancel()
+                            handoffKeepOpponentBlackedOut = true
+                            handoffRevealingNewHero = true
+                            handoffCrossfadeProgress = 0
+                            handoffIntroKickoff = UUID()
+                        },
+                        onComplete: {
+                            finishHandoffAfterOverlayDismissed()
+                        }
+                    )
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if let indicator = heroBattlePositionIndicator {
+                    Text(indicator)
+                        .font(FitUpFont.mono(11, weight: .semibold))
+                        .foregroundStyle(HomePageStyle.muted)
+                        .accessibilityLabel(indicator)
+                        .padding(.top, 14)
+                        .padding(.trailing, 16)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
     /// Overlay fully gone — un-suppress rival column, fade in from black, then clear handoff state.
     private func finishHandoffAfterOverlayDismissed() {
         handoffFinishTask?.cancel()
@@ -394,42 +491,47 @@ struct HomeView: View {
         let activeMatch = energyBeamHeroActiveMatch
 
         if activeMatch != nil || handoff != nil {
-            energyBeamHeroHandoffStack
-                .overlay {
-                    if let handoff {
-                        HomeFeaturedOpponentHandoffOverlay(
-                            newOpponentName: handoff.newMatch.opponent.displayName,
-                            reduceMotion: reduceMotion,
-                            crossfadeProgress: $handoffCrossfadeProgress,
-                            onBeginReveal: {
-                                handoffFinishTask?.cancel()
-                                handoffKeepOpponentBlackedOut = true
-                                handoffRevealingNewHero = true
-                                handoffCrossfadeProgress = 0
-                                handoffIntroKickoff = UUID()
-                            },
-                            onComplete: {
-                                finishHandoffAfterOverlayDismissed()
-                            }
-                        )
+            Group {
+                if showsHeroBattleNavigation {
+                    HStack(alignment: .center, spacing: 0) {
+                        heroBattleNavigationSlot(
+                            visible: viewModel.canSelectPreviousHeroStepMatch,
+                            systemName: "chevron.left",
+                            accessibilityLabel: "Previous battle"
+                        ) {
+                            viewModel.selectAdjacentHeroStepMatch(offset: -1)
+                        }
+
+                        energyBeamHeroCardStack
+
+                        heroBattleNavigationSlot(
+                            visible: viewModel.canSelectNextHeroStepMatch,
+                            systemName: "chevron.right",
+                            accessibilityLabel: "Next battle"
+                        ) {
+                            viewModel.selectAdjacentHeroStepMatch(offset: 1)
+                        }
                     }
+                } else {
+                    energyBeamHeroCardStack
                 }
-                .padding(.top, 10)
-                .padding(.horizontal, homeHeroHorizontalPadding)
-                .onAppear {
-                    handoffRevealingNewHero = false
-                    handoffCrossfadeProgress = 0
-                    handoffKeepOpponentBlackedOut = viewModel.heroOpponentHandoff != nil
-                }
-                .onChange(of: viewModel.heroOpponentHandoff?.newMatch.id) { _, newId in
-                    handoffFinishTask?.cancel()
-                    handoffRevealingNewHero = false
-                    handoffCrossfadeProgress = 0
-                    handoffKeepOpponentBlackedOut = newId != nil
-                }
-                .onDisappear {
-                    handoffFinishTask?.cancel()
-                }
+            }
+            .padding(.top, 10)
+            .padding(.horizontal, homeHeroHorizontalPadding)
+            .onAppear {
+                handoffRevealingNewHero = false
+                handoffCrossfadeProgress = 0
+                handoffKeepOpponentBlackedOut = viewModel.heroOpponentHandoff != nil
+            }
+            .onChange(of: viewModel.heroOpponentHandoff?.newMatch.id) { _, newId in
+                handoffFinishTask?.cancel()
+                handoffRevealingNewHero = false
+                handoffCrossfadeProgress = 0
+                handoffKeepOpponentBlackedOut = newId != nil
+            }
+            .onDisappear {
+                handoffFinishTask?.cancel()
+            }
         } else {
             energyBeamHeroCard(match: nil, onStartBattle: { onOpenChallenge(nil) })
                 .padding(.top, 10)

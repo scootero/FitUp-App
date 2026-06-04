@@ -130,6 +130,9 @@ final class HealthViewModel: ObservableObject {
 
     @Published private(set) var completedMatches: [ActivityCompletedMatch] = []
     @Published private(set) var isLoadingCompletedMatches = false
+    @Published private(set) var statsPersonalRecords: StatsPersonalRecords?
+    @Published private(set) var statsAchievements: [StatsAchievementItem] = []
+    @Published private(set) var isLoadingPersonalRecords = false
 
     @Published private(set) var lastLoadFinishedAt: Date?
     @Published private(set) var statsSnapshotSavedAt: Date?
@@ -191,6 +194,10 @@ final class HealthViewModel: ObservableObject {
             completedMatchesListTask?.cancel()
             completedMatchesListTask = nil
             isLoadingCompletedMatches = false
+            activeMatchEdges = []
+            statsPersonalRecords = nil
+            statsAchievements = []
+            isLoadingPersonalRecords = false
         }
         profileId = newProfileId
         profileTimeZoneIdentifier = profile?.timezone
@@ -283,6 +290,10 @@ final class HealthViewModel: ObservableObject {
         async let arcadeStreak = refreshArcadeStreakTimeline(userId: userId)
         async let battleStatsLoad = refreshArcadeBattleStats()
         async let battleStepsLoad = refreshBattleStepsMetrics(userId: userId)
+        async let activeMatchesLoad = homeRepository.loadActiveMatches(
+            for: userId,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
 
         await rivalStatsLoad
         await arcadeImpact
@@ -290,6 +301,8 @@ final class HealthViewModel: ObservableObject {
         await arcadeStreak
         await battleStatsLoad
         await battleStepsLoad
+        activeMatchEdges = await activeMatchesLoad
+        await refreshPersonalRecordsAndAchievements(userId: userId)
 
         lastLoadFinishedAt = Date()
 
@@ -501,6 +514,9 @@ final class HealthViewModel: ObservableObject {
         statsOpponentStepsRollups = nil
         statsBattleStepsDisplay = nil
         statsArcadeStreakTimeline = nil
+        statsPersonalRecords = nil
+        statsAchievements = []
+        isLoadingPersonalRecords = false
         statsRangeMargins = []
         isStatsRangeMarginsRefreshing = false
         statsRangeScopeNote = nil
@@ -597,11 +613,16 @@ final class HealthViewModel: ObservableObject {
         let todaySteps = snapshot.isTodayBattleDay ? todayHK : 0
         let allTime = snapshot.finalizedTotal
             + (snapshot.isTodayBattleDay && !snapshot.isTodayFinalized ? todayHK : 0)
+        let avgSteps: Int? = snapshot.finalizedBattleDayCount > 0
+            ? snapshot.averageFinalizedBattleDaySteps
+            : nil
 
         statsBattleStepsDisplay = StatsBattleStepsDisplay(
             todaySteps: max(0, todaySteps),
             allTimeSteps: max(0, allTime),
-            isTodayBattleDay: snapshot.isTodayBattleDay
+            isTodayBattleDay: snapshot.isTodayBattleDay,
+            finalizedBattleDayCount: snapshot.finalizedBattleDayCount,
+            averageFinalizedBattleDaySteps: avgSteps
         )
     }
 
@@ -990,6 +1011,73 @@ final class HealthViewModel: ObservableObject {
             return ints + Array(repeating: 0, count: 7 - ints.count)
         }
         return Array(ints.prefix(7))
+    }
+
+    private func refreshPersonalRecordsAndAchievements(userId: UUID) async {
+        isLoadingPersonalRecords = true
+        defer { isLoadingPersonalRecords = false }
+
+        let tz = profileTimeZoneIdentifier.flatMap(TimeZone.init(identifier:)) ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = tz
+        let today = calendar.startOfDay(for: Date())
+        let lookbackDays = StatsPersonalRecordsBuilder.recordsLookbackDays
+
+        guard let startDate = calendar.date(byAdding: .day, value: -(lookbackDays - 1), to: today) else {
+            statsPersonalRecords = StatsPersonalRecords.empty
+            statsAchievements = StatsAchievementCatalog.allItems(battleStats: battleStats)
+            return
+        }
+
+        let startKey = Self.calendarDateKey(for: startDate, calendar: calendar, timeZone: tz)
+        let todayKey = Self.calendarDateKey(for: today, calendar: calendar, timeZone: tz)
+
+        async let marginsTask = homeRepository.fetchDailyBattleMargins(
+            endDate: Date(),
+            dayCount: lookbackDays,
+            metricType: HomeBattleHeroCard.HeroMetric.steps.metricType,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
+        async let battleKeysTask = calendarRepository.fetchFinalizedStepsBattleDateKeys(
+            currentUserId: userId,
+            startDateKey: startKey,
+            endDateKey: todayKey
+        )
+        async let completedTask = activityRepository.loadCompletedMatches(currentUserId: userId)
+
+        let margins = await marginsTask
+        let battleKeys = await battleKeysTask
+        let completed = await completedTask
+        completedMatches = completed
+
+        var dailySteps: [String: Int] = [:]
+        do {
+            dailySteps = try await healthKitRead("stats_records_daily_steps", userId: userId) {
+                try await HealthKitService.fetchDailyStepsByCalendarDate(
+                    startCalendarDateKey: startKey,
+                    endCalendarDateKey: todayKey,
+                    profileTimeZoneIdentifier: profileTimeZoneIdentifier
+                )
+            }
+        } catch {
+            dailySteps = [:]
+        }
+
+        statsPersonalRecords = StatsPersonalRecordsBuilder.build(
+            margins: margins,
+            dailySteps: dailySteps,
+            battleDateKeys: battleKeys,
+            completedMatches: completed,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
+
+        let longestStreak = StatsPersonalRecordsBuilder.longestMatchWinStreakCount(from: completed)
+        let dominatorDays = StatsAchievementCatalog.dominatorDayCount(margins: margins)
+        statsAchievements = StatsAchievementCatalog.allItems(
+            battleStats: battleStats,
+            longestMatchWinStreak: longestStreak,
+            dominatorDayCount: dominatorDays
+        )
     }
 
     /// Loads completed match rows for stats opponent cards if the list is still empty.

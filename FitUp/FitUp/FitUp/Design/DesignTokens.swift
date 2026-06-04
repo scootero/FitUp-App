@@ -64,7 +64,7 @@ enum FitUpRadius {
 /// Shared inset for floating bottom chrome (tab bar, challenge flow dock).
 enum FitUpLayout {
     static let floatingBottomBarHorizontalPadding: CGFloat = 12
-    static let floatingBottomBarBottomPadding: CGFloat = 2
+    static let floatingBottomBarBottomPadding: CGFloat = 0
 }
 
 // MARK: - Fonts (T.font → SF)

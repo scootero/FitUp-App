@@ -46,9 +46,9 @@ struct CalendarDayDetailDock: View {
                     content
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 20)
+            .padding(.horizontal, 22)
+            .padding(.top, 12)
+            .padding(.bottom, 22)
         }
         .background {
             RoundedRectangle(cornerRadius: 22, style: .continuous)

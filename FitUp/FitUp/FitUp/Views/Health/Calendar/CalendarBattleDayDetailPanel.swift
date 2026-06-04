@@ -15,93 +15,101 @@ struct CalendarBattleDayDetailPanel: View {
     let onSelectMatchIndex: (Int) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .center, spacing: 18) {
             header
 
             if let match {
                 battleBody(match: match)
             } else {
                 Text(detail.summaryLine)
-                    .font(FitUpFont.body(12))
+                    .font(FitUpFont.body(13))
                     .foregroundStyle(FitUpColors.Text.secondary)
+                    .multilineTextAlignment(.center)
             }
 
             if matchCount > 1 {
                 matchPager
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(spacing: 5) {
             Text(detail.displayTitle)
-                .font(FitUpFont.display(18, weight: .bold))
+                .font(FitUpFont.display(20, weight: .bold))
                 .foregroundStyle(FitUpColors.Text.primary)
             Text(detail.summaryLine)
-                .font(FitUpFont.body(12))
+                .font(FitUpFont.body(13))
                 .foregroundStyle(FitUpColors.Text.secondary)
         }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
     }
 
     private func battleBody(match: CalendarDayBattleMatchDetail) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            stackedAvatars(match: match)
-                .padding(.bottom, 16)
-
-            HStack(alignment: .bottom, spacing: 0) {
-                verticalStepBars(match: match)
-                    .frame(minWidth: 80, alignment: .leading)
-
-                Spacer(minLength: 24)
-
-                headToHeadColumn(match: match)
-            }
-        }
-    }
-
-    private func stackedAvatars(match: CalendarDayBattleMatchDetail) -> some View {
-        ZStack(alignment: .leading) {
-            AvatarView(
-                initials: "YOU",
-                color: FitUpColors.Neon.cyan,
-                size: 40,
-                glow: true
-            )
-            .offset(x: 26)
-
-            AvatarView(
-                initials: match.opponent.initials,
-                color: calendarOpponentColor(hex: match.opponent.colorHex),
-                size: 40,
-                glow: true
-            )
-        }
-        .frame(height: 44)
-        .padding(.bottom, 2)
-    }
-
-    private func verticalStepBars(match: CalendarDayBattleMatchDetail) -> some View {
         let maxSteps = max(match.mySteps, match.theirSteps, 1)
         let barMaxHeight: CGFloat = 72
+        let opponentColor = calendarOpponentColor(hex: match.opponent.colorHex)
 
-        return HStack(alignment: .bottom, spacing: 28) {
-            verticalBar(
-                label: "YOU",
-                steps: match.mySteps,
-                height: barMaxHeight * CGFloat(match.mySteps) / CGFloat(maxSteps),
-                color: FitUpColors.Neon.cyan,
-                won: match.myWon == true,
-                barMaxHeight: barMaxHeight
+        return HStack(alignment: .bottom, spacing: 0) {
+            HStack(alignment: .bottom, spacing: 32) {
+                playerColumn(
+                    initials: "YOU",
+                    color: FitUpColors.Neon.cyan,
+                    label: "YOU",
+                    steps: match.mySteps,
+                    maxSteps: maxSteps,
+                    barMaxHeight: barMaxHeight,
+                    won: match.myWon == true
+                )
+                playerColumn(
+                    initials: match.opponent.initials,
+                    color: opponentColor,
+                    label: match.opponent.initials,
+                    steps: match.theirSteps,
+                    maxSteps: maxSteps,
+                    barMaxHeight: barMaxHeight,
+                    won: match.myWon == false
+                )
+            }
+            .padding(.horizontal, 8)
+
+            Spacer(minLength: 12)
+
+            headToHeadColumn(match: match)
+        }
+    }
+
+    private func playerColumn(
+        initials: String,
+        color: Color,
+        label: String,
+        steps: Int,
+        maxSteps: Int,
+        barMaxHeight: CGFloat,
+        won: Bool
+    ) -> some View {
+        let height = barMaxHeight * CGFloat(steps) / CGFloat(maxSteps)
+
+        return VStack(spacing: 10) {
+            AvatarView(
+                initials: initials,
+                color: color,
+                size: 44,
+                glow: true
             )
+
             verticalBar(
-                label: match.opponent.initials,
-                steps: match.theirSteps,
-                height: barMaxHeight * CGFloat(match.theirSteps) / CGFloat(maxSteps),
-                color: calendarOpponentColor(hex: match.opponent.colorHex),
-                won: match.myWon == false,
+                label: label,
+                steps: steps,
+                height: height,
+                color: color,
+                won: won,
                 barMaxHeight: barMaxHeight
             )
         }
+        .frame(width: 44)
     }
 
     private func verticalBar(
@@ -112,16 +120,16 @@ struct CalendarBattleDayDetailPanel: View {
         won: Bool,
         barMaxHeight: CGFloat
     ) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 7) {
             Text(formattedSteps(steps))
-                .font(FitUpFont.mono(10, weight: .bold))
+                .font(FitUpFont.mono(11, weight: .bold))
                 .foregroundStyle(color)
-                .frame(height: 14, alignment: .bottom)
+                .frame(height: 16, alignment: .bottom)
 
             ZStack(alignment: .bottom) {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color.white.opacity(0.08))
-                    .frame(width: 24, height: barMaxHeight)
+                    .frame(width: 26, height: barMaxHeight)
 
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(
@@ -131,21 +139,21 @@ struct CalendarBattleDayDetailPanel: View {
                             endPoint: .bottom
                         )
                     )
-                    .frame(width: 24, height: max(10, height))
+                    .frame(width: 26, height: max(10, height))
                     .shadow(color: color.opacity(won ? 0.45 : 0.2), radius: won ? 8 : 2)
             }
 
             Text(label)
-                .font(FitUpFont.mono(9, weight: .semibold))
+                .font(FitUpFont.mono(10, weight: .semibold))
                 .foregroundStyle(FitUpColors.Text.tertiary)
                 .lineLimit(1)
         }
     }
 
     private func headToHeadColumn(match: CalendarDayBattleMatchDetail) -> some View {
-        VStack(alignment: .trailing, spacing: 6) {
+        VStack(alignment: .trailing, spacing: 7) {
             Text(match.opponent.displayName.uppercased())
-                .font(FitUpFont.body(10, weight: .heavy))
+                .font(FitUpFont.body(11, weight: .heavy))
                 .tracking(1)
                 .foregroundStyle(FitUpColors.Text.tertiary)
                 .lineLimit(1)
@@ -155,10 +163,10 @@ struct CalendarBattleDayDetailPanel: View {
                     .font(FitUpFont.display(28, weight: .bold))
                     .foregroundStyle(FitUpColors.Neon.green)
                 Text("ALL-TIME W–L")
-                    .font(FitUpFont.mono(9, weight: .bold))
+                    .font(FitUpFont.mono(10, weight: .bold))
                     .foregroundStyle(FitUpColors.Text.tertiary)
                 Text("\(h2h.totalCompleted) matches")
-                    .font(FitUpFont.body(10))
+                    .font(FitUpFont.body(11))
                     .foregroundStyle(FitUpColors.Text.secondary)
             } else {
                 Text("—")
@@ -168,7 +176,8 @@ struct CalendarBattleDayDetailPanel: View {
 
             dayOutcomeBadge(match: match)
         }
-        .frame(minWidth: 96)
+        .frame(minWidth: 92, alignment: .trailing)
+        .padding(.trailing, 2)
     }
 
     private func dayOutcomeBadgeStyle(for match: CalendarDayBattleMatchDetail) -> (text: String, color: Color) {
@@ -190,7 +199,7 @@ struct CalendarBattleDayDetailPanel: View {
     private func dayOutcomeBadge(match: CalendarDayBattleMatchDetail) -> some View {
         let style = dayOutcomeBadgeStyle(for: match)
         return Text(style.text)
-            .font(FitUpFont.mono(10, weight: .bold))
+            .font(FitUpFont.mono(11, weight: .bold))
             .foregroundStyle(style.color)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)

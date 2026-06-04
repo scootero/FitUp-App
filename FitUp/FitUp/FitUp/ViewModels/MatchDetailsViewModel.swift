@@ -538,6 +538,12 @@ final class MatchDetailsViewModel: ObservableObject {
             }
         }()
 
+        let theirToday = snapshot.dayRows.first(where: { $0.isToday })?.theirValue ?? snapshot.theirToday
+        var dayCal = Calendar(identifier: .gregorian)
+        dayCal.timeZone = tz
+        let dayStart = dayCal.startOfDay(for: calDay)
+        let chartNow = Date()
+
         async let opponentSeriesTask: [HealthIntradayCumulativePoint] = {
             guard snapshot.metricType != "active_calories" else { return [] }
             do {
@@ -547,9 +553,12 @@ final class MatchDetailsViewModel: ObservableObject {
                     opponentTimezoneIdentifier: matchTimezone,
                     sinceRecordedAt: nil
                 )
-                return ticks
-                    .map { HealthIntradayCumulativePoint(date: $0.recordedAt, cumulative: $0.cumulativeSteps) }
-                    .sorted { $0.date < $1.date }
+                return IntradayOpponentSeriesBuilder.buildChartSeries(
+                    ticks: ticks,
+                    dayStart: dayStart,
+                    now: chartNow,
+                    endAnchor: theirToday
+                )
             } catch {
                 return []
             }

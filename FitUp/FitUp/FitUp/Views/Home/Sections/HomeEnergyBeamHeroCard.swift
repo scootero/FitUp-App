@@ -54,6 +54,18 @@ enum EnergyBeamHeroLastDisplayedSnapshotStore {
     static func clearAll(matchIds: [UUID]) {
         matchIds.forEach(clear(for:))
     }
+
+    /// Removes all hero beam snapshot keys (prefix-scoped; safe when match IDs are not loaded yet).
+    static func clearAllPersistedSnapshots() {
+        let prefixes = [
+            marginKeyPrefix,
+            userBattleScoreKeyPrefix,
+            opponentBattleScoreKeyPrefix,
+        ]
+        for key in UserDefaults.standard.dictionaryRepresentation().keys where prefixes.contains(where: { key.hasPrefix($0) }) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
 }
 
 private struct HeroComparableValues: Equatable {
@@ -91,6 +103,8 @@ struct HomeEnergyBeamHeroCard: View {
     let viewerIntradayHealthKitSyncedAt: Date?
     /// Latest opponent tick `recorded_at` from sparkline fetch (`HomeViewModel.heroOpponentIntradayLatestTickAt`).
     let opponentIntradayLatestTickAt: Date?
+    /// While the day timeline is under the finger, suppress the parent hero card navigation tap.
+    @Binding var blocksHeroCardNavigation: Bool
     /// DEBUG beam lab: when true, beam collision animates via `debugBeamCollisionDelta`; headline/scores stay on live path.
     var debugBeamLabEnabled: Bool = false
     /// DEBUG beam lab: added to live comparable margin for animated beam collision preview.
@@ -183,6 +197,7 @@ struct HomeEnergyBeamHeroCard: View {
         sparklineDomain: HomeHeroSparklineDomain? = nil,
         viewerIntradayHealthKitSyncedAt: Date? = nil,
         opponentIntradayLatestTickAt: Date? = nil,
+        blocksHeroCardNavigation: Binding<Bool> = .constant(false),
         debugBeamLabEnabled: Bool = false,
         debugBeamCollisionDelta: Double = 0,
         handoffRevealActive: Bool = false,
@@ -201,6 +216,7 @@ struct HomeEnergyBeamHeroCard: View {
         self.sparklineDomain = sparklineDomain
         self.viewerIntradayHealthKitSyncedAt = viewerIntradayHealthKitSyncedAt
         self.opponentIntradayLatestTickAt = opponentIntradayLatestTickAt
+        _blocksHeroCardNavigation = blocksHeroCardNavigation
         self.debugBeamLabEnabled = debugBeamLabEnabled
         self.debugBeamCollisionDelta = debugBeamCollisionDelta
         self.handoffRevealActive = handoffRevealActive
@@ -296,6 +312,7 @@ struct HomeEnergyBeamHeroCard: View {
                         showMockTimelineDebugLabel: mockTimelineDebugFlag,
                         viewerIntradayHealthKitSyncedAt: viewerIntradayHealthKitSyncedAt,
                         opponentIntradayLatestTickAt: opponentIntradayLatestTickAt,
+                        blocksHeroCardNavigation: $blocksHeroCardNavigation,
                         beamCollisionMarginPreciseOverride: debugBeamLabEnabled ? beamCollision : nil,
                         showTopBrandHeader: false,
                         beamVisualTuning: .endingProduction,

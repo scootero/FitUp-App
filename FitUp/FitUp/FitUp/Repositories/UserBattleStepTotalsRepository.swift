@@ -15,6 +15,8 @@ enum UserBattleStepTotalsRepositoryError: Error {
 
 struct CumulativeBattleStepsSnapshot: Sendable {
     let finalizedTotal: Int
+    let finalizedBattleDayCount: Int
+    let averageFinalizedBattleDaySteps: Int
     let isTodayBattleDay: Bool
     let isTodayFinalized: Bool
 }
@@ -40,6 +42,8 @@ final class UserBattleStepTotalsRepository {
             let row = response.value
             return CumulativeBattleStepsSnapshot(
                 finalizedTotal: max(0, row.finalizedTotalInt),
+                finalizedBattleDayCount: max(0, row.finalizedBattleDayCountInt),
+                averageFinalizedBattleDaySteps: max(0, row.averageFinalizedBattleDayStepsInt),
                 isTodayBattleDay: row.is_today_battle_day,
                 isTodayFinalized: row.is_today_finalized
             )
@@ -163,11 +167,25 @@ extension ProvisionalBattleStepRPCParams: Encodable {
 
 private struct CumulativeBattleStepsRPCResult: Decodable, Sendable {
     let finalized_total: Int64
+    let finalized_battle_day_count: Int64?
+    let average_finalized_battle_day_steps: Int64?
     let is_today_battle_day: Bool
     let is_today_finalized: Bool
 
     var finalizedTotalInt: Int {
         if finalized_total > Int64(Int.max) { return Int.max }
         return Int(finalized_total)
+    }
+
+    var finalizedBattleDayCountInt: Int {
+        guard let finalized_battle_day_count else { return 0 }
+        if finalized_battle_day_count > Int64(Int.max) { return Int.max }
+        return Int(finalized_battle_day_count)
+    }
+
+    var averageFinalizedBattleDayStepsInt: Int {
+        guard let average_finalized_battle_day_steps else { return 0 }
+        if average_finalized_battle_day_steps > Int64(Int.max) { return Int.max }
+        return Int(average_finalized_battle_day_steps)
     }
 }

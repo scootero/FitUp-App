@@ -142,7 +142,6 @@ enum HomeHeroSparklineLoader {
         viewerTimeZone: TimeZone,
         pointCount: Int
     ) -> (domain: HomeHeroSparklineDomain, user: [CGFloat]?, opponent: [CGFloat]) {
-        let n = max(2, pointCount)
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = viewerTimeZone
         let now = Date()
@@ -150,34 +149,56 @@ enum HomeHeroSparklineLoader {
         let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) ?? now.addingTimeInterval(86_400)
         let spanSeconds = max(now.timeIntervalSince(dayStart), 1)
 
-        var samples: [HomeHeroSparklineSample] = []
-        var userRaw = [Int](repeating: 0, count: n)
-        var oppRaw = [Int](repeating: 0, count: n)
+        var timestamps = Set<Date>()
+        timestamps.insert(dayStart)
+        timestamps.insert(now)
+        if let hkPoints {
+            for point in hkPoints where point.date <= now {
+                timestamps.insert(point.date)
+            }
+        }
+        if let oppTicks {
+            for tick in oppTicks where tick.recordedAt <= now {
+                timestamps.insert(tick.recordedAt)
+            }
+        }
 
-        for i in 0 ..< n {
-            let fraction = n == 1 ? 1.0 : Double(i) / Double(n - 1)
-            let t = dayStart.addingTimeInterval(fraction * spanSeconds)
-            let userSteps = interpolateCumulative(points: hkPoints, at: t, endAnchor: myToday, fraction: fraction)
+        let sortedTimes = timestamps.sorted()
+        var samples: [HomeHeroSparklineSample] = []
+        samples.reserveCapacity(sortedTimes.count)
+
+        for t in sortedTimes {
+            let fraction = spanSeconds > 0 ? t.timeIntervalSince(dayStart) / spanSeconds : 1.0
+            let userSteps = interpolateCumulative(
+                points: hkPoints,
+                at: t,
+                endAnchor: myToday,
+                fraction: fraction
+            )
             let oppSteps: Int
             if let ticks = oppTicks, !ticks.isEmpty {
-                oppSteps = interpolateOpponentCumulative(ticks: ticks, at: t, endAnchor: theirToday, fraction: fraction)
+                oppSteps = IntradayOpponentSeriesBuilder.cumulativeSteps(at: t, ticks: ticks)
             } else {
-                oppSteps = max(0, theirToday)
+                oppSteps = IntradayOpponentSeriesBuilder.rampSteps(fraction: fraction, endAnchor: theirToday)
             }
-            userRaw[i] = userSteps
-            oppRaw[i] = oppSteps
             samples.append(HomeHeroSparklineSample(timestamp: t, userSteps: userSteps, opponentSteps: oppSteps))
         }
 
-        userRaw[n - 1] = max(0, myToday)
-        oppRaw[n - 1] = max(0, theirToday)
-        if let lastIndex = samples.indices.last {
-            let last = samples[lastIndex]
+        if let lastIndex = samples.lastIndex(where: { $0.timestamp == now }) {
             samples[lastIndex] = HomeHeroSparklineSample(
-                timestamp: last.timestamp,
-                userSteps: userRaw[n - 1],
-                opponentSteps: oppRaw[n - 1]
+                timestamp: now,
+                userSteps: max(0, myToday),
+                opponentSteps: max(0, theirToday)
             )
+        } else {
+            samples.append(
+                HomeHeroSparklineSample(
+                    timestamp: now,
+                    userSteps: max(0, myToday),
+                    opponentSteps: max(0, theirToday)
+                )
+            )
+            samples.sort { $0.timestamp < $1.timestamp }
         }
 
         let domain = HomeHeroSparklineDomain(
@@ -186,6 +207,19 @@ enum HomeHeroSparklineLoader {
             dayEnd: dayEnd,
             now: now
         )
+
+        let n = max(2, pointCount)
+        var userRaw = [Int](repeating: 0, count: n)
+        var oppRaw = [Int](repeating: 0, count: n)
+        for i in 0 ..< n {
+            let fraction = n == 1 ? 1.0 : Double(i) / Double(n - 1)
+            let t = dayStart.addingTimeInterval(fraction * spanSeconds)
+            let steps = domain.steps(at: t)
+            userRaw[i] = steps.user
+            oppRaw[i] = steps.opponent
+        }
+        userRaw[n - 1] = max(0, myToday)
+        oppRaw[n - 1] = max(0, theirToday)
 
         let maxVal = max(
             1,
@@ -214,7 +248,7 @@ enum HomeHeroSparklineLoader {
         fraction: Double
     ) -> Int {
         guard let points, !points.isEmpty else {
-            return Int((Double(max(0, endAnchor)) * fraction).rounded())
+            return IntradayOpponentSeriesBuilder.rampSteps(fraction: fraction, endAnchor: endAnchor)
         }
         let sorted = points.sorted { $0.date < $1.date }
         if date <= sorted.first!.date { return max(0, sorted.first!.cumulative) }
@@ -223,20 +257,5 @@ enum HomeHeroSparklineLoader {
             last = p
         }
         return last.cumulative
-    }
-
-    private static func interpolateOpponentCumulative(
-        ticks: [OpponentIntradayStepTick],
-        at date: Date,
-        endAnchor _: Int,
-        fraction _: Double
-    ) -> Int {
-        let sorted = ticks.sorted { $0.recordedAt < $1.recordedAt }
-        if date <= sorted.first!.recordedAt { return max(0, sorted.first!.cumulativeSteps) }
-        var last = sorted[0]
-        for t in sorted where t.recordedAt <= date {
-            last = t
-        }
-        return last.cumulativeSteps
     }
 }

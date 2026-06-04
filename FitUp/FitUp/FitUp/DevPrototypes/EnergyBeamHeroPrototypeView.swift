@@ -249,6 +249,7 @@ struct EnergyBeamHeroPrototypeView: View {
                         showMockTimelineDebugLabel: EnergyBeamHeroPrototypeKnobs.showMockTimelineDebugLabel,
                         viewerIntradayHealthKitSyncedAt: Date().addingTimeInterval(-320),
                         opponentIntradayLatestTickAt: Date().addingTimeInterval(-4_200),
+                        blocksHeroCardNavigation: .constant(false),
                         beamVisualTuning: .endingProduction,
                         beamIntroStartedAt: beamIntroStartedAt,
                         beamIntroHoldGhost: holdIntroGhost,

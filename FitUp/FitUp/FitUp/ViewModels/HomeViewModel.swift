@@ -109,7 +109,7 @@ final class HomeViewModel: ObservableObject {
     @Published private(set) var heroOpponentIntradayLatestTickAt: Date?
     /// Slice 7: non-nil while the “new opponent” handoff overlay blocks the energy hero card.
     @Published private(set) var heroOpponentHandoff: HeroOpponentHandoffOverlayModel?
-    /// User-selected step battle for the energy hero; persisted locally per profile.
+    /// User-selected step battle for the energy hero; session-only (cleared on ViewModel recreation).
     @Published private(set) var selectedHeroStepMatchId: UUID?
     @Published private(set) var isHeroLoading = true
     @Published private(set) var isInitialLoading = true
@@ -408,6 +408,13 @@ final class HomeViewModel: ObservableObject {
             profileTimeZoneIdentifier: profileTimeZoneIdentifier
         )
 
+        _ = applyPersistedProfileLocalDayChangeIfNeeded(
+            profileId: profileId,
+            currentLocalDate: currentLocalDate,
+            knownMatchIds: []
+        )
+        lastHomeProfileLocalDate = currentLocalDate
+
         if userId != profileId {
             stop()
             userId = profileId
@@ -428,11 +435,10 @@ final class HomeViewModel: ObservableObject {
             heroOpponentIntradayLatestTickAt = nil
             heroSparklineLoadGeneration &+= 1
             heroOpponentHandoff = nil
-            selectedHeroStepMatchId = SelectedHeroStepMatchStore.load(userId: profileId)
+            selectedHeroStepMatchId = nil
             heroLoadStartedAt = Date()
             heroStateResolvedAt = nil
             lastStatsRefreshAt = nil
-            lastHomeProfileLocalDate = currentLocalDate
             completedMatches = []
             completedMatchesListTask?.cancel()
             completedMatchesListTask = nil
@@ -965,6 +971,15 @@ final class HomeViewModel: ObservableObject {
 
     // MARK: - Energy beam hero sparklines (Slice 5)
 
+    private func clearHeroSparklineSlotsForMatchSwitch() {
+        heroSparklineFetchTask?.cancel()
+        heroSparklineLoadGeneration &+= 1
+        heroSparklineUserSeries = nil
+        heroSparklineOpponentSeries = nil
+        heroSparklineDomain = nil
+        heroOpponentIntradayLatestTickAt = nil
+    }
+
     private func scheduleHeroSparklineRefresh() {
         heroSparklineFetchTask?.cancel()
 
@@ -1194,12 +1209,62 @@ final class HomeViewModel: ObservableObject {
     }
 
     @discardableResult
+    private func applyPersistedProfileLocalDayChangeIfNeeded(
+        profileId: UUID,
+        currentLocalDate: String,
+        knownMatchIds: [UUID] = []
+    ) -> Bool {
+        let persisted = HomeHeroLastProfileLocalDateStore.load(profileId: profileId)
+        defer {
+            HomeHeroLastProfileLocalDateStore.save(profileId: profileId, localDate: currentLocalDate)
+        }
+
+        guard let persisted, persisted != currentLocalDate else { return false }
+
+        let uniqueMatchIds = Array(Set(knownMatchIds))
+        if !uniqueMatchIds.isEmpty {
+            EnergyBeamHeroLastDisplayedSnapshotStore.clearAll(matchIds: uniqueMatchIds)
+        }
+        EnergyBeamHeroLastDisplayedSnapshotStore.clearAllPersistedSnapshots()
+
+        AppLogger.log(
+            category: "hero_anim",
+            level: .debug,
+            message: "hero_userdefaults_snapshot_cleared",
+            userId: profileId,
+            metadata: [
+                "cleared_match_count": "\(uniqueMatchIds.count)",
+                "previous_date": persisted,
+                "local_date": currentLocalDate,
+                "source": "persisted_day_change",
+            ]
+        )
+        AppLogger.log(
+            category: "home_snapshot",
+            level: .debug,
+            message: "home_cold_launch_day_rollover",
+            userId: profileId,
+            metadata: [
+                "previous_date": persisted,
+                "local_date": currentLocalDate,
+                "known_match_count": "\(uniqueMatchIds.count)",
+            ]
+        )
+        return true
+    }
+
+    @discardableResult
     private func handleHomeDayRolloverIfNeeded(currentLocalDate: String? = nil) -> Bool {
         let localDate = currentLocalDate ?? snapshotCacheStore.localDateString(
             now: Date(),
             profileTimeZoneIdentifier: profileTimeZoneIdentifier
         )
-        defer { lastHomeProfileLocalDate = localDate }
+        defer {
+            lastHomeProfileLocalDate = localDate
+            if let userId {
+                HomeHeroLastProfileLocalDateStore.save(profileId: userId, localDate: localDate)
+            }
+        }
         guard let previousDate = lastHomeProfileLocalDate, previousDate != localDate else { return false }
 
         var matchIdsToClear = activeMatches.map(\.id)
@@ -1576,10 +1641,36 @@ final class HomeViewModel: ObservableObject {
 
         selectedHeroStepMatchId = match.id
         if let userId {
-            SelectedHeroStepMatchStore.save(matchId: match.id, userId: userId)
             FeaturedOpponentHandoffStore.saveLastOpponent(match.opponent.id, userId: userId)
         }
+        clearHeroSparklineSlotsForMatchSwitch()
         scheduleHeroSparklineRefresh()
+    }
+
+    func selectAdjacentHeroStepMatch(offset: Int) {
+        let matches = sortedActiveStepMatchesForHero
+        guard matches.count > 1,
+              let currentId = featuredHomeStepMatch?.id,
+              let index = matches.firstIndex(where: { $0.id == currentId }) else { return }
+        let nextIndex = index + offset
+        guard matches.indices.contains(nextIndex) else { return }
+        selectHeroStepMatch(matches[nextIndex])
+    }
+
+    var canSelectPreviousHeroStepMatch: Bool {
+        guard let index = featuredHeroStepMatchIndex else { return false }
+        return index > 0
+    }
+
+    var canSelectNextHeroStepMatch: Bool {
+        guard let index = featuredHeroStepMatchIndex else { return false }
+        return index < sortedActiveStepMatchesForHero.count - 1
+    }
+
+    private var featuredHeroStepMatchIndex: Int? {
+        let matches = sortedActiveStepMatchesForHero
+        guard let currentId = featuredHomeStepMatch?.id else { return nil }
+        return matches.firstIndex(where: { $0.id == currentId })
     }
 
     private func reconcileSelectedHeroStepMatch(userId: UUID) {
@@ -1587,30 +1678,23 @@ final class HomeViewModel: ObservableObject {
         let isEligible = activeStepMatchesEligibleForHero.contains(where: { $0.id == selectedHeroStepMatchId })
         guard isEligible else {
             self.selectedHeroStepMatchId = nil
-            SelectedHeroStepMatchStore.clear(userId: userId)
             return
         }
     }
 
     // MARK: - Featured opponent handoff (Slice 7)
 
-    private enum SelectedHeroStepMatchStore {
-        private static func key(userId: UUID) -> String {
-            "fitup.hero.selectedStepMatchId.\(userId.uuidString)"
+    private enum HomeHeroLastProfileLocalDateStore {
+        private static func key(profileId: UUID) -> String {
+            "fitup.home.lastProfileLocalDate.\(profileId.uuidString)"
         }
 
-        static func load(userId: UUID) -> UUID? {
-            guard let raw = UserDefaults.standard.string(forKey: key(userId: userId)),
-                  let id = UUID(uuidString: raw) else { return nil }
-            return id
+        static func load(profileId: UUID) -> String? {
+            UserDefaults.standard.string(forKey: key(profileId: profileId))
         }
 
-        static func save(matchId: UUID, userId: UUID) {
-            UserDefaults.standard.set(matchId.uuidString, forKey: key(userId: userId))
-        }
-
-        static func clear(userId: UUID) {
-            UserDefaults.standard.removeObject(forKey: key(userId: userId))
+        static func save(profileId: UUID, localDate: String) {
+            UserDefaults.standard.set(localDate, forKey: key(profileId: profileId))
         }
     }
 

@@ -2339,19 +2339,21 @@ private struct MomentumChipView: View {
 
 // MARK: - Sparkline chart
 
-/// Intraday chart on a fixed full-day axis (12 AM → midnight) with a top NOW marker and finger scrubbing.
+/// Intraday chart on a fixed full-day axis (12 AM → midnight) with a top NOW marker and press-to-inspect.
 private struct DayBattleSparklinePreview: View {
     let domain: HomeHeroSparklineDomain
+    var opponentIntradayLatestTickAt: Date? = nil
     var showMockTimelineLabel: Bool = false
+    @Binding var blocksHeroCardNavigation: Bool
 
     @Environment(\.homeHeroCompactScale) private var compactScale
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrubbedFraction: CGFloat?
-    @State private var isScrubbing = false
+    @State private var isScrubActive = false
 
     private var chartHeight: CGFloat { HomeHeroCompactLayout.scaled(96, by: compactScale) }
     private var topBandHeight: CGFloat { HomeHeroCompactLayout.scaled(26, by: compactScale) }
     private var chartPad: CGPoint { CGPoint(x: 14, y: 10) }
+    private var outerHorizontalPad: CGFloat { HomeHeroCompactLayout.scaled(10, by: compactScale) }
 
     private var daySpan: TimeInterval {
         max(domain.dayEnd.timeIntervalSince(domain.dayStart), 1)
@@ -2361,6 +2363,20 @@ private struct DayBattleSparklinePreview: View {
 
     private var effectiveFraction: CGFloat {
         min(nowFraction, max(0, scrubbedFraction ?? nowFraction))
+    }
+
+    /// Latest opponent sample on the fixed day axis (may trail viewer *Now*).
+    private var opponentLatestFraction: CGFloat? {
+        let oppTime: Date?
+        if let tickAt = opponentIntradayLatestTickAt {
+            oppTime = tickAt
+        } else {
+            oppTime = domain.samples.filter { $0.timestamp <= domain.now }.last?.timestamp
+        }
+        guard let oppTime else { return nil }
+        let fraction = timeFraction(oppTime)
+        guard fraction > 0.005 else { return nil }
+        return min(nowFraction, fraction)
     }
 
     var body: some View {
@@ -2386,7 +2402,8 @@ private struct DayBattleSparklinePreview: View {
                     chartTextureOverlay(rect: plotRect)
                     fadedDistanceGrid(rect: plotRect)
                     noonGuideLine(plotRect: plotRect, pad: pad, innerW: innerW)
-                    timeAxisTicks(rect: plotRect, pad: pad)
+                    timeAxisTicks(rect: plotRect, pad: pad, innerW: innerW)
+                    playerNowAxisTicks(rect: plotRect, pad: pad, innerW: innerW)
 
                     sparklineAreaFill(points: ptsU, color: FitUpColors.Neon.cyan, in: plotRect, pad: pad)
                     sparklineAreaFill(points: ptsO, color: FitUpColors.Neon.orange, in: plotRect, pad: pad)
@@ -2399,7 +2416,7 @@ private struct DayBattleSparklinePreview: View {
                         .stroke(FitUpColors.Neon.cyan.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     }
 
-                    if isScrubbing || scrubbedFraction != nil {
+                    if isScrubActive {
                         Path { path in
                             path.move(to: CGPoint(x: markerX, y: plotRect.minY + pad.y))
                             path.addLine(to: CGPoint(x: markerX, y: plotBottom))
@@ -2412,7 +2429,7 @@ private struct DayBattleSparklinePreview: View {
 
                     endpointDots(ptsU: ptsU, ptsO: ptsO)
 
-                    if !(isScrubbing || scrubbedFraction != nil), nowFraction > 0.005 {
+                    if !isScrubActive, nowFraction > 0.005 {
                         chartAxisLabel("NOW")
                             .fixedSize()
                             .position(x: nowX, y: topBandHeight * 0.46)
@@ -2421,8 +2438,6 @@ private struct DayBattleSparklinePreview: View {
                     scrubCalloutOverlay(width: w)
                         .frame(height: topBandHeight, alignment: .center)
                 }
-                .contentShape(Rectangle())
-                .gesture(scrubGesture(width: w))
             }
             .frame(height: chartHeight)
 
@@ -2437,11 +2452,13 @@ private struct DayBattleSparklinePreview: View {
             }
             #endif
         }
-        .padding(HomeHeroCompactLayout.scaled(10, by: compactScale))
+        .padding(outerHorizontalPad)
         .allowsTightening(true)
         .minimumScaleFactor(0.94)
+        .accessibilityHint("Press and drag on the timeline to inspect pace at a specific time.")
         .background {
-            RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(18, by: compactScale), style: .continuous)
+            let corner = HomeHeroCompactLayout.scaled(18, by: compactScale)
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
@@ -2454,12 +2471,12 @@ private struct DayBattleSparklinePreview: View {
                     )
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(18, by: compactScale), style: .continuous)
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
                         .strokeBorder(
                             LinearGradient(
                                 colors: [
-                                    FitUpColors.Neon.cyan.opacity(0.14),
-                                    Color.white.opacity(0.1),
+                                    FitUpColors.Neon.green.opacity(0.12),
+                                    FitUpColors.Neon.cyan.opacity(0.1),
                                     FitUpColors.Neon.orange.opacity(0.12),
                                 ],
                                 startPoint: .leading,
@@ -2469,54 +2486,91 @@ private struct DayBattleSparklinePreview: View {
                         )
                 }
         }
+        .contentShape(RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(18, by: compactScale), style: .continuous))
+        .overlay {
+            GeometryReader { geo in
+                Color.clear
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(scrubGesture(width: geo.size.width))
+            }
+        }
+        .onDisappear {
+            endScrubSession()
+            blocksHeroCardNavigation = false
+        }
     }
 
     @ViewBuilder
     private func scrubCalloutOverlay(width: CGFloat) -> some View {
-        if isScrubbing || scrubbedFraction != nil {
+        if isScrubActive {
             let time = time(at: effectiveFraction)
             let steps = domain.steps(at: time)
-            VStack(spacing: HomeHeroCompactLayout.scaled(3, by: compactScale)) {
+            VStack(spacing: HomeHeroCompactLayout.scaled(4, by: compactScale)) {
                 Text("You: \(steps.user.formatted())  ·  Them: \(steps.opponent.formatted())")
-                    .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(12, by: compactScale), weight: .bold))
+                    .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(24, by: compactScale), weight: .bold))
                 Text(shortTime(time))
-                    .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(11, by: compactScale), weight: .semibold))
+                    .font(FitUpFont.mono(HomeHeroCompactLayout.scaled(22, by: compactScale), weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.72))
             }
             .foregroundStyle(Color.white.opacity(0.94))
             .multilineTextAlignment(.center)
             .lineLimit(2)
-            .minimumScaleFactor(0.8)
-            .padding(.horizontal, HomeHeroCompactLayout.scaled(14, by: compactScale))
-            .padding(.vertical, HomeHeroCompactLayout.scaled(7, by: compactScale))
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, HomeHeroCompactLayout.scaled(16, by: compactScale))
+            .padding(.vertical, HomeHeroCompactLayout.scaled(10, by: compactScale))
             .background {
-                RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(10, by: compactScale), style: .continuous)
-                    .fill(Color.black.opacity(0.72))
+                RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(12, by: compactScale), style: .continuous)
+                    .fill(Color.black.opacity(0.78))
                     .overlay {
-                        RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(10, by: compactScale), style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(12, by: compactScale), style: .continuous)
+                            .strokeBorder(FitUpColors.Neon.green.opacity(0.42), lineWidth: 1.2)
                     }
             }
-            .frame(width: min(width - 24, 280))
+            .frame(width: min(width - 20, 320))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .transition(.opacity.combined(with: .scale(scale: 0.96)))
         }
     }
 
     private var axisRow: some View {
-        ZStack {
-            HStack {
-                chartAxisLabel("12 AM")
-                Spacer(minLength: 8)
-                chartAxisLabel("MIDNIGHT")
+        GeometryReader { geo in
+            let w = geo.size.width
+            let padX = chartPad.x
+            let innerW = max(w - padX * 2, 1)
+            ZStack(alignment: .topLeading) {
+                HStack {
+                    chartAxisLabel("12 AM")
+                    Spacer(minLength: 8)
+                    chartAxisLabel("MIDNIGHT")
+                }
+                noonAxisLabels
+                    .frame(maxWidth: .infinity)
+
+                if nowFraction > 0.005 {
+                    playerAxisMarker(color: FitUpColors.Neon.cyan)
+                        .position(x: padX + nowFraction * innerW, y: HomeHeroCompactLayout.scaled(10, by: compactScale))
+                }
+                if let oppFraction = opponentLatestFraction, abs(oppFraction - nowFraction) > 0.012 {
+                    playerAxisMarker(color: FitUpColors.Neon.orange)
+                        .position(x: padX + oppFraction * innerW, y: HomeHeroCompactLayout.scaled(10, by: compactScale))
+                }
             }
-            noonAxisLabels
-                .frame(maxWidth: .infinity)
         }
         .frame(height: HomeHeroCompactLayout.scaled(22, by: compactScale))
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("12 AM to midnight. Noon and 12 PM at center.")
+    }
+
+    private func playerAxisMarker(color: Color) -> some View {
+        VStack(spacing: 1) {
+            Rectangle()
+                .fill(color.opacity(0.92))
+                .frame(width: 2, height: HomeHeroCompactLayout.scaled(7, by: compactScale))
+            Circle()
+                .fill(color.opacity(0.95))
+                .frame(width: HomeHeroCompactLayout.scaled(5, by: compactScale), height: HomeHeroCompactLayout.scaled(5, by: compactScale))
+        }
     }
 
     private var noonAxisLabels: some View {
@@ -2541,22 +2595,29 @@ private struct DayBattleSparklinePreview: View {
 
     private func scrubGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                isScrubbing = true
-                let innerW = max(width - chartPad.x * 2, 1)
-                let raw = (value.location.x - chartPad.x) / innerW
-                scrubbedFraction = min(nowFraction, max(0, raw))
+            .onChanged { drag in
+                blocksHeroCardNavigation = true
+                isScrubActive = true
+                updateScrubFraction(x: drag.location.x, width: width)
             }
             .onEnded { _ in
-                isScrubbing = false
-                if reduceMotion {
-                    scrubbedFraction = nil
-                } else {
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
-                        scrubbedFraction = nil
-                    }
+                endScrubSession()
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(80))
+                    blocksHeroCardNavigation = false
                 }
             }
+    }
+
+    private func endScrubSession() {
+        isScrubActive = false
+        scrubbedFraction = nil
+    }
+
+    private func updateScrubFraction(x: CGFloat, width: CGFloat) {
+        let innerW = max(width - chartPad.x * 2, 1)
+        let raw = (x - chartPad.x) / innerW
+        scrubbedFraction = min(nowFraction, max(0, raw))
     }
 
     private func time(at fraction: CGFloat) -> Date {
@@ -2665,7 +2726,7 @@ private struct DayBattleSparklinePreview: View {
     }
 
     /// Small ticks along the bottom inner edge (fixed 24-hour scale).
-    private func timeAxisTicks(rect: CGRect, pad: CGPoint) -> some View {
+    private func timeAxisTicks(rect: CGRect, pad: CGPoint, innerW: CGFloat) -> some View {
         Canvas { context, _ in
             let inner = rect.insetBy(dx: pad.x, dy: pad.y)
             guard inner.width > 8 else { return }
@@ -2681,6 +2742,34 @@ private struct DayBattleSparklinePreview: View {
                     with: .color(Color.white.opacity(0.14)),
                     style: StrokeStyle(lineWidth: 0.8, lineCap: .round)
                 )
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// Taller colored ticks on the plot bottom edge for each player's latest sample time.
+    private func playerNowAxisTicks(rect: CGRect, pad: CGPoint, innerW: CGFloat) -> some View {
+        Canvas { context, _ in
+            let inner = rect.insetBy(dx: pad.x, dy: pad.y)
+            guard inner.width > 8 else { return }
+
+            func drawPlayerTick(at fraction: CGFloat, color: Color) {
+                let x = inner.minX + fraction * innerW
+                var tick = Path()
+                tick.move(to: CGPoint(x: x, y: inner.maxY - 2))
+                tick.addLine(to: CGPoint(x: x, y: inner.maxY + 8))
+                context.stroke(
+                    tick,
+                    with: .color(color.opacity(0.92)),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                )
+            }
+
+            if nowFraction > 0.005 {
+                drawPlayerTick(at: nowFraction, color: FitUpColors.Neon.cyan)
+            }
+            if let oppFraction = opponentLatestFraction, abs(oppFraction - nowFraction) > 0.012 {
+                drawPlayerTick(at: oppFraction, color: FitUpColors.Neon.orange)
             }
         }
         .allowsHitTesting(false)
@@ -3045,6 +3134,8 @@ struct EnergyBeamHeroGlassCardView: View {
     var viewerIntradayHealthKitSyncedAt: Date? = nil
     /// Latest opponent intraday tick timestamp from server (Slice 6).
     var opponentIntradayLatestTickAt: Date? = nil
+    /// While the day timeline is under the finger, suppress the parent hero card navigation tap.
+    @Binding var blocksHeroCardNavigation: Bool
     /// When non-nil, only the procedural beam uses this collision margin; momentum and headline inputs stay tied to `margin` / caller-passed copy.
     var collisionMarginOverride: Int? = nil
     /// Fractional beam collision override (smooth animation); takes precedence over `collisionMarginOverride` when set.
@@ -3165,7 +3256,9 @@ struct EnergyBeamHeroGlassCardView: View {
 
             DayBattleSparklinePreview(
                 domain: sparklineDomain,
-                showMockTimelineLabel: showMockTimelineDebugLabel
+                opponentIntradayLatestTickAt: opponentIntradayLatestTickAt,
+                showMockTimelineLabel: showMockTimelineDebugLabel,
+                blocksHeroCardNavigation: $blocksHeroCardNavigation
             )
             .padding(.horizontal, scaled(14))
             .padding(.bottom, scaled(4))

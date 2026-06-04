@@ -10,6 +10,7 @@ import SwiftUI
 struct PeerProfileView: View {
     let peerId: UUID
     let viewer: Profile
+    var onClose: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -67,11 +68,12 @@ struct PeerProfileView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done") { close() }
                         .foregroundStyle(FitUpColors.Neon.cyan)
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: peerId) {
             await load()
         }
@@ -258,6 +260,14 @@ struct PeerProfileView: View {
                 msg = "Messaging is not ready yet. Please try again later."
             }
             errorMessage = msg
+        }
+    }
+
+    private func close() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
         }
     }
 
