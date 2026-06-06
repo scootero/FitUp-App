@@ -7,6 +7,7 @@
 
 import Combine
 import Foundation
+import HealthKit
 import SwiftUI
 
 /// Slice 7 — holds the outgoing + incoming featured matches while the handoff overlay runs.
@@ -191,6 +192,13 @@ final class HomeViewModel: ObservableObject {
     private let pollingIntervalNs: UInt64 = 90_000_000_000
     private var isReloadInFlight = false
     private var hasPendingForcedReload = false
+    private var hasPendingLightReload = false
+    private struct PushRefreshDebounceKey: Hashable {
+        let eventType: String
+        let matchId: UUID?
+    }
+    private var lastPushRefreshCompletedAt: [PushRefreshDebounceKey: Date] = [:]
+    private let pushReloadDebounceInterval: TimeInterval = 10
     private var celebrationDismissTask: Task<Void, Never>?
     private var activeCelebrationDismissTask: Task<Void, Never>?
     private var declineFeedbackDismissTask: Task<Void, Never>?
@@ -214,6 +222,23 @@ final class HomeViewModel: ObservableObject {
     private var completedMatchesListTask: Task<Void, Never>?
     private var lastHomeLayoutLogSignature: String?
     private var lastLoggedSnapshotSummary: String?
+    private var lastHeroSnapshotLoadSource: String = "unknown"
+
+    /// Source of steps shown on the home hero (for HK diagnostics).
+    var heroDisplayedStepsSource: String {
+        if heroHealthKitPatchCompletedAt != nil,
+           heroHealthKitValueByMetric["steps"] != nil {
+            return "fresh_hk"
+        }
+        if heroHealthKitValueByMetric["steps"] != nil {
+            return "hk_patch_cache"
+        }
+        switch lastHeroSnapshotLoadSource {
+        case "disk": return "disk_snapshot"
+        case "none": return "backend"
+        default: return lastHeroSnapshotLoadSource
+        }
+    }
 
     var battleSummaryStats: BattleSummaryStats {
         let liveStepBattles = activeStepMatchesForHomeUX.filter { !$0.isEffectivelyOverForHomeUX }
@@ -528,6 +553,8 @@ final class HomeViewModel: ObservableObject {
         declineFeedbackOpponentName = nil
         pollingTask?.cancel()
         pollingTask = nil
+        hasPendingLightReload = false
+        lastPushRefreshCompletedAt = [:]
         lastHomeProfileLocalDate = nil
         lastHomeLayoutLogSignature = nil
     }
@@ -535,7 +562,11 @@ final class HomeViewModel: ObservableObject {
     func reload(force: Bool) async {
         guard let userId else { return }
         if isReloadInFlight {
-            if force { hasPendingForcedReload = true }
+            if force {
+                hasPendingForcedReload = true
+            } else {
+                hasPendingLightReload = true
+            }
             return
         }
 
@@ -548,10 +579,71 @@ final class HomeViewModel: ObservableObject {
         repeat {
             let shouldForceRefresh = carryForce || hasPendingForcedReload
             carryForce = false
-            hasPendingForcedReload = false
+            if shouldForceRefresh {
+                hasPendingForcedReload = false
+            } else {
+                hasPendingLightReload = false
+            }
             let finished = await performReload(userId: userId, forceRefresh: shouldForceRefresh)
             if !finished { return }
-        } while hasPendingForcedReload
+        } while hasPendingForcedReload || hasPendingLightReload
+    }
+
+    /// Light Home reload after a match-lifecycle push (`match_active`, `match_found`). Skips HealthKit→Supabase metric sync.
+    func reloadFromMatchPush(context: HomeLightRefreshContext) async {
+        let debounceKey = PushRefreshDebounceKey(eventType: context.eventType, matchId: context.matchId)
+        var metadata: [String: String] = [
+            "event_type": context.eventType,
+            "match_id": context.matchId?.uuidString ?? "nil",
+        ]
+
+        AppLogger.log(
+            category: "home_snapshot",
+            level: .debug,
+            message: "home_push_refresh_requested",
+            userId: userId,
+            metadata: metadata
+        )
+
+        if let lastCompleted = lastPushRefreshCompletedAt[debounceKey],
+           Date().timeIntervalSince(lastCompleted) < pushReloadDebounceInterval {
+            metadata["seconds_since_last"] = String(format: "%.1f", Date().timeIntervalSince(lastCompleted))
+            AppLogger.log(
+                category: "home_snapshot",
+                level: .debug,
+                message: "home_push_refresh_skipped_debounce",
+                userId: userId,
+                metadata: metadata
+            )
+            return
+        }
+
+        if isReloadInFlight {
+            hasPendingLightReload = true
+            AppLogger.log(
+                category: "home_snapshot",
+                level: .debug,
+                message: "home_push_refresh_coalesced_in_flight",
+                userId: userId,
+                metadata: metadata
+            )
+            return
+        }
+
+        await reload(force: false)
+
+        lastPushRefreshCompletedAt[debounceKey] = Date()
+
+        metadata["active_match_count"] = "\(activeMatches.count)"
+        metadata["pending_match_count"] = "\(pendingMatches.count)"
+        metadata["selected_hero_match_id"] = selectedHeroStepMatchId?.uuidString ?? "nil"
+        AppLogger.log(
+            category: "home_snapshot",
+            level: .debug,
+            message: "home_push_refresh_completed",
+            userId: userId,
+            metadata: metadata
+        )
     }
 
     private func performReload(userId: UUID, forceRefresh: Bool) async -> Bool {
@@ -1072,6 +1164,26 @@ final class HomeViewModel: ObservableObject {
                 value = try await HealthKitService.fetchTodayStepCount()
             }
         } catch {
+            let env = await MainActor.run {
+                HealthKitEnvironmentSnapshot.captureStored(scenePhaseRaw: "active")
+            }
+            var meta = env.metadata
+            meta["displayed_steps_source"] = heroDisplayedStepsSource
+            meta["metric_type"] = metricType
+            if let hk = error as? HKError {
+                meta["hk_error_code"] = "\(hk.code.rawValue)"
+            } else {
+                meta["hk_error_code"] = "n/a"
+            }
+            meta["error"] = error.localizedDescription
+            HealthKitDiagnosticsStore.homeHeroStepsSource = heroDisplayedStepsSource
+            AppLogger.log(
+                category: "home_perf",
+                level: .warning,
+                message: "hk_patch_failed",
+                userId: userId,
+                metadata: meta
+            )
             scheduleHeroSparklineRefresh()
             return
         }
@@ -1126,6 +1238,7 @@ final class HomeViewModel: ObservableObject {
         } else {
             elapsedMs = max(0, Int(Date().timeIntervalSince(readStartedAt) * 1000))
         }
+        HealthKitDiagnosticsStore.homeHeroStepsSource = "fresh_hk"
         AppLogger.log(
             category: "home_perf",
             level: .debug,
@@ -1135,6 +1248,7 @@ final class HomeViewModel: ObservableObject {
                 "hk_patch_ms": "\(elapsedMs)",
                 "metric_type": metricType,
                 "value": "\(value)",
+                "displayed_steps_source": "fresh_hk",
             ]
         )
         if metricType == "steps" {
@@ -1205,7 +1319,7 @@ final class HomeViewModel: ObservableObject {
         guard let sessionStore else { return }
         let isSyncEligible = sessionStore.isOnboardingComplete || sessionStore.healthKitPromptCompleted
         guard isSyncEligible else { return }
-        await MetricSyncCoordinator.shared.requestSync(trigger: .manual, force: true)
+        await MetricSyncCoordinator.shared.requestSync(trigger: .homeRefresh, force: true)
     }
 
     @discardableResult
@@ -1455,12 +1569,14 @@ final class HomeViewModel: ObservableObject {
             profileTimeZoneIdentifier: profileTimeZoneIdentifier,
             now: now
         ) else {
-            logSnapshotLoaded(
-                source: "none",
-                profileId: profileId,
-                localDate: localDate,
-                savedAt: nil
-            )
+        logSnapshotLoaded(
+            source: "none",
+            profileId: profileId,
+            localDate: localDate,
+            savedAt: nil
+        )
+            lastHeroSnapshotLoadSource = "none"
+            HealthKitDiagnosticsStore.homeHeroStepsSource = heroDisplayedStepsSource
             return
         }
 
@@ -1479,6 +1595,8 @@ final class HomeViewModel: ObservableObject {
             localDate: cached.localDate,
             savedAt: cached.savedAt
         )
+        lastHeroSnapshotLoadSource = "disk"
+        HealthKitDiagnosticsStore.homeHeroStepsSource = heroDisplayedStepsSource
     }
 
     private func persistFreshHeroSnapshot(profileId: UUID) {
@@ -1500,6 +1618,7 @@ final class HomeViewModel: ObservableObject {
         localDate: String,
         savedAt: Date?
     ) {
+        lastHeroSnapshotLoadSource = source
         let ageSeconds: Int
         if let savedAt {
             ageSeconds = max(0, Int(Date().timeIntervalSince(savedAt)))

@@ -28,6 +28,7 @@ final class ActivityCalendarViewModel: ObservableObject {
     @Published var mode: ActivityCalendarMode = .battles
     @Published private(set) var gridItems: [CalendarDayItem] = []
     @Published private(set) var battleByDate: [String: CalendarDayBattleState] = [:]
+    @Published private(set) var battleSummaryByDate: [String: CalendarDayBattleSummary] = [:]
     @Published private(set) var battleMarginByDate: [String: Int] = [:]
     @Published private(set) var stepsByDate: [String: CalendarDayStepsState] = [:]
     @Published private(set) var isLoading = false
@@ -37,7 +38,6 @@ final class ActivityCalendarViewModel: ObservableObject {
     @Published private(set) var battleDayDetail: CalendarDayBattleDetail?
     @Published private(set) var stepsDayDetail: CalendarDayStepsDetail?
     @Published private(set) var isDayDetailLoading = false
-    @Published private(set) var selectedBattleMatchIndex = 0
 
     var monthTitle: String {
         CalendarMonthLayout.monthTitle(
@@ -60,6 +60,7 @@ final class ActivityCalendarViewModel: ObservableObject {
     private let stepsGoal: Int
 
     private var battleCache: [String: [String: CalendarDayBattleState]] = [:]
+    private var battleSummaryCache: [String: [String: CalendarDayBattleSummary]] = [:]
     private var battleMarginCache: [String: [String: Int]] = [:]
     private var stepsCache: [String: [String: CalendarDayStepsState]] = [:]
     private var loadTask: Task<Void, Never>?
@@ -89,6 +90,7 @@ final class ActivityCalendarViewModel: ObservableObject {
 
     func reload() {
         battleCache.removeAll()
+        battleSummaryCache.removeAll()
         battleMarginCache.removeAll()
         stepsCache.removeAll()
         loadMonthData(forceRefresh: true)
@@ -133,18 +135,17 @@ final class ActivityCalendarViewModel: ObservableObject {
         return battleMarginByDate[dateKey]
     }
 
+    func battleSummary(for dateKey: String) -> CalendarDayBattleSummary {
+        guard dateKey <= profileTodayDateKey else { return .empty }
+        return battleSummaryByDate[dateKey] ?? .empty
+    }
+
     private var profileTodayDateKey: String {
         CalendarMonthLayout.profileTodayDateKey(profileTimeZoneIdentifier: profileTimeZoneIdentifier)
     }
 
     func stepsState(for dateKey: String) -> CalendarDayStepsState? {
         stepsByDate[dateKey]
-    }
-
-    var selectedBattleMatch: CalendarDayBattleMatchDetail? {
-        guard let detail = battleDayDetail, !detail.matches.isEmpty else { return nil }
-        let index = min(max(0, selectedBattleMatchIndex), detail.matches.count - 1)
-        return detail.matches[index]
     }
 
     func selectDay(_ item: CalendarDayItem) {
@@ -154,7 +155,6 @@ final class ActivityCalendarViewModel: ObservableObject {
             return
         }
         selectedDayItem = item
-        selectedBattleMatchIndex = 0
         loadDayDetail(for: item)
     }
 
@@ -165,12 +165,6 @@ final class ActivityCalendarViewModel: ObservableObject {
         battleDayDetail = nil
         stepsDayDetail = nil
         isDayDetailLoading = false
-        selectedBattleMatchIndex = 0
-    }
-
-    func selectBattleMatchIndex(_ index: Int) {
-        guard let count = battleDayDetail?.matches.count, count > 0 else { return }
-        selectedBattleMatchIndex = min(max(0, index), count - 1)
     }
 
     private var dayDetailTask: Task<Void, Never>?
@@ -192,9 +186,11 @@ final class ActivityCalendarViewModel: ObservableObject {
 
         if !forceRefresh,
            let cachedBattles = battleCache[cacheKey],
+           let cachedSummaries = battleSummaryCache[cacheKey],
            let cachedMargins = battleMarginCache[cacheKey],
            let cachedSteps = stepsCache[cacheKey] {
             battleByDate = cachedBattles
+            battleSummaryByDate = cachedSummaries
             battleMarginByDate = cachedMargins
             stepsByDate = cachedSteps
             errorMessage = nil
@@ -219,11 +215,13 @@ final class ActivityCalendarViewModel: ObservableObject {
 
             guard !Task.isCancelled else { return }
 
-            battleByDate = battleResult
+            battleByDate = battleResult.states
+            battleSummaryByDate = battleResult.summaries
             battleMarginByDate = marginResult
             stepsByDate = stepsResult.states
             showHealthAccessBanner = stepsResult.accessDenied
-            battleCache[cacheKey] = battleResult
+            battleCache[cacheKey] = battleResult.states
+            battleSummaryCache[cacheKey] = battleResult.summaries
             battleMarginCache[cacheKey] = marginResult
             stepsCache[cacheKey] = stepsResult.states
             isLoading = false

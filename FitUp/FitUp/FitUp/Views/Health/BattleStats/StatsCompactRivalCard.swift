@@ -5,41 +5,30 @@
 
 import SwiftUI
 
-enum StatsRivalTag: String {
-    case nemesis
-    case punchingBag
-    case rival
-
-    var label: String {
-        switch self {
-        case .nemesis: return "😤 NEMESIS"
-        case .punchingBag: return "💪 PUNCHING BAG"
-        case .rival: return "⚔️ RIVAL"
-        }
-    }
-
+extension StatsRivalCategory {
     var accent: Color {
         switch self {
         case .nemesis: return BattleStatsTheme.red
         case .punchingBag: return BattleStatsTheme.green
-        case .rival: return BattleStatsTheme.blue
+        case .mostBattled: return BattleStatsTheme.blue
         }
-    }
-
-    static func derive(from rival: HomeRivalStat) -> StatsRivalTag {
-        let total = rival.matchWins + rival.matchLosses
-        guard total > 0 else { return .rival }
-        if rival.winPercentage < 40, rival.matchLosses > rival.matchWins { return .nemesis }
-        if rival.winPercentage >= 60, rival.matchWins > rival.matchLosses { return .punchingBag }
-        return .rival
     }
 }
 
 struct StatsCompactRivalCard: View {
+    let category: StatsRivalCategory
     let rival: HomeRivalStat
+    let completedMatches: [ActivityCompletedMatch]
+    let isLoadingCompletedMatches: Bool
     var onRematch: () -> Void
+    var onOpenMatchDetails: (UUID, String) -> Void
+    var onLoadCompletedMatchesIfNeeded: () -> Void = {}
 
-    private var tag: StatsRivalTag { StatsRivalTag.derive(from: rival) }
+    @State private var isPastMatchesExpanded = false
+
+    private var pastMatchesWithRival: [ActivityCompletedMatch] {
+        completedMatches.filter { $0.opponentProfileId == rival.opponentProfileId }
+    }
 
     private var recordText: String {
         if rival.matchTies > 0 {
@@ -55,18 +44,56 @@ struct StatsCompactRivalCard: View {
         return "Last battle: \(formatter.localizedString(for: date, relativeTo: Date()))"
     }
 
+    private var avgStepsText: String {
+        guard let value = rival.avgViewerStepsPerBattleDay else {
+            return BattleStatsTheme.unresolvedPlaceholder
+        }
+        return Int(max(0, value.rounded())).formatted()
+    }
+
+    private var winRateText: String {
+        "\(rival.winPercentage)%"
+    }
+
+    private var avgMarginText: String {
+        switch category {
+        case .nemesis:
+            guard let value = rival.avgMarginOnOpponentWinDays else {
+                return BattleStatsTheme.unresolvedPlaceholder
+            }
+            return formattedAbsoluteMargin(value)
+        case .punchingBag:
+            guard let value = rival.avgMarginOnViewerWinDays else {
+                return BattleStatsTheme.unresolvedPlaceholder
+            }
+            return formattedSignedMargin(value)
+        case .mostBattled:
+            return formattedSignedMargin(rival.avgFinalizedDailyMargin)
+        }
+    }
+
+    private var avgMarginColor: Color {
+        switch category {
+        case .nemesis: return BattleStatsTheme.red
+        case .punchingBag: return BattleStatsTheme.green
+        case .mostBattled:
+            guard let value = rival.avgFinalizedDailyMargin else { return BattleStatsTheme.gold }
+            return value >= 0 ? BattleStatsTheme.green : BattleStatsTheme.red
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                BattleStatsTheme.rivalTagTitle(tag.label, color: tag.accent)
+                BattleStatsTheme.rivalTagTitle(category.label, color: category.accent)
                 Spacer()
-                Text("\(rival.finalizedDaysCompeted) battle days")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(BattleStatsTheme.textLabel)
+                Text("\(rival.completedMatchCount) battles")
+                    .font(.system(size: BattleStatsTheme.Typography.captionSmall, weight: .medium, design: .monospaced))
+                    .battleStatsStyle(.label, size: BattleStatsTheme.Typography.captionSmall, accent: .cool)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
-            .background(tag.accent.opacity(0.12))
+            .background(category.accent.opacity(0.12))
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 12) {
@@ -74,20 +101,19 @@ struct StatsCompactRivalCard: View {
                         Circle()
                             .fill(ProfileAccentColor.color(for: rival.opponentProfileId).opacity(0.22))
                         Text(String(rival.opponentInitials.prefix(2)).uppercased())
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                             .foregroundStyle(ProfileAccentColor.color(for: rival.opponentProfileId))
                     }
                     .frame(width: 42, height: 42)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(rival.opponentDisplayName)
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(BattleStatsTheme.textPrimary)
+                            .font(.system(size: 19, weight: .bold))
+                            .battleStatsStyle(.primary, size: 19, weight: .bold, accent: .cool)
                             .lineLimit(1)
                         if let lastBattleText {
                             Text(lastBattleText)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(BattleStatsTheme.textSecondary)
+                                .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.bodySmall, accent: .cool)
                         }
                     }
 
@@ -95,39 +121,40 @@ struct StatsCompactRivalCard: View {
 
                     VStack(spacing: 2) {
                         Text(recordText)
-                            .font(.system(size: 20, weight: .bold, design: .monospaced))
+                            .font(.system(size: 24, weight: .bold, design: .monospaced))
                             .foregroundStyle(rival.matchWins >= rival.matchLosses ? BattleStatsTheme.green : BattleStatsTheme.red)
                         Text("W-L")
-                            .font(.system(size: 9, weight: .medium, design: .monospaced))
-                            .foregroundStyle(BattleStatsTheme.textLabel)
+                            .font(.system(size: BattleStatsTheme.Typography.caption, weight: .medium, design: .monospaced))
+                            .battleStatsStyle(.label, accent: .cool)
                     }
                 }
 
                 HStack(spacing: 6) {
-                    statPill(
-                        value: formattedMargin(rival.avgFinalizedDailyMargin),
+                    metricTile(
+                        value: avgStepsText,
+                        label: "AVG STEPS\nBATTLE DAYS",
+                        color: BattleStatsTheme.blue,
+                        explainer: .avgStepsBattleDays
+                    )
+                    metricTile(
+                        value: winRateText,
+                        label: "YOUR WIN %",
+                        color: rival.matchWins >= rival.matchLosses ? BattleStatsTheme.green : BattleStatsTheme.red,
+                        explainer: .yourWinRate
+                    )
+                    metricTile(
+                        value: avgMarginText,
                         label: "AVG MARGIN",
-                        color: BattleStatsTheme.gold
+                        color: avgMarginColor,
+                        explainer: .avgMargin
                     )
-                    statPill(
-                        value: "\(rival.winPercentage)%",
-                        label: "WIN RATE",
-                        color: rival.matchWins >= rival.matchLosses ? BattleStatsTheme.green : BattleStatsTheme.red
-                    )
-                    if let best = rival.avgMarginOnViewerWinDays {
-                        statPill(
-                            value: formattedMargin(best),
-                            label: "AVG WIN",
-                            color: BattleStatsTheme.blue
-                        )
-                    }
                 }
 
                 Button(action: onRematch) {
                     HStack(spacing: 6) {
                         Image(systemName: "bolt.fill")
                         Text("REMATCH \(rival.opponentDisplayName.split(separator: " ").first.map(String.init)?.uppercased() ?? "RIVAL")")
-                            .font(.system(size: 14, weight: .heavy))
+                            .font(.system(size: 17, weight: .heavy))
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                     }
@@ -144,6 +171,26 @@ struct StatsCompactRivalCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
+
+                PastMatchesExpandableList(
+                    title: "Past matches",
+                    matches: pastMatchesWithRival,
+                    isExpanded: isPastMatchesExpanded,
+                    isLoading: isLoadingCompletedMatches,
+                    style: .embedded,
+                    accent: category.accent,
+                    emptyMessage: "No past matches with \(rival.opponentDisplayName) yet.",
+                    onToggle: {
+                        let willExpand = !isPastMatchesExpanded
+                        isPastMatchesExpanded = willExpand
+                        if willExpand {
+                            onLoadCompletedMatchesIfNeeded()
+                        }
+                    },
+                    onOpenMatch: { match in
+                        onOpenMatchDetails(match.id, match.opponentName)
+                    }
+                )
             }
             .padding(14)
         }
@@ -151,22 +198,33 @@ struct StatsCompactRivalCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(tag.accent.opacity(0.25), lineWidth: 1)
+                .strokeBorder(category.accent.opacity(0.25), lineWidth: 1)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(rival.opponentDisplayName), record \(recordText)")
     }
 
-    private func statPill(value: String, label: String, color: Color) -> some View {
+    private func metricTile(
+        value: String,
+        label: String,
+        color: Color,
+        explainer: StatsRivalMetricExplainer
+    ) -> some View {
         VStack(spacing: 4) {
-            Text(value)
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                .foregroundStyle(color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+            HStack(spacing: 2) {
+                Text(value)
+                    .font(.system(size: 16, weight: .bold, design: .monospaced))
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                StatsMetricInfoButton(explainer: explainer)
+            }
             Text(label)
-                .font(.system(size: 8, weight: .medium, design: .monospaced))
-                .foregroundStyle(BattleStatsTheme.textLabel)
+                .font(.system(size: BattleStatsTheme.Typography.captionSmall, weight: .medium, design: .monospaced))
+                .battleStatsStyle(.label, size: BattleStatsTheme.Typography.captionSmall, accent: .cool)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
@@ -174,10 +232,14 @@ struct StatsCompactRivalCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private func formattedMargin(_ value: Double?) -> String {
+    private func formattedSignedMargin(_ value: Double?) -> String {
         guard let value else { return BattleStatsTheme.unresolvedPlaceholder }
         let steps = Int(value.rounded())
         let prefix = steps >= 0 ? "+" : ""
         return "\(prefix)\(abs(steps).formatted())"
+    }
+
+    private func formattedAbsoluteMargin(_ value: Double) -> String {
+        abs(Int(value.rounded())).formatted()
     }
 }

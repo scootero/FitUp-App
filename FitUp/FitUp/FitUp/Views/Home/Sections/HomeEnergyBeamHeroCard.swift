@@ -129,6 +129,7 @@ struct HomeEnergyBeamHeroCard: View {
     private let initValueSource: String
     private let initComparableValues: HeroComparableValues
 
+    @AppStorage("readiness_steps_goal") private var dailyStepsGoal: Int = ReadinessGoals.default.stepsGoal
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var displayMargin: Double
@@ -310,6 +311,7 @@ struct HomeEnergyBeamHeroCard: View {
                         dayElapsedFraction: Self.dayProgressState(for: profile?.timezone).fraction,
                         dayProgressCaption: Self.dayProgressState(for: profile?.timezone).caption,
                         showMockTimelineDebugLabel: mockTimelineDebugFlag,
+                        stepsGoal: dailyStepsGoal,
                         viewerIntradayHealthKitSyncedAt: viewerIntradayHealthKitSyncedAt,
                         opponentIntradayLatestTickAt: opponentIntradayLatestTickAt,
                         blocksHeroCardNavigation: $blocksHeroCardNavigation,
@@ -336,6 +338,7 @@ struct HomeEnergyBeamHeroCard: View {
                     )
                     .environment(\.homeHeroCompactScale, HomeHeroCompactLayout.heroScale)
                 }
+                .background(Color.clear)
                 .transaction { $0.disablesAnimations = false }
                 .onChange(of: handoffRevealActive) { _, active in
                     if active {
@@ -518,17 +521,14 @@ struct HomeEnergyBeamHeroCard: View {
         .padding(.vertical, 40)
         .padding(.horizontal, 18)
         .background {
-            ZStack {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(FitUpColors.Bg.base.opacity(0.92))
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(.white.opacity(0.04))
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-            }
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.clear)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: .black.opacity(0.45), radius: 14, y: 8)
     }
 
     private func persistDisplayedSnapshot(for match: HomeActiveMatch, context: HeroAnimContext) {

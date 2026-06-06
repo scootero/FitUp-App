@@ -88,9 +88,9 @@ enum MetricSyncUploadPolicy {
         calendarDateStr: String
     ) -> Bool {
         switch trigger {
-        case .foreground, .manual:
+        case .foreground, .manual, .appLaunch, .homeRefresh:
             return true
-        case .observer:
+        case .observer, .backgroundObserver:
             let key = dailyTotalsBaseKey(profileId: profileId, calendarDateStr: calendarDateStr)
             return UserDefaults.standard.string(forKey: key) != calendarDateStr
         }

@@ -19,110 +19,158 @@ struct StatsLifetimeDisplay: Equatable, Sendable {
         extraMilesWalked: nil,
         extraStepsWalked: nil
     )
+
+    var showsExtraImpact: Bool {
+        (extraMilesWalked ?? 0) > 0 || (extraStepsWalked ?? 0) > 0
+    }
 }
 
 struct StatsLifetimeGrid: View {
     let display: StatsLifetimeDisplay
+    var onShowMetricExplainer: (StatsMetricExplainerKind) -> Void = { _ in }
 
     var body: some View {
-        BattleStatsTheme.battleStatsCard {
+        BattleStatsTheme.battleStatsCard(accent: .cool) {
             VStack(alignment: .leading, spacing: 12) {
-                BattleStatsTheme.sectionTitle("LIFETIME")
+                BattleStatsTheme.sectionTitle("LIFETIME", accent: .cool)
 
-                LazyVGrid(
-                    columns: [
-                        GridItem(.flexible(), spacing: 8),
-                        GridItem(.flexible(), spacing: 8),
-                    ],
-                    spacing: 8
-                ) {
-                    lifetimeCell(
-                        label: "TOTAL BATTLE STEPS",
-                        value: display.totalBattleSteps.map { $0.formatted() } ?? BattleStatsTheme.unresolvedPlaceholder,
-                        color: BattleStatsTheme.blue
-                    )
+                lifetimeCell(
+                    label: "TOTAL BATTLE STEPS",
+                    explainer: .allTimeBattleSteps,
+                    value: display.totalBattleSteps.map { $0.formatted() } ?? BattleStatsTheme.unresolvedPlaceholder,
+                    color: BattleStatsTheme.blue
+                )
+
+                HStack(spacing: 8) {
                     lifetimeCell(
                         label: "BATTLES COMPLETED",
+                        explainer: .battlesCompleted,
                         value: display.battlesCompleted.map { "\($0)" } ?? BattleStatsTheme.unresolvedPlaceholder,
                         color: BattleStatsTheme.purple
                     )
                     lifetimeCell(
                         label: "DAYS COMPETED",
+                        explainer: .daysCompeted,
                         value: display.daysCompeted.map { "\($0)" } ?? BattleStatsTheme.unresolvedPlaceholder,
                         color: BattleStatsTheme.orange
                     )
                 }
 
-                extraImpactCell
+                if display.showsExtraImpact {
+                    extraImpactCell
+                }
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Lifetime stats")
     }
 
+    @ViewBuilder
     private var extraImpactCell: some View {
+        let showMiles = (display.extraMilesWalked ?? 0) > 0
+        let showSteps = (display.extraStepsWalked ?? 0) > 0
+
         HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(display.extraMilesWalked.map { "\($0) mi" } ?? BattleStatsTheme.unresolvedPlaceholder)
-                    .font(.system(size: 20, weight: .bold, design: .monospaced))
-                    .foregroundStyle(BattleStatsTheme.green)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text("EXTRA MILES WALKED")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .tracking(0.5)
-                    .foregroundStyle(BattleStatsTheme.textLabel)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
+            if showMiles {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("\(display.extraMilesWalked!) mi")
+                        .font(.system(size: 24, weight: .bold, design: .monospaced))
+                        .foregroundStyle(BattleStatsTheme.green)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    extraImpactLabel("EXTRA MILES WALKED", accent: .mint)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Rectangle()
-                .fill(Color.white.opacity(0.12))
-                .frame(width: 1)
-                .padding(.vertical, 2)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(display.extraStepsWalked.map { $0.formatted() } ?? BattleStatsTheme.unresolvedPlaceholder)
-                    .font(.system(size: 20, weight: .bold, design: .monospaced))
-                    .foregroundStyle(BattleStatsTheme.gold)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text("EXTRA STEPS WALKED")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .tracking(0.5)
-                    .foregroundStyle(BattleStatsTheme.textLabel)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
+            if showMiles && showSteps {
+                Rectangle()
+                    .fill(Color.white.opacity(0.12))
+                    .frame(width: 1)
+                    .padding(.vertical, 2)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if showSteps {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(display.extraStepsWalked!.formatted())
+                        .font(.system(size: 24, weight: .bold, design: .monospaced))
+                        .foregroundStyle(BattleStatsTheme.gold)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    extraImpactLabel("EXTRA STEPS WALKED", accent: .warm)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.white.opacity(0.03))
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            BattleStatsTheme.green.opacity(0.14),
+                            BattleStatsTheme.gold.opacity(0.1),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .statsCardMetricInfoCorner(kind: .extraBattleImpact, accent: .mint, onShow: onShowMetricExplainer)
         .accessibilityLabel("Extra miles and steps walked from battles")
     }
 
-    private func lifetimeCell(label: String, value: String, color: Color) -> some View {
+    private func extraImpactLabel(_ text: String, accent: BattleStatsTheme.SectionAccent) -> some View {
+        Text(text)
+            .font(.system(size: BattleStatsTheme.Typography.caption, weight: .medium, design: .monospaced))
+            .tracking(0.5)
+            .battleStatsStyle(.label, accent: accent)
+            .lineLimit(2)
+            .minimumScaleFactor(0.85)
+    }
+
+    private func lifetimeCell(
+        label: String,
+        explainer: StatsMetricExplainerKind,
+        value: String,
+        color: Color
+    ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(value)
-                .font(.system(size: 20, weight: .bold, design: .monospaced))
+                .font(.system(size: 24, weight: .bold, design: .monospaced))
                 .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
-            Text(label)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .tracking(0.5)
-                .foregroundStyle(BattleStatsTheme.textLabel)
-                .lineLimit(2)
-                .minimumScaleFactor(0.85)
+            HStack(spacing: 2) {
+                Text(label)
+                    .font(.system(size: BattleStatsTheme.Typography.caption, weight: .medium, design: .monospaced))
+                    .tracking(0.5)
+                    .battleStatsStyle(.label, accent: .cool)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.white.opacity(0.03))
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            color.opacity(0.18),
+                            color.opacity(0.05),
+                            color.opacity(0.12),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+        }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .statsCardMetricInfoCorner(kind: explainer, accent: .cool, onShow: onShowMetricExplainer)
         .accessibilityLabel("\(label), \(value)")
     }
 }

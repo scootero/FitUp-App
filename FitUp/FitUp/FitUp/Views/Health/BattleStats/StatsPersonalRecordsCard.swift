@@ -8,25 +8,25 @@ import SwiftUI
 struct StatsPersonalRecordsCard: View {
     let records: StatsPersonalRecords?
     let isLoading: Bool
+    var onShowMetricExplainer: (StatsMetricExplainerKind) -> Void = { _ in }
 
     var body: some View {
         if isLoading {
-            BattleStatsTheme.battleStatsCard {
+            BattleStatsTheme.battleStatsCard(accent: .warm) {
                 VStack(spacing: 8) {
-                    BattleStatsTheme.sectionLabel("PERSONAL RECORDS")
+                    personalRecordsHeader
                     ProgressView()
                         .tint(BattleStatsTheme.green)
                     Text("Loading records…")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(BattleStatsTheme.textSecondary)
+                        .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.bodySmall, accent: .warm)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
             }
         } else if let records, !records.isEmpty {
-            BattleStatsTheme.battleStatsCard {
+            BattleStatsTheme.battleStatsCard(accent: .warm) {
                 VStack(alignment: .leading, spacing: 12) {
-                    BattleStatsTheme.sectionLabel("PERSONAL RECORDS")
+                    personalRecordsHeader
 
                     VStack(spacing: 10) {
                         ForEach(records.rows) { row in
@@ -35,40 +35,61 @@ struct StatsPersonalRecordsCard: View {
                     }
                 }
             }
+            .statsCardMetricInfoCorner(kind: .personalRecords, accent: .warm, onShow: onShowMetricExplainer)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Personal records")
         }
     }
 
+    private var personalRecordsHeader: some View {
+        BattleStatsTheme.sectionLabel("PERSONAL RECORDS", accent: .warm)
+    }
+
+    @ViewBuilder
     private func recordRow(_ row: StatsPersonalRecordRow) -> some View {
-        HStack(spacing: 12) {
+        let content = HStack(spacing: 12) {
             Text(row.icon)
-                .font(.system(size: 22))
+                .font(.system(size: 26))
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.label)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(BattleStatsTheme.textSecondary)
+                    .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.caption, accent: .warm)
                 Text(row.value)
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
-                    .foregroundStyle(BattleStatsTheme.textPrimary)
+                    .battleStatsStyle(.primary, size: 18, weight: .bold, design: .monospaced, accent: .warm)
             }
 
             Spacer(minLength: 8)
 
             if let subtitle = row.subtitle {
                 Text(subtitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(BattleStatsTheme.textLabel)
+                    .battleStatsStyle(.label, size: BattleStatsTheme.Typography.caption, accent: .warm)
                     .multilineTextAlignment(.trailing)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.03))
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            BattleStatsTheme.gold.opacity(0.14),
+                            BattleStatsTheme.orange.opacity(0.08),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(row.label), \(row.value)\(row.subtitle.map { ", \($0)" } ?? "")")
+
+        if let kind = StatsMetricExplainerKind.personalRecordKind(forRowId: row.id) {
+            content.statsCardMetricInfoCorner(kind: kind, accent: .warm, onShow: onShowMetricExplainer)
+        } else {
+            content
+        }
     }
 }

@@ -10,12 +10,14 @@ import SwiftUI
 struct ActivityCalendarCard: View {
     let userId: UUID?
     let profileTimeZoneIdentifier: String?
+    var onOpenMatchDetails: (UUID, String) -> Void = { _, _ in }
 
     var body: some View {
         if let userId {
             ActivityCalendarCardContent(
                 userId: userId,
-                profileTimeZoneIdentifier: profileTimeZoneIdentifier
+                profileTimeZoneIdentifier: profileTimeZoneIdentifier,
+                onOpenMatchDetails: onOpenMatchDetails
             )
         } else {
             signedOutPlaceholder
@@ -57,12 +59,18 @@ struct ActivityCalendarCard: View {
 private struct ActivityCalendarCardContent: View {
     let userId: UUID
     let profileTimeZoneIdentifier: String?
+    var onOpenMatchDetails: (UUID, String) -> Void
 
     @StateObject private var viewModel: ActivityCalendarViewModel
 
-    init(userId: UUID, profileTimeZoneIdentifier: String?) {
+    init(
+        userId: UUID,
+        profileTimeZoneIdentifier: String?,
+        onOpenMatchDetails: @escaping (UUID, String) -> Void
+    ) {
         self.userId = userId
         self.profileTimeZoneIdentifier = profileTimeZoneIdentifier
+        self.onOpenMatchDetails = onOpenMatchDetails
         _viewModel = StateObject(
             wrappedValue: ActivityCalendarViewModel(
                 userId: userId,
@@ -110,26 +118,22 @@ private struct ActivityCalendarCardContent: View {
             trackCalendarContext()
         }
         .sheet(isPresented: dayDetailPresented) {
-            NavigationStack {
-                ScrollView {
-                    CalendarDayDetailDock(
-                        mode: viewModel.mode,
-                        isLoading: viewModel.isDayDetailLoading,
-                        battleDetail: viewModel.battleDayDetail,
-                        battleMatch: viewModel.selectedBattleMatch,
-                        battleMatchIndex: viewModel.selectedBattleMatchIndex,
-                        battleMatchCount: viewModel.battleDayDetail?.matches.count ?? 0,
-                        stepsDetail: viewModel.stepsDayDetail,
-                        onSelectBattleMatchIndex: { viewModel.selectBattleMatchIndex($0) },
-                        onDismiss: { viewModel.dismissDayDetail() }
-                    )
-                    .padding(.top, 8)
-                }
-                .scrollIndicators(.hidden)
-                .background(FitUpColors.Bg.base.ignoresSafeArea())
-            }
-            .presentationDetents([.medium, .large])
+            CalendarDayDetailDock(
+                mode: viewModel.mode,
+                isLoading: viewModel.isDayDetailLoading,
+                battleDetail: viewModel.battleDayDetail,
+                stepsDetail: viewModel.stepsDayDetail,
+                presentationStyle: .sheet,
+                onOpenMatchDetails: { matchId, opponentName in
+                    viewModel.dismissDayDetail()
+                    onOpenMatchDetails(matchId, opponentName)
+                },
+                onDismiss: { viewModel.dismissDayDetail() }
+            )
+            .presentationDetents([.fraction(0.78)])
             .presentationDragIndicator(.visible)
+            .presentationContentInteraction(.scrolls)
+            .presentationBackground(FitUpColors.Bg.base)
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.86), value: showsDayDetail)
     }

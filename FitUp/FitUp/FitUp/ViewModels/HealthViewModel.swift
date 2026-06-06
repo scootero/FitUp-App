@@ -139,6 +139,8 @@ final class HealthViewModel: ObservableObject {
 
     @Published private(set) var stepsTodayValue = 0
     @Published private(set) var caloriesTodayValue = 0
+    @Published private(set) var statsUserIntradayDomain: StatsUserIntradayDomain?
+    @Published private(set) var isStatsUserIntradayLoading = false
 
     private let battleStatsRepository = BattleStatsRepository()
     private let homeRepository = HomeRepository()
@@ -189,6 +191,8 @@ final class HealthViewModel: ObservableObject {
             statsMonthlyBattleBonusMetric = nil
             statsOpponentStepsRollups = nil
             statsBattleStepsDisplay = nil
+            statsUserIntradayDomain = nil
+            isStatsUserIntradayLoading = false
             statsArcadeStreakTimeline = nil
             completedMatches = []
             completedMatchesListTask?.cancel()
@@ -290,6 +294,7 @@ final class HealthViewModel: ObservableObject {
         async let arcadeStreak = refreshArcadeStreakTimeline(userId: userId)
         async let battleStatsLoad = refreshArcadeBattleStats()
         async let battleStepsLoad = refreshBattleStepsMetrics(userId: userId)
+        async let intradayChartLoad = refreshStatsUserIntradayChart()
         async let activeMatchesLoad = homeRepository.loadActiveMatches(
             for: userId,
             profileTimeZoneIdentifier: profileTimeZoneIdentifier
@@ -301,12 +306,19 @@ final class HealthViewModel: ObservableObject {
         await arcadeStreak
         await battleStatsLoad
         await battleStepsLoad
+        await intradayChartLoad
         activeMatchEdges = await activeMatchesLoad
         await refreshPersonalRecordsAndAchievements(userId: userId)
 
         lastLoadFinishedAt = Date()
 
         let durationMs = Int(loadStarted.timeIntervalSinceNow * -1000)
+        await logHealthKitReadSummary(
+            userId: userId,
+            source: source,
+            pipeline: "HealthViewModel.reloadArcadeStats",
+            durationMs: durationMs
+        )
         AppLogger.log(
             category: "healthkit_read",
             level: .debug,
@@ -442,6 +454,12 @@ final class HealthViewModel: ObservableObject {
         lastLoadFinishedAt = Date()
 
         let durationMs = Int(loadStarted.timeIntervalSinceNow * -1000)
+        await logHealthKitReadSummary(
+            userId: userId,
+            source: source,
+            pipeline: "HealthViewModel.reloadLegacyStats",
+            durationMs: durationMs
+        )
         let hkSnapshot = Self.formatHealthDataSnapshot(
             source: source,
             stepsToday: stepsToday,
@@ -587,7 +605,40 @@ final class HealthViewModel: ObservableObject {
     /// Refreshes Battle Steps card after HealthKit sync (today + all-time).
     func refreshBattleStepsAfterSync() async {
         guard let userId = profileId else { return }
-        await refreshBattleStepsMetrics(userId: userId)
+        async let battleSteps = refreshBattleStepsMetrics(userId: userId)
+        async let intradayChart = refreshStatsUserIntradayChart()
+        _ = await (battleSteps, intradayChart)
+        lastLoadFinishedAt = Date()
+    }
+
+    func refreshStepsGoalFromStorage() {
+        goals = ReadinessGoals.loadFromUserDefaults()
+    }
+
+    /// Cumulative intraday steps for the Stats hero timeline (production; not gated on legacy stats).
+    private func refreshStatsUserIntradayChart() async {
+        isStatsUserIntradayLoading = true
+        defer { isStatsUserIntradayLoading = false }
+        let tz = profileTimeZoneIdentifier.flatMap(TimeZone.init(identifier:)) ?? .current
+        do {
+            let points = try await HealthKitService.fetchIntradayCumulativeSeries(
+                metricType: .steps,
+                for: Date(),
+                timeZone: tz,
+                maxPoints: 48
+            )
+            if let domain = StatsUserIntradayDomain.make(from: points, timeZone: tz) {
+                statsUserIntradayDomain = domain
+                let liveSteps = domain.liveStepCount
+                if liveSteps > stepsTodayValue {
+                    stepsTodayValue = liveSteps
+                }
+            } else {
+                statsUserIntradayDomain = nil
+            }
+        } catch {
+            statsUserIntradayDomain = nil
+        }
     }
 
     private func refreshBattleStepsMetrics(userId: UUID) async {
@@ -595,11 +646,22 @@ final class HealthViewModel: ObservableObject {
 
         let todayHK: Int
         do {
+            let profileTimeZone = profileTimeZoneIdentifier.flatMap(TimeZone.init(identifier:))
             todayHK = try await healthKitRead("stats_battle_steps_today", userId: userId) {
-                try await HealthKitService.fetchTodayStepCount()
+                try await HealthKitService.fetchMetricTotal(
+                    metricType: .steps,
+                    for: Date(),
+                    timeZone: profileTimeZone
+                )
             }
         } catch {
             statsBattleStepsDisplay = nil
+            await logHealthDisplaySummary(
+                userId: userId,
+                battleStepsSource: "failed_hk",
+                stepsTodayDisplay: nil,
+                hkError: error
+            )
             return
         }
 
@@ -607,6 +669,12 @@ final class HealthViewModel: ObservableObject {
 
         guard let snapshot = await snapshotTask else {
             statsBattleStepsDisplay = nil
+            await logHealthDisplaySummary(
+                userId: userId,
+                battleStepsSource: "backend_unavailable",
+                stepsTodayDisplay: todayHK,
+                hkError: nil
+            )
             return
         }
 
@@ -623,6 +691,76 @@ final class HealthViewModel: ObservableObject {
             isTodayBattleDay: snapshot.isTodayBattleDay,
             finalizedBattleDayCount: snapshot.finalizedBattleDayCount,
             averageFinalizedBattleDaySteps: avgSteps
+        )
+        await logHealthDisplaySummary(
+            userId: userId,
+            battleStepsSource: "fresh_hk",
+            stepsTodayDisplay: todaySteps,
+            hkError: nil,
+            backendFinalizedTotal: snapshot.finalizedTotal,
+            isTodayBattleDay: snapshot.isTodayBattleDay
+        )
+    }
+
+    private func logHealthKitReadSummary(
+        userId: UUID,
+        source: String,
+        pipeline: String,
+        durationMs: Int
+    ) async {
+        let env = await MainActor.run {
+            HealthKitEnvironmentSnapshot.captureStored(scenePhaseRaw: "active")
+        }
+        var meta = env.metadata
+        meta["source"] = source
+        meta["pipeline"] = pipeline
+        meta["duration_ms"] = "\(durationMs)"
+        meta["steps_today_display"] = "\(stepsTodayValue)"
+        meta["battle_steps_source"] = statsBattleStepsDisplay != nil ? "fresh_hk" : "unavailable"
+        meta.merge(HealthKitDiagnosticsStore.timestampMetadata) { _, new in new }
+        AppLogger.log(
+            category: "healthkit_read",
+            level: .info,
+            message: "healthkit_read_summary",
+            userId: userId,
+            metadata: meta
+        )
+    }
+
+    @MainActor
+    private func logHealthDisplaySummary(
+        userId: UUID,
+        battleStepsSource: String,
+        stepsTodayDisplay: Int?,
+        hkError: Error?,
+        backendFinalizedTotal: Int? = nil,
+        isTodayBattleDay: Bool? = nil
+    ) {
+        let env = HealthKitEnvironmentSnapshot.captureStored(scenePhaseRaw: "active")
+        var meta = env.metadata
+        meta["battle_steps_source"] = battleStepsSource
+        meta["steps_today_display"] = stepsTodayDisplay.map(String.init) ?? "nil"
+        meta["home_hero_steps_source"] = HealthKitDiagnosticsStore.homeHeroStepsSource
+        if let backendFinalizedTotal {
+            meta["backend_finalized_total"] = "\(backendFinalizedTotal)"
+        }
+        if let isTodayBattleDay {
+            meta["is_today_battle_day"] = "\(isTodayBattleDay)"
+        }
+        if let hkError {
+            meta["error"] = hkError.localizedDescription
+            if let hk = hkError as? HKError {
+                meta["hk_error_code"] = "\(hk.code.rawValue)"
+            }
+        }
+        meta.merge(HealthKitDiagnosticsStore.timestampMetadata) { _, new in new }
+        let level: LogLevel = hkError?.isHealthKitProtectedDataUnavailable == true ? .warning : .info
+        AppLogger.log(
+            category: "healthkit_read",
+            level: level,
+            message: "health_display_summary",
+            userId: userId,
+            metadata: meta
         )
     }
 

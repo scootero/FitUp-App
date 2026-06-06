@@ -6,12 +6,17 @@
 //
 
 import Foundation
+import HealthKit
+import SwiftUI
 import UIKit
 
 enum MetricSyncTrigger: String {
+    case appLaunch
     case foreground
     case observer
     case manual
+    case homeRefresh
+    case backgroundObserver
 }
 
 actor MetricSyncCoordinator {
@@ -40,6 +45,17 @@ actor MetricSyncCoordinator {
     private var lastSyncAt: Date?
     private var lastObserverWakeAt: Date?
     private var lastSyncCompletedAt: Date?
+    private var scenePhaseRaw: String = "active"
+    private var pendingObserverPreReadCount = 0
+
+    func updateScenePhase(_ phase: ScenePhase) {
+        switch phase {
+        case .active: scenePhaseRaw = "active"
+        case .inactive: scenePhaseRaw = "inactive"
+        case .background: scenePhaseRaw = "background"
+        @unknown default: scenePhaseRaw = "unknown"
+        }
+    }
 
     func updateProfile(_ profile: Profile?) async {
         let previousProfileId = activeProfile?.id
@@ -99,6 +115,7 @@ actor MetricSyncCoordinator {
 
         let tzId = profile.timezone ?? TimeZone.current.identifier
         let calendarDateStr = HomeRepository.formatProfileCalendarDate(Date(), profileTimeZoneIdentifier: tzId)
+        pendingObserverPreReadCount = 2
         let stepsTotal = try? await HealthKitService.fetchTodayStepCount()
         let caloriesTotal = try? await HealthKitService.fetchTodayActiveCalories()
 
@@ -157,7 +174,8 @@ actor MetricSyncCoordinator {
             UIApplication.shared.beginBackgroundTask(withName: "FitUpHealthObserverSync")
         }
 
-        await requestSync(trigger: .observer, force: true)
+        let observerTrigger: MetricSyncTrigger = scenePhaseRaw == "active" ? .observer : .backgroundObserver
+        await requestSync(trigger: observerTrigger, force: true)
 
         await MainActor.run {
             if backgroundTaskId != .invalid {
@@ -170,6 +188,16 @@ actor MetricSyncCoordinator {
         guard let profile = activeProfile else { return }
 
         let syncStarted = Date()
+        let diagnosticsSession = HealthKitSyncSessionContext.begin()
+        diagnosticsSession.observerPreReadQueryCount = pendingObserverPreReadCount
+        pendingObserverPreReadCount = 0
+        defer { HealthKitSyncSessionContext.end() }
+
+        let phaseRaw = scenePhaseRaw
+        let environment = await MainActor.run {
+            HealthKitEnvironmentSnapshot.captureStored(scenePhaseRaw: phaseRaw)
+        }
+
         AppLogger.log(
             category: "healthkit_sync",
             level: .debug,
@@ -191,6 +219,7 @@ actor MetricSyncCoordinator {
 
         do {
             stepsTotal = try await HealthKitService.fetchTodayStepCount()
+            diagnosticsSession.stepsReadOk = true
         } catch {
             handleHealthReadError(error, profile: profile, metricType: .steps)
         }
@@ -200,20 +229,34 @@ actor MetricSyncCoordinator {
             stepsTotal: stepsTotal,
             trigger: trigger
         )
+        diagnosticsSession.intradayTickOutcome = intradayTickLogSummary
 
         do {
             caloriesTotal = try await HealthKitService.fetchTodayActiveCalories()
+            diagnosticsSession.caloriesReadOk = true
         } catch {
             handleHealthReadError(error, profile: profile, metricType: .activeCalories)
         }
 
+        diagnosticsSession.publicDailyAttempted = true
+        if stepsTotal == nil && caloriesTotal == nil {
+            diagnosticsSession.writesSkippedNil = 1
+            diagnosticsSession.nilPreventedPublicDaily = 1
+        } else if stepsTotal == nil || caloriesTotal == nil {
+            diagnosticsSession.nilPreventedPublicDaily = 1
+        }
+
         do {
-            try await publicDailyActivityRepository.upsertMyPublicDailyActivity(
-                userId: profile.id,
-                activeDate: PublicDailyActivityRepository.activeDateString(for: profile),
-                steps: stepsTotal,
-                activeCalories: caloriesTotal
-            )
+            if stepsTotal != nil || caloriesTotal != nil {
+                try await publicDailyActivityRepository.upsertMyPublicDailyActivity(
+                    userId: profile.id,
+                    activeDate: PublicDailyActivityRepository.activeDateString(for: profile),
+                    steps: stepsTotal,
+                    activeCalories: caloriesTotal
+                )
+                diagnosticsSession.publicDailyWritten = true
+                HealthKitDiagnosticsStore.markBackendWriteSuccess()
+            }
         } catch {
             healthSyncPipelineFailed = true
             AppLogger.log(
@@ -233,12 +276,17 @@ actor MetricSyncCoordinator {
             calendarDateStr: calendarDateStr
         ) {
             do {
-                try await userDailyStepTotalsRepository.syncRollingSevenCalendarDays(profile: profile)
+                let dailyCounts = try await userDailyStepTotalsRepository.syncRollingSevenCalendarDays(profile: profile)
+                diagnosticsSession.dailyTotalsDaysOk = dailyCounts.ok
+                diagnosticsSession.dailyTotalsDaysSkipped = dailyCounts.skipped
+                diagnosticsSession.dailyTotalsDaysSkippedHK6 = dailyCounts.skippedHK6
                 MetricSyncUploadPolicy.markRollingDailyTotalsSynced(
                     profileId: profile.id,
                     calendarDateStr: calendarDateStr
                 )
-                await syncProvisionalBattleStepTotals(profile: profile, endDateKey: calendarDateStr)
+                let battleCounts = await syncProvisionalBattleStepTotals(profile: profile, endDateKey: calendarDateStr)
+                diagnosticsSession.battleDaysOk = battleCounts.ok
+                diagnosticsSession.battleDaysSkippedHK6 = battleCounts.skippedHK6
             } catch {
                 AppLogger.log(
                     category: "healthkit_sync",
@@ -250,11 +298,14 @@ actor MetricSyncCoordinator {
             }
         }
 
-        var writes = await matchDayRepository.syncActiveMatchTotals(
+        let matchSyncResult = await matchDayRepository.syncActiveMatchTotals(
             currentUserId: profile.id,
             stepsTotal: stepsTotal,
             caloriesTotal: caloriesTotal
         )
+        var writes = matchSyncResult.writes
+        diagnosticsSession.battleDaysSkipped = matchSyncResult.writesSkippedNil
+        diagnosticsSession.matchWrites = writes.count
         let historicalTargets = await matchDayRepository.pendingHistoricalSyncTargets(currentUserId: profile.id)
         var historicalCache: [String: Int] = [:]
         for target in historicalTargets {
@@ -273,6 +324,7 @@ actor MetricSyncCoordinator {
                     historicalCache[cacheKey] = total
                 } catch {
                     handleHealthReadError(error, profile: profile, metricType: target.metricType)
+                    diagnosticsSession.historicalSkipped += 1
                     continue
                 }
             }
@@ -283,6 +335,8 @@ actor MetricSyncCoordinator {
                     userId: profile.id,
                     metricTotal: total
                 )
+                diagnosticsSession.historicalConfirmed += 1
+                HealthKitDiagnosticsStore.markBackendWriteSuccess()
                 writes.append(
                     MatchDaySyncWrite(
                         matchId: target.matchId,
@@ -326,6 +380,8 @@ actor MetricSyncCoordinator {
                     sourceDate: write.sourceDate,
                     metadata: metadata
                 )
+                diagnosticsSession.snapshotWrites += results.count
+                HealthKitDiagnosticsStore.markBackendWriteSuccess()
                 for result in results {
                     if result.wasUpdated {
                         snapshotUpdated += 1
@@ -362,10 +418,15 @@ actor MetricSyncCoordinator {
         }
 
         do {
+            diagnosticsSession.baselinesAttempted = true
             let stepsAvg7 = try? await HealthKitService.fetchNDayStepAverage(days: 7)
             let stepsAvg30 = try? await HealthKitService.fetchNDayStepAverage(days: 30)
             let stepsAvg90 = try? await HealthKitService.fetchNDayStepAverage(days: 90)
             let caloriesAverage = try? await HealthKitService.fetchSevenDayActiveCaloriesAverage()
+            if stepsAvg7 == nil { diagnosticsSession.nilPreventedBaselines += 1 }
+            if stepsAvg30 == nil { diagnosticsSession.nilPreventedBaselines += 1 }
+            if stepsAvg90 == nil { diagnosticsSession.nilPreventedBaselines += 1 }
+            if caloriesAverage == nil { diagnosticsSession.nilPreventedBaselines += 1 }
             try await snapshotRepository.upsertRollingBaselines(
                 userId: profile.id,
                 stepsAverage7d: stepsAvg7,
@@ -373,6 +434,7 @@ actor MetricSyncCoordinator {
                 stepsAverage90d: stepsAvg90,
                 caloriesAverage: caloriesAverage
             )
+            HealthKitDiagnosticsStore.markBackendWriteSuccess()
         } catch {
             AppLogger.log(
                 category: "healthkit_sync",
@@ -393,23 +455,31 @@ actor MetricSyncCoordinator {
             at: lastSyncAt ?? Date()
         )
         let durationMs = Int(syncStarted.timeIntervalSinceNow * -1000)
+        var summaryMeta: [String: String] = [
+            "trigger": trigger.rawValue,
+            "pipeline": "MetricSyncCoordinator.performSync",
+            "duration_ms": "\(durationMs)",
+            "steps_today": stepsTotal.map(String.init) ?? "nil",
+            "active_calories_today": caloriesTotal.map(String.init) ?? "nil",
+            "historical_targets": "\(historicalTargets.count)",
+            "snapshot_inserted": "\(snapshotInserted)",
+            "snapshot_updated": "\(snapshotUpdated)",
+        ]
+        summaryMeta.merge(environment.metadata) { _, new in new }
+        summaryMeta.merge(diagnosticsSession.summaryMetadata) { _, new in new }
+
+        let summaryLevel: LogLevel =
+            diagnosticsSession.stepsReadOk
+            && diagnosticsSession.caloriesReadOk
+            && diagnosticsSession.hkError6Count == 0
+            ? .info
+            : .warning
         AppLogger.log(
             category: "healthkit_sync",
-            level: .debug,
-            message: "metric sync finished",
+            level: summaryLevel,
+            message: "healthkit_sync_summary",
             userId: profile.id,
-            metadata: [
-                "trigger": trigger.rawValue,
-                "pipeline": "MetricSyncCoordinator.performSync",
-                "duration_ms": "\(durationMs)",
-                "steps_today": stepsTotal.map(String.init) ?? "nil",
-                "active_calories_today": caloriesTotal.map(String.init) ?? "nil",
-                "historical_targets": "\(historicalTargets.count)",
-                "snapshot_writes": "\(writes.count)",
-                "snapshot_inserted": "\(snapshotInserted)",
-                "snapshot_updated": "\(snapshotUpdated)",
-                "intraday_tick": intradayTickLogSummary,
-            ]
+            metadata: summaryMeta
         )
 
         await MainActor.run {
@@ -532,13 +602,14 @@ actor MetricSyncCoordinator {
         }
     }
 
-    private func syncProvisionalBattleStepTotals(profile: Profile, endDateKey: String) async {
+    private func syncProvisionalBattleStepTotals(profile: Profile, endDateKey: String) async -> HealthKitDaySyncCounts {
+        var empty = HealthKitDaySyncCounts()
         let tzId = profile.timezone
         let timeZone = (tzId.flatMap { TimeZone(identifier: $0) }) ?? .current
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
-        guard let endDate = dateFromCalendarDateKey(endDateKey, calendar: calendar) else { return }
-        guard let startDate = calendar.date(byAdding: .day, value: -6, to: endDate) else { return }
+        guard let endDate = dateFromCalendarDateKey(endDateKey, calendar: calendar) else { return empty }
+        guard let startDate = calendar.date(byAdding: .day, value: -6, to: endDate) else { return empty }
         let startKey = PublicDailyActivityRepository.localCalendarDateString(
             for: startDate,
             timeZoneIdentifier: tzId
@@ -548,7 +619,7 @@ actor MetricSyncCoordinator {
             startDateKey: startKey,
             endDateKey: endDateKey
         )
-        await userBattleStepTotalsRepository.syncProvisionalBattleDays(
+        return await userBattleStepTotalsRepository.syncProvisionalBattleDays(
             profile: profile,
             battleDateKeys: battleKeys
         )
@@ -575,16 +646,23 @@ actor MetricSyncCoordinator {
         } else {
             level = .warning
         }
+        var meta: [String: String] = [
+            "metric_type": metricType.rawValue,
+            "error": error.localizedDescription,
+            "error_type": String(describing: type(of: error)),
+        ]
+        if let hk = error as? HKError {
+            meta["hk_error_code"] = "\(hk.code.rawValue)"
+        }
+        let logLevel: LogLevel = HealthKitSyncSessionContext.hasActiveSession && error.isHealthKitProtectedDataUnavailable
+            ? .debug
+            : level
         AppLogger.log(
             category: "healthkit_sync",
-            level: level,
+            level: logLevel,
             message: "metric read skipped during sync",
             userId: profile.id,
-            metadata: [
-                "metric_type": metricType.rawValue,
-                "error": error.localizedDescription,
-                "error_type": String(describing: type(of: error)),
-            ]
+            metadata: meta
         )
     }
 }

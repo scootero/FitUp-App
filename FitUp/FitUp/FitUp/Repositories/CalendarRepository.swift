@@ -11,14 +11,18 @@ import Supabase
 final class CalendarRepository {
     private let headToHeadRepository = HeadToHeadRepository()
     private let homeRepository = HomeRepository()
-    /// Fetches aggregated battle states keyed by `yyyy-MM-dd` for the inclusive date range.
+    /// Fetches aggregated battle states and summaries keyed by `yyyy-MM-dd` for the inclusive date range.
     func fetchBattleStates(
         currentUserId: UUID,
         startDateKey: String,
         endDateKey: String
-    ) async -> [String: CalendarDayBattleState] {
-        guard let client = SupabaseProvider.client else { return [:] }
-        guard startDateKey <= endDateKey else { return [:] }
+    ) async -> CalendarBattleStatesResult {
+        guard let client = SupabaseProvider.client else {
+            return CalendarBattleStatesResult(states: [:], summaries: [:])
+        }
+        guard startDateKey <= endDateKey else {
+            return CalendarBattleStatesResult(states: [:], summaries: [:])
+        }
 
         do {
             let participantResponse = try await client
@@ -28,7 +32,9 @@ final class CalendarRepository {
                 .execute()
 
             let matchIds = Set(jsonRows(from: participantResponse.data).compactMap { uuid(from: $0["match_id"]) })
-            guard !matchIds.isEmpty else { return [:] }
+            guard !matchIds.isEmpty else {
+                return CalendarBattleStatesResult(states: [:], summaries: [:])
+            }
 
             let dayRowsResponse = try await client
                 .from("match_days")
@@ -50,13 +56,17 @@ final class CalendarRepository {
                 rowsByDate[dateKey, default: []].append(matchDay)
             }
 
-            var result: [String: CalendarDayBattleState] = [:]
+            var states: [String: CalendarDayBattleState] = [:]
+            var summaries: [String: CalendarDayBattleSummary] = [:]
             for (dateKey, dayRows) in rowsByDate {
-                result[dateKey] = CalendarDayBattleState.aggregate(dayRows: dayRows, userId: currentUserId)
+                summaries[dateKey] = CalendarDayBattleSummary.aggregateSummary(dayRows: dayRows, userId: currentUserId)
+                states[dateKey] = summaries[dateKey]?.state ?? .none
             }
-            return result
+            return CalendarBattleStatesResult(states: states, summaries: summaries)
         } catch {
-            if error is CancellationError { return [:] }
+            if error is CancellationError {
+                return CalendarBattleStatesResult(states: [:], summaries: [:])
+            }
             AppLogger.log(
                 category: "match_state",
                 level: .warning,
@@ -68,7 +78,7 @@ final class CalendarRepository {
                     "end": endDateKey,
                 ]
             )
-            return [:]
+            return CalendarBattleStatesResult(states: [:], summaries: [:])
         }
     }
 

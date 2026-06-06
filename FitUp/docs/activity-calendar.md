@@ -1,10 +1,11 @@
 # Activity calendar (Battles + Steps)
 
-Full-screen month grid opened from the **STATS** tab date/calendar chip.
+Full-screen month grid opened from the **STATS** tab date/calendar chip, plus an inline card on the arcade stats page.
 
 ## Entry
 
-- [`StatsMockShellView`](../FitUp/FitUp/Views/Health/StatsMockShellView.swift) — tap the date chip → [`ActivityCalendarSheet`](../FitUp/FitUp/Views/Health/Calendar/ActivityCalendarSheet.swift)
+- [`StatsMockShellView`](../FitUp/FitUp/Views/Health/StatsMockShellView.swift) — tap the date chip → [`ActivityCalendarSheet`](../FitUp/FitUp/Views/Health/Calendar/ActivityCalendarSheet.swift) (bottom dock)
+- [`StatsArcadeSliceOneView`](../FitUp/FitUp/Views/Health/StatsArcadeSliceOneView.swift) — inline [`ActivityCalendarCard`](../FitUp/FitUp/Views/Health/Calendar/ActivityCalendarCard.swift) (sheet on day tap)
 
 ## Modes
 
@@ -14,15 +15,17 @@ Per profile calendar date (`yyyy-MM-dd`, profile timezone):
 
 | State | UI | Rule |
 |-------|-----|------|
-| `none` | Empty (no chip) | No match days, or calendar date is after today |
-| `inProgress` | Margin tone chip | Live day not finalized; tone from `home_daily_battle_margins` when available |
-| `wonAny` / `lostAll` / `voidOnly` | Margin tone chip | Green → cyan → purple → orange → red by signed step margin (same scale as BATTLE MARGIN chart); fallback tiers when margin row missing |
+| `none` / no match days | Muted ghost ring | No `match_days` rows, or calendar date is after today |
+| `inProgress` | Cyan partial ring (Steps-style) | Live day not finalized; center label `+850` / `-320` from `home_daily_battle_margins` when available, else `LIVE` |
+| All wins (1+ matches) | Green filled circle + `W` | Every finalized non-void match day is a win |
+| All losses | Red filled circle + `L` | Every finalized non-void match day is a loss |
+| All void/tie | Gray filled circle + `T` | Only void or no-winner finalized days |
+| Mixed multi-battle | Filled circle + net label | `+N` (teal) if wins > losses; `-N` (orange) if losses > wins; `T` (gray) if tied |
+| Multi-battle count | Small `x2`, `x3`, … below ring | Only when more than one match that day |
 
-Future scheduled match days (e.g. day 2–3 of a 3-day battle before that date) show **no** chip — only today and past dates.
+Future calendar dates always show a quiet ghost ring (no W/L/T until finalized).
 
-**Multi-match:** green if the user beat at least one opponent that day; red only if they had competitive finalized days and won none.
-
-Data: [`CalendarRepository`](../FitUp/FitUp/Repositories/CalendarRepository.swift) → `match_participants` + `match_days` filtered by `calendar_date` range.
+Data: [`CalendarRepository`](../FitUp/FitUp/Repositories/CalendarRepository.swift) → `match_participants` + `match_days` filtered by `calendar_date` range. Win/loss counts are aggregated client-side in [`CalendarDayBattleSummary`](../FitUp/FitUp/Models/CalendarDayBattleState.swift).
 
 ### Steps
 
@@ -39,19 +42,18 @@ Per calendar date from **HealthKit** (not `user_daily_step_totals`):
 - 6-week Monday-first grid (padding days outside month show muted day numbers only, no ring)
 - In-memory cache per month for battles and steps
 
-## Day tap detail (bottom dock)
+## Day tap detail
 
-Tap any in-month day to open a **shimmer dock** at the bottom (tap again or chevron to dismiss).
+Tap any in-month day to open a **shimmer dock** (full-screen sheet) or **sheet** (inline stats card). Tap again, chevron, or outside to dismiss.
 
-### Battles dock
+### Battles detail
 
-- Stacked you + rival avatars
-- Vertical step bars (taller = more steps) with counts
-- All-time W–L vs that rival (`head_to_head_stats`)
-- **Rivalry run**: battle emblems slam in left-to-right (green = series win, red = series loss)
-- Multiple matches that day: dot pager switches rival
+- Centered date header + summary line applies to all matches shown
+- **Single match:** stacked you + rival avatars, vertical step bars, all-time W–L, rivalry emblem strip
+- **Multiple matches:** all match cards stacked with dividers; scroll when content exceeds ~45% of screen height; emblem strip per match card
+- Opponent ordering: highest rival steps first (repository sort)
 
-### Steps dock
+### Steps detail
 
 - Daily total vs goal
 - Home-style cumulative sparkline from HealthKit (`fetchIntradayCumulativeSeries`); falls back to 0 → total line when few samples

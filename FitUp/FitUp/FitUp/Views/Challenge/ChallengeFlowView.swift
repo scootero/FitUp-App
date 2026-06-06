@@ -53,6 +53,9 @@ struct ChallengeLaunchContext: Identifiable, Equatable {
 }
 
 struct ChallengeFlowView: View {
+    /// Battle Setup dock hidden until we want the bottom summary chrome again.
+    private let showBattleSetupDock = false
+
     /// Slice 1B: Opponent → Duration → Difficulty (steps-only).
     private enum FlowStep {
         static let opponent = 0
@@ -132,7 +135,8 @@ struct ChallengeFlowView: View {
             reloadOpponentsForQuery()
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !isCheckingGate, entryGate?.isBlocked != true, !isSent {
+            if showBattleSetupDock,
+               !isCheckingGate, entryGate?.isBlocked != true, !isSent {
                 challengeBottomChrome
             }
         }

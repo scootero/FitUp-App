@@ -7,6 +7,7 @@ import SwiftUI
 
 struct StatsBattleDayEffectCard: View {
     let impact: StatsBattleImpactMetric?
+    var onShowMetricExplainer: (StatsMetricExplainerKind) -> Void = { _ in }
 
     private var shouldShow: Bool {
         guard let impact else { return false }
@@ -15,24 +16,24 @@ struct StatsBattleDayEffectCard: View {
 
     var body: some View {
         if shouldShow, let impact {
-            BattleStatsTheme.battleStatsCard {
+            BattleStatsTheme.battleStatsCard(accent: .mint) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
-                            BattleStatsTheme.sectionLabel("BATTLE DAY EFFECT")
+                            BattleStatsTheme.sectionLabel("BATTLE DAY EFFECT", accent: .mint)
                             Text("Competition makes you walk more")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundStyle(BattleStatsTheme.textPrimary)
+                                .font(.system(size: 19, weight: .bold))
+                                .battleStatsStyle(.primary, size: 19, weight: .bold, accent: .mint)
                         }
                         Spacer(minLength: 8)
                         if impact.hasEnoughSample, impact.boostPercent > 0 {
                             VStack(spacing: 2) {
                                 Text("+\(impact.boostPercent)%")
-                                    .font(.system(size: 18, weight: .heavy, design: .monospaced))
+                                    .font(.system(size: 22, weight: .heavy, design: .monospaced))
                                     .foregroundStyle(BattleStatsTheme.green)
                                 Text("UPLIFT")
-                                    .font(.system(size: 8, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(BattleStatsTheme.textLabel)
+                                    .font(.system(size: BattleStatsTheme.Typography.captionSmall, weight: .medium, design: .monospaced))
+                                    .battleStatsStyle(.label, size: BattleStatsTheme.Typography.captionSmall, accent: .mint)
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
@@ -69,13 +70,12 @@ struct StatsBattleDayEffectCard: View {
                             legendDot(color: BattleStatsTheme.green, text: "Battle days · avg \(impact.battleDayAverageSteps.formatted())")
                             legendDot(color: BattleStatsTheme.blue.opacity(0.6), text: "Normal days · avg \(impact.normalDayAverageSteps.formatted())")
                         }
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(BattleStatsTheme.textSecondary)
                     } else {
                         needsDataPill
                     }
                 }
             }
+            .statsCardMetricInfoCorner(kind: .battleDayEffect, accent: .mint, onShow: onShowMetricExplainer)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Battle day effect")
         }
@@ -83,8 +83,8 @@ struct StatsBattleDayEffectCard: View {
 
     private var needsDataPill: some View {
         Text("NEEDS MORE DATA")
-            .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(BattleStatsTheme.textSecondary)
+            .font(.system(size: BattleStatsTheme.Typography.captionSmall, weight: .bold))
+            .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.captionSmall, weight: .bold, accent: .mint)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(Color.white.opacity(0.08))
@@ -94,18 +94,36 @@ struct StatsBattleDayEffectCard: View {
     private func averageTile(title: String, value: String, tint: Color, emphasized: Bool) -> some View {
         VStack(spacing: 6) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(BattleStatsTheme.textSecondary)
-            Text(value)
-                .font(.system(size: 20, weight: .black, design: .monospaced))
-                .foregroundStyle(emphasized ? tint : BattleStatsTheme.textPrimary)
+                .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.caption, weight: .semibold, accent: .mint)
+            Group {
+                if emphasized {
+                    Text(value)
+                        .font(.system(size: 24, weight: .black, design: .monospaced))
+                        .foregroundStyle(tint)
+                } else {
+                    Text(value)
+                        .battleStatsStyle(.primary, size: 24, weight: .black, design: .monospaced, accent: .mint)
+                }
+            }
             Text("avg steps")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(BattleStatsTheme.textLabel)
+                .battleStatsStyle(.label, accent: .mint)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
-        .background(tint.opacity(emphasized ? 0.1 : 0.05))
+        .background {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            tint.opacity(emphasized ? 0.22 : 0.12),
+                            tint.opacity(emphasized ? 0.08 : 0.04),
+                            tint.opacity(0.14),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+        }
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -119,6 +137,7 @@ struct StatsBattleDayEffectCard: View {
                 .fill(color)
                 .frame(width: 8, height: 8)
             Text(text)
+                .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.caption, accent: .mint)
                 .lineLimit(2)
                 .minimumScaleFactor(0.85)
         }

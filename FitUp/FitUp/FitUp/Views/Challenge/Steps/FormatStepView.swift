@@ -21,7 +21,7 @@ struct DurationStepView: View {
                 .font(FitUpFont.body(14, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
 
-            LazyVGrid(columns: columns, spacing: 10) {
+            LazyVGrid(columns: columns, spacing: 8) {
                 durationCard(.daily, color: FitUpColors.Neon.yellow)
                 durationCard(.firstTo3, color: FitUpColors.Neon.purple)
                 durationCard(.bestOf5, color: FitUpColors.Neon.cyan)
@@ -53,7 +53,7 @@ struct DurationStepView: View {
                 }
             }
         }
-        .padding(14)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(.base)
     }
@@ -74,9 +74,9 @@ struct DurationStepView: View {
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, minHeight: 96)
+            .frame(maxWidth: .infinity, minHeight: 80)
             .padding(.horizontal, 12)
-            .padding(.vertical, 18)
+            .padding(.vertical, 12)
             .background {
                 RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
                     .fill(color.opacity(0.08))

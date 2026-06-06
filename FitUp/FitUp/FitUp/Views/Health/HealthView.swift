@@ -17,6 +17,7 @@ struct HealthView: View {
     @StateObject private var viewModel = HealthViewModel()
     @Environment(\.openURL) private var openURL
     @State private var statsMetricExplainer: StatsMetricExplainerKind?
+    @State private var showEditDailyStepGoal = false
     #if DEBUG
     @State private var isLegacyStatsExpanded = false
     #endif
@@ -29,7 +30,14 @@ struct HealthView: View {
                     profileTimeZoneIdentifier: profile?.timezone,
                     battleStats: viewModel.battleStats,
                     rivalStats: viewModel.rivalStats,
+                    completedMatches: viewModel.completedMatches,
+                    isLoadingCompletedMatches: viewModel.isLoadingCompletedMatches,
                     activeMatchEdges: viewModel.activeMatchEdges,
+                    stepsToday: viewModel.stepsTodayValue,
+                    stepsGoal: viewModel.goals.stepsGoal,
+                    userIntradayDomain: viewModel.statsUserIntradayDomain,
+                    isUserIntradayLoading: viewModel.isStatsUserIntradayLoading,
+                    stepsLastUpdatedAt: viewModel.lastLoadFinishedAt,
                     battleStepsDisplay: viewModel.statsBattleStepsDisplay,
                     battleImpactMetric: viewModel.statsBattleImpactMetric,
                     personalRecords: viewModel.statsPersonalRecords,
@@ -37,7 +45,14 @@ struct HealthView: View {
                     isLoadingPersonalRecords: viewModel.isLoadingPersonalRecords,
                     onOpenMatchDetails: onOpenMatchDetails,
                     onOpenChallenge: onOpenChallenge,
-                    onRematchRival: onRematchRival
+                    onRematchRival: onRematchRival,
+                    onLoadCompletedMatchesIfNeeded: {
+                        Task { await viewModel.loadCompletedMatchesIfNeeded() }
+                    },
+                    onShowMetricExplainer: { statsMetricExplainer = $0 },
+                    onEditStepsGoal: {
+                        showEditDailyStepGoal = true
+                    }
                 )
                     .padding(.bottom, 10)
 
@@ -58,14 +73,17 @@ struct HealthView: View {
             Task { await viewModel.refreshBattleStepsAfterSync() }
         }
         .overlay {
-            #if DEBUG
-            if LegacyStatsFeature.isEnabled, let explainer = statsMetricExplainer {
+            if let explainer = statsMetricExplainer {
                 StatsMetricExplainerOverlay(
                     kind: explainer,
                     onDismiss: { statsMetricExplainer = nil }
                 )
             }
-            #endif
+        }
+        .sheet(isPresented: $showEditDailyStepGoal) {
+            EditDailyStepGoalSheet(initialGoal: viewModel.goals.stepsGoal) { _ in
+                viewModel.refreshStepsGoalFromStorage()
+            }
         }
         .refreshable {
             await viewModel.reload(source: "pull_refresh")

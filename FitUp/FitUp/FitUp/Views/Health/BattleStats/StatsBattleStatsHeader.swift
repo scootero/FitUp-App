@@ -11,11 +11,11 @@ struct StatsBattleStatsHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Battle Stats")
-                .font(.system(size: 24, weight: .heavy))
-                .foregroundStyle(BattleStatsTheme.textPrimary)
+                .font(.system(size: BattleStatsTheme.Typography.headerTitle, weight: .heavy, design: .rounded))
+                .foregroundStyle(FitUpColors.Text.title)
 
             Text(subtitle)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: BattleStatsTheme.Typography.headerSubtitle, weight: .medium, design: .rounded))
                 .foregroundStyle(BattleStatsTheme.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -9,6 +9,12 @@ import Combine
 import Foundation
 import Supabase
 
+/// Context for a push-triggered light Home snapshot refresh (match lifecycle only).
+struct HomeLightRefreshContext: Equatable {
+    let eventType: String
+    let matchId: UUID?
+}
+
 @MainActor
 final class SessionStore: ObservableObject {
     @Published private(set) var currentProfile: Profile?
@@ -27,6 +33,10 @@ final class SessionStore: ObservableObject {
 
     /// Bumped when root UI (e.g. challenge flow) dismisses so Home refetches searching rows without waiting for poll.
     @Published private(set) var homeSnapshotRefreshToken: UInt64 = 0
+
+    /// Bumped when a match-lifecycle push arrives in the foreground; Home reloads with `force: false`.
+    @Published private(set) var homeLightSnapshotRefreshToken: UInt64 = 0
+    private var pendingHomeLightRefreshContext: HomeLightRefreshContext?
 
     /// Set by push handling (`match_found`, `challenge_received`); consumed when Home loads a pending card for this id.
     private var pendingMatchFoundCelebrationMatchId: UUID?
@@ -70,6 +80,9 @@ final class SessionStore: ObservableObject {
     private static func healthKitPromptKey(profileId: UUID) -> String {
         "fitup.healthKitOnboardingPromptCompleted.\(profileId.uuidString)"
     }
+
+    /// Minimum time the session-restore intro card stays visible on cold launch.
+    private static let sessionRestoreIntroMinimumDisplaySeconds: Double = 2.5
 
     init() {
         Self.registerOnboardingV2InstallAnchorIfNeeded()
@@ -150,6 +163,7 @@ final class SessionStore: ObservableObject {
     func restoreSession() async {
         isLoadingSession = true
         authErrorMessage = nil
+        let displayStartedAt = Date()
 
         guard let client = SupabaseProvider.client else {
             isAuthenticated = false
@@ -219,6 +233,15 @@ final class SessionStore: ObservableObject {
             AppLogger.log(category: "auth", level: .debug, message: "no active session on launch")
         }
 
+        await finishSessionRestoreLoadingUI(displayStartedAt: displayStartedAt)
+    }
+
+    private func finishSessionRestoreLoadingUI(displayStartedAt: Date) async {
+        let elapsed = Date().timeIntervalSince(displayStartedAt)
+        let remaining = Self.sessionRestoreIntroMinimumDisplaySeconds - elapsed
+        if remaining > 0 {
+            try? await Task.sleep(for: .seconds(remaining))
+        }
         isLoadingSession = false
         logSessionRoutingDecision(reason: "restore_session_finished")
     }
@@ -400,6 +423,16 @@ final class SessionStore: ObservableObject {
 
     func requestHomeSnapshotRefresh() {
         homeSnapshotRefreshToken &+= 1
+    }
+
+    func requestHomeLightSnapshotRefresh(eventType: String, matchId: UUID?) {
+        pendingHomeLightRefreshContext = HomeLightRefreshContext(eventType: eventType, matchId: matchId)
+        homeLightSnapshotRefreshToken &+= 1
+    }
+
+    func consumeHomeLightRefreshContext() -> HomeLightRefreshContext? {
+        defer { pendingHomeLightRefreshContext = nil }
+        return pendingHomeLightRefreshContext
     }
 
     func queueMatchFoundCelebration(matchId: UUID) {

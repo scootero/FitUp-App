@@ -14,14 +14,13 @@ struct StatsAchievementsGrid: View {
 
     var body: some View {
         if !achievements.isEmpty {
-            BattleStatsTheme.battleStatsCard {
+            BattleStatsTheme.battleStatsCard(accent: .warm) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        BattleStatsTheme.sectionLabel("ACHIEVEMENTS")
+                        BattleStatsTheme.sectionLabel("ACHIEVEMENTS", accent: .warm)
                         Spacer()
                         Text("\(unlockedCount) / \(achievements.count)")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(BattleStatsTheme.textLabel)
+                            .battleStatsStyle(.label, size: BattleStatsTheme.Typography.caption, accent: .warm)
                     }
 
                     LazyVGrid(
@@ -47,13 +46,21 @@ struct StatsAchievementsGrid: View {
         ZStack(alignment: .topTrailing) {
             VStack(spacing: 4) {
                 Text(item.kind.icon)
-                    .font(.system(size: 24))
+                    .font(.system(size: 29))
                     .grayscale(item.isUnlocked ? 0 : 1)
                     .opacity(item.isUnlocked ? 1 : 0.45)
 
-                Text(item.kind.title)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(item.isUnlocked ? BattleStatsTheme.gold : BattleStatsTheme.textLabel)
+                Group {
+                    if item.isUnlocked {
+                        Text(item.kind.title)
+                            .font(.system(size: BattleStatsTheme.Typography.captionSmall, weight: .medium, design: .monospaced))
+                            .foregroundStyle(BattleStatsTheme.gold)
+                    } else {
+                        Text(item.kind.title)
+                            .font(.system(size: BattleStatsTheme.Typography.captionSmall, weight: .medium, design: .monospaced))
+                            .battleStatsStyle(.label, size: BattleStatsTheme.Typography.captionSmall, accent: .warm)
+                    }
+                }
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
@@ -73,7 +80,7 @@ struct StatsAchievementsGrid: View {
 
             if let multiplier = item.multiplier, multiplier > 1 {
                 Text("x\(multiplier)")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(BattleStatsTheme.textPrimary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)

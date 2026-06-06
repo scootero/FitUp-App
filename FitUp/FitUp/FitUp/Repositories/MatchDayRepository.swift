@@ -41,12 +41,15 @@ final class MatchDayRepository {
         currentUserId: UUID,
         stepsTotal: Int?,
         caloriesTotal: Int?
-    ) async -> [MatchDaySyncWrite] {
+    ) async -> MatchDaySyncResult {
         do {
             let matches = try await fetchActiveMatches(currentUserId: currentUserId)
-            guard !matches.isEmpty else { return [] }
+            guard !matches.isEmpty else {
+                return MatchDaySyncResult(writes: [], writesSkippedNil: 0)
+            }
 
             var writes: [MatchDaySyncWrite] = []
+            var writesSkippedNil = 0
             for match in matches {
                 do {
                     let participantIds = try await fetchParticipantIds(matchId: match.id)
@@ -77,7 +80,10 @@ final class MatchDayRepository {
                         case .activeCalories:
                             live = caloriesTotal
                         }
-                        guard let live else { continue }
+                        guard let live else {
+                            writesSkippedNil += 1
+                            continue
+                        }
                         resolvedTotal = live
                         querySource = "today"
                     } else {
@@ -159,7 +165,7 @@ final class MatchDayRepository {
                 }
             }
 
-            return writes
+            return MatchDaySyncResult(writes: writes, writesSkippedNil: writesSkippedNil)
         } catch {
             AppLogger.log(
                 category: "healthkit_sync",
@@ -168,7 +174,7 @@ final class MatchDayRepository {
                 userId: currentUserId,
                 metadata: ["error": error.localizedDescription]
             )
-            return []
+            return MatchDaySyncResult(writes: [], writesSkippedNil: 0)
         }
     }
 

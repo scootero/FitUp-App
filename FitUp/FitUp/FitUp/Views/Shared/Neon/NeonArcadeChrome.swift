@@ -321,6 +321,59 @@ private struct NeonCompactBattleCardModifier: ViewModifier {
     }
 }
 
+// MARK: - Inset panel shell (stat-card glow language, flexible height)
+
+private struct NeonInsetPanelModifier: ViewModifier {
+    let accent: Color
+    var cornerRadius: CGFloat = 18
+    var glowEndRadius: CGFloat = 100
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.black.opacity(0.58))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        accent.opacity(0.38),
+                                        accent.opacity(0.14),
+                                        accent.opacity(0.04),
+                                        Color.clear,
+                                    ],
+                                    center: .center,
+                                    startRadius: 0,
+                                    endRadius: glowEndRadius
+                                )
+                            )
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        accent.opacity(0.12),
+                                        Color.clear,
+                                        Color.black.opacity(0.35),
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(accent.opacity(0.82), lineWidth: 2)
+                    }
+                    .shadow(color: accent.opacity(0.55), radius: 12, x: 0, y: 0)
+                    .shadow(color: accent.opacity(0.28), radius: 26, x: 0, y: 0)
+                    .shadow(color: Color.black.opacity(0.5), radius: 8, x: 0, y: 5)
+            }
+    }
+}
+
 // MARK: - Row inset plate
 
 private struct NeonRowInsetPlateModifier: ViewModifier {
@@ -367,6 +420,18 @@ struct NeonRowSeparator: View {
 extension View {
     func neonOvalStatCard(accent: Color, minHeight: CGFloat = NeonArcadeChrome.statCardMinHeight) -> some View {
         modifier(NeonOvalStatCardModifier(accent: accent, minHeight: minHeight))
+    }
+
+    func neonInsetPanel(
+        accent: Color,
+        cornerRadius: CGFloat = 18,
+        glowEndRadius: CGFloat = 100
+    ) -> some View {
+        modifier(NeonInsetPanelModifier(
+            accent: accent,
+            cornerRadius: cornerRadius,
+            glowEndRadius: glowEndRadius
+        ))
     }
 
     func neonRivalryPanel() -> some View {

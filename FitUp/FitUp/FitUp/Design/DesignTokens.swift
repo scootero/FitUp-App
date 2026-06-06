@@ -204,11 +204,32 @@ struct HomeIntroTipGlassCardModifier: ViewModifier {
     }
 }
 
-struct HomeLiquidGlassCardModifier: ViewModifier {
-    let variant: GlassCardVariant
+/// Reusable Apple-style liquid glass fill for Home cards (custom corner radius for hero).
+struct HomeLiquidGlassBackdrop: View {
+    let cornerRadius: CGFloat
+    var variant: GlassCardVariant = .base
+    /// Lighter frost so the page gradient shows through (Home energy hero).
+    var heroShowThrough: Bool = false
+    /// Optional neon accent stroke layered on top of the glass rim.
+    var accentBorderGradient: LinearGradient? = nil
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    }
 
     private var darkFrostTint: LinearGradient {
-        LinearGradient(
+        if heroShowThrough {
+            return LinearGradient(
+                colors: [
+                    Color.black.opacity(0.16),
+                    Color.black.opacity(0.10),
+                    Color.black.opacity(0.05),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        return LinearGradient(
             colors: [
                 Color.black.opacity(0.36),
                 Color.black.opacity(0.24),
@@ -222,8 +243,8 @@ struct HomeLiquidGlassCardModifier: ViewModifier {
     private var baseTintGradient: LinearGradient {
         LinearGradient(
             colors: [
-                Color.white.opacity(0.06),
-                Color.white.opacity(0.028),
+                Color.white.opacity(heroShowThrough ? 0.08 : 0.06),
+                Color.white.opacity(heroShowThrough ? 0.035 : 0.028),
                 Color.clear,
             ],
             startPoint: .topLeading,
@@ -255,77 +276,83 @@ struct HomeLiquidGlassCardModifier: ViewModifier {
         )
     }
 
+    var body: some View {
+        shape
+            .fill(.ultraThinMaterial)
+            .overlay {
+                shape.fill(darkFrostTint)
+            }
+            .overlay {
+                shape.fill(baseTintGradient)
+            }
+            .overlay {
+                shape.fill(variant.fillGradient)
+                    .opacity(heroShowThrough ? 0.14 : 0.22)
+            }
+            .overlay(alignment: .topLeading) {
+                shape
+                    .fill(liquidSheen)
+                    .opacity(0.75)
+                    .blur(radius: 0.2)
+                    .mask(
+                        shape.fill(
+                            LinearGradient(
+                                colors: [Color.white, Color.white.opacity(0.2), Color.clear],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    )
+            }
+            .overlay {
+                shape.fill(crystalHighlight)
+            }
+            .overlay(alignment: .top) {
+                shape
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.55)
+                    .blur(radius: 0.3)
+                    .mask(
+                        LinearGradient(
+                            colors: [Color.white, Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            }
+            .overlay(alignment: .topLeading) {
+                shape
+                    .strokeBorder(Color.white.opacity(0.42), lineWidth: 0.65)
+                    .blur(radius: 0.28)
+                    .mask(
+                        shape.fill(
+                            LinearGradient(
+                                colors: [Color.white, Color.clear],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    )
+            }
+            .overlay {
+                shape.strokeBorder(variant.borderColor.opacity(0.68), lineWidth: 0.9)
+            }
+            .overlay {
+                if let accentBorderGradient {
+                    shape.strokeBorder(accentBorderGradient, lineWidth: 1)
+                }
+            }
+            .shadow(color: variant.shadowColor.opacity(0.6), radius: 18, x: 0, y: 10)
+            .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 4)
+    }
+}
+
+struct HomeLiquidGlassCardModifier: ViewModifier {
+    let variant: GlassCardVariant
+
     func body(content: Content) -> some View {
         content
             .background {
-                RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                            .fill(darkFrostTint)
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                            .fill(baseTintGradient)
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                            .fill(variant.fillGradient)
-                            .opacity(0.22)
-                    }
-                    .overlay(alignment: .topLeading) {
-                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                            .fill(liquidSheen)
-                            .opacity(0.75)
-                            .blur(radius: 0.2)
-                            .mask(
-                                RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [Color.white, Color.white.opacity(0.2), Color.clear],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                            )
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                            .fill(crystalHighlight)
-                    }
-                    .overlay(alignment: .top) {
-                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.55)
-                            .blur(radius: 0.3)
-                            .mask(
-                                LinearGradient(
-                                    colors: [Color.white, Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                    }
-                    .overlay(alignment: .topLeading) {
-                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.42), lineWidth: 0.65)
-                            .blur(radius: 0.28)
-                            .mask(
-                                RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [Color.white, Color.clear],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                            )
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: variant.cornerRadius, style: .continuous)
-                            .strokeBorder(variant.borderColor.opacity(0.68), lineWidth: 0.9)
-                    }
-                    .shadow(color: variant.shadowColor.opacity(0.6), radius: 18, x: 0, y: 10)
-                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 4)
+                HomeLiquidGlassBackdrop(cornerRadius: variant.cornerRadius, variant: variant)
             }
     }
 }

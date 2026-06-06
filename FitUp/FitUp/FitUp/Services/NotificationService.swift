@@ -147,6 +147,25 @@ final class NotificationService: NSObject, ObservableObject {
 
     // MARK: - Private helpers
 
+    /// v1: foreground Home light refresh — excludes `challenge_received` (recipient UX differs; not needed for sender `match_active` goal).
+    private static let homeLightRefreshEventTypes: Set<String> = ["match_active", "match_found"]
+
+    private func requestHomeLightRefreshIfMatchLifecycle(userInfo: [AnyHashable: Any]) {
+        let eventType = userInfo["event_type"] as? String ?? ""
+        guard Self.homeLightRefreshEventTypes.contains(eventType) else { return }
+        let matchId = (userInfo["match_id"] as? String).flatMap(UUID.init(uuidString:))
+        AppLogger.log(
+            category: "notifications",
+            level: .debug,
+            message: "home_push_notification_received",
+            metadata: [
+                "event_type": eventType,
+                "match_id": matchId?.uuidString ?? "nil",
+            ]
+        )
+        sessionStore?.requestHomeLightSnapshotRefresh(eventType: eventType, matchId: matchId)
+    }
+
     /// Queues Home celebrations when a push arrives; safe for foreground banners (does not set `pendingDeepLink`).
     private func applyCelebrationQueuesFromNotificationPayload(userInfo: [AnyHashable: Any]) {
         let eventType = userInfo["event_type"] as? String ?? ""
@@ -336,6 +355,7 @@ extension NotificationService: UNUserNotificationCenterDelegate {
                 providedBody: notification.request.content.body
             )
             self.applyCelebrationQueuesFromNotificationPayload(userInfo: userInfo)
+            self.requestHomeLightRefreshIfMatchLifecycle(userInfo: userInfo)
         }
         completionHandler([.banner, .sound, .badge])
     }

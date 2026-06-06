@@ -2,26 +2,68 @@
 //  CalendarDayDetailDock.swift
 //  FitUp
 //
-//  Bottom shimmer dock for activity calendar day taps.
+//  Day detail chrome for activity calendar (bottom dock or stats-card sheet).
 //
 
 import SwiftUI
+
+enum CalendarDayDetailPresentationStyle {
+    case bottomDock
+    case sheet
+}
 
 struct CalendarDayDetailDock: View {
     let mode: ActivityCalendarMode
     let isLoading: Bool
     let battleDetail: CalendarDayBattleDetail?
-    let battleMatch: CalendarDayBattleMatchDetail?
-    let battleMatchIndex: Int
-    let battleMatchCount: Int
     let stepsDetail: CalendarDayStepsDetail?
-    let onSelectBattleMatchIndex: (Int) -> Void
+    var presentationStyle: CalendarDayDetailPresentationStyle = .bottomDock
+    var onOpenMatchDetails: ((UUID, String) -> Void)?
     let onDismiss: () -> Void
 
     @State private var isPresented = false
     @State private var shimmerPhase: CGFloat = -1
 
     var body: some View {
+        Group {
+            switch presentationStyle {
+            case .bottomDock:
+                dockBody
+            case .sheet:
+                sheetBody
+            }
+        }
+    }
+
+    private var sheetBody: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button(action: onDismiss) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .frame(width: 32, height: 28)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+
+            if isLoading {
+                ProgressView()
+                    .tint(FitUpColors.Neon.cyan)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                content
+                    .padding(.horizontal, 16)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(FitUpColors.Bg.base)
+    }
+
+    private var dockBody: some View {
         VStack(spacing: 0) {
             shimmerBar
 
@@ -94,14 +136,8 @@ struct CalendarDayDetailDock: View {
             if let battleDetail {
                 CalendarBattleDayDetailPanel(
                     detail: battleDetail,
-                    match: battleMatch,
-                    matchIndex: battleMatchIndex,
-                    matchCount: battleMatchCount,
-                    onSelectMatchIndex: onSelectBattleMatchIndex
+                    onOpenMatchDetails: onOpenMatchDetails
                 )
-                if let match = battleMatch, !match.rivalryEmblems.isEmpty {
-                    CalendarBattleEmblemStrip(emblems: match.rivalryEmblems)
-                }
             }
         case .steps:
             if let stepsDetail {

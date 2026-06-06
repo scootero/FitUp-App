@@ -40,11 +40,6 @@ struct HomeView: View {
     @State private var handoffFinishTask: Task<Void, Never>?
     @State private var blocksHeroCardNavigation = false
 
-    /// App description card above the empty hero when there is no live featured step battle.
-    private var showsPersistentHomeIntroTip: Bool {
-        viewModel.featuredHomeStepMatch == nil && viewModel.heroOpponentHandoff == nil
-    }
-
     private var activeBattleRowUserProfile: ActiveBattleRowUserProfile {
         let p = profile ?? sessionStore.currentProfile
         let name = p?.displayName.trimmingCharacters(in: .whitespacesAndNewlines) ?? "You"
@@ -63,10 +58,6 @@ struct HomeView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    if showsPersistentHomeIntroTip {
-                        persistentHomeIntroTipCard
-                    }
-
                     if viewModel.isHeroLoading {
                         skeletonBlock(height: homeEnergyBeamHeroSkeletonHeight)
                             .homeLiquidGlassCard(.base)
@@ -163,6 +154,8 @@ struct HomeView: View {
                 .padding(.top, 10)
                 .padding(.bottom, 8)
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
             .scrollIndicators(.hidden)
             .refreshable {
                 await viewModel.reload(force: true)
@@ -228,6 +221,10 @@ struct HomeView: View {
         }
         .onChange(of: sessionStore.homeSnapshotRefreshToken) { _, _ in
             Task { await viewModel.reload(force: true) }
+        }
+        .onChange(of: sessionStore.homeLightSnapshotRefreshToken) { _, _ in
+            guard let context = sessionStore.consumeHomeLightRefreshContext() else { return }
+            Task { await viewModel.reloadFromMatchPush(context: context) }
         }
         .onChange(of: profile?.id) { _, _ in
             hasLoggedHeroFirstRender = false
@@ -358,6 +355,7 @@ struct HomeView: View {
                     .id(activeMatch.id)
                 }
                 .buttonStyle(.plain)
+                .background(Color.clear)
                 .transaction { $0.disablesAnimations = false }
                 .opacity(handoff != nil && handoffRevealingNewHero ? handoffCrossfadeProgress : 1)
                 .overlay {
@@ -437,6 +435,7 @@ struct HomeView: View {
 
         energyBeamHeroHandoffStack
             .frame(maxWidth: .infinity)
+            .background(Color.clear)
             .overlay {
                 if let handoff {
                     HomeFeaturedOpponentHandoffOverlay(
@@ -661,11 +660,6 @@ struct HomeView: View {
         if !viewModel.pendingMatches.isEmpty || !viewModel.activeMatches.isEmpty {
             sessionStore.clearSearchingCardOnHomeFlag()
         }
-    }
-
-    private var persistentHomeIntroTipCard: some View {
-        HomeIntroTipView()
-            .padding(.horizontal, homeHeroHorizontalPadding)
     }
 
     private var heroSortedStepMatches: [HomeActiveMatch] {

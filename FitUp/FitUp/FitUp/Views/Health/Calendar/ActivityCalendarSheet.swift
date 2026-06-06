@@ -41,7 +41,7 @@ struct ActivityCalendarSheet: View {
                     ActivityCalendarScrollContent(viewModel: viewModel)
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
-                        .padding(.bottom, showsDayDock ? 320 : 24)
+                        .padding(.bottom, showsDayDock ? 340 : 24)
                 }
                 .scrollIndicators(.hidden)
                 .refreshable {
@@ -53,11 +53,7 @@ struct ActivityCalendarSheet: View {
                         mode: viewModel.mode,
                         isLoading: viewModel.isDayDetailLoading,
                         battleDetail: viewModel.battleDayDetail,
-                        battleMatch: viewModel.selectedBattleMatch,
-                        battleMatchIndex: viewModel.selectedBattleMatchIndex,
-                        battleMatchCount: viewModel.battleDayDetail?.matches.count ?? 0,
                         stepsDetail: viewModel.stepsDayDetail,
-                        onSelectBattleMatchIndex: { viewModel.selectBattleMatchIndex($0) },
                         onDismiss: { viewModel.dismissDayDetail() }
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))

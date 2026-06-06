@@ -54,6 +54,32 @@ enum HealthKitService {
         ]
     }
 
+    /// Raw authorization status for diagnostics (read access is approximate on iOS).
+    static func authorizationSnapshot() -> [String: String] {
+        guard isHealthDataAvailable else {
+            return [
+                "steps_auth_status": "unavailable",
+                "active_energy_auth_status": "unavailable",
+            ]
+        }
+        return [
+            "steps_auth_status": authStatusLabel(for: .stepCount),
+            "active_energy_auth_status": authStatusLabel(for: .activeEnergyBurned),
+        ]
+    }
+
+    private static func authStatusLabel(for identifier: HKQuantityTypeIdentifier) -> String {
+        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else {
+            return "type_unavailable"
+        }
+        switch store.authorizationStatus(for: type) {
+        case .notDetermined: return "notDetermined"
+        case .sharingDenied: return "sharingDenied"
+        case .sharingAuthorized: return "sharingAuthorized"
+        @unknown default: return "unknown"
+        }
+    }
+
     /// True if any requested read type is still `notDetermined` (user has not been through the system prompt).
     private static func anyReadTypeIsNotDetermined() -> Bool {
         for objectType in readAuthorizationTypes {
@@ -212,6 +238,11 @@ enum HealthKitService {
             unit: .kilocalorie(),
             days: 7
         )
+    }
+
+    /// Raw `HKError.code.rawValue` when `error` is an `HKError`, else nil.
+    static func hkErrorRawCode(_ error: Error) -> Int? {
+        (error as? HKError)?.code.rawValue
     }
 
     /// Returns today's step total from HealthKit.
@@ -913,6 +944,8 @@ enum HealthKitService {
             options: [.strictStartDate]
         )
 
+        HealthKitSyncSessionContext.withActiveSession { $0.recordQueryStart() }
+
         return try await withCheckedThrowingContinuation { continuation in
             let query = HKStatisticsQuery(
                 quantityType: quantityType,
@@ -921,11 +954,21 @@ enum HealthKitService {
             ) { _, statistics, error in
                 if let error {
                     if let hk = error as? HKError, hk.code == .errorNoData {
+                        HealthKitSyncSessionContext.withActiveSession {
+                            $0.recordQuerySuccess(quantityIdentifier: quantityIdentifier)
+                        }
                         continuation.resume(returning: 0)
                         return
                     }
-                    continuation.resume(throwing: mapHealthKitError(error, context: "fetchCumulativeTotal"))
+                    continuation.resume(throwing: mapHealthKitError(
+                        error,
+                        context: "fetchCumulativeTotal",
+                        quantityIdentifier: quantityIdentifier
+                    ))
                     return
+                }
+                HealthKitSyncSessionContext.withActiveSession {
+                    $0.recordQuerySuccess(quantityIdentifier: quantityIdentifier)
                 }
                 let total = statistics?.sumQuantity()?.doubleValue(for: unit) ?? 0
                 continuation.resume(returning: total)
@@ -998,8 +1041,21 @@ enum HealthKitService {
         }
     }
 
-    private static func mapHealthKitError(_ error: Error, context: String) -> Error {
-        logHealthKitQueryFailure(error, context: context)
+    private static func mapHealthKitError(
+        _ error: Error,
+        context: String,
+        quantityIdentifier: HKQuantityTypeIdentifier? = nil
+    ) -> Error {
+        let sessionActive = HealthKitSyncSessionContext.hasActiveSession
+        if sessionActive {
+            HealthKitSyncSessionContext.withActiveSession { $0.recordQueryFailure(error) }
+            let suppressLog = error.isHealthKitProtectedDataUnavailable
+            if !suppressLog {
+                logHealthKitQueryFailure(error, context: context)
+            }
+        } else {
+            logHealthKitQueryFailure(error, context: context)
+        }
         guard let healthError = error as? HKError else { return error }
         if healthError.code == .errorAuthorizationDenied {
             return HealthKitError.authorizationDenied

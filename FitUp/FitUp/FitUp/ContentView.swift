@@ -54,11 +54,14 @@ struct ContentView: View {
             }
             await MetricSyncCoordinator.shared.updateProfile(sessionStore.currentProfile)
             if sessionStore.currentProfile != nil {
-                await MetricSyncCoordinator.shared.requestSync(trigger: .manual, force: true)
+                await MetricSyncCoordinator.shared.requestSync(trigger: .appLaunch, force: true)
                 notificationService.registerForRemoteNotifications()
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
+            Task {
+                await MetricSyncCoordinator.shared.updateScenePhase(newPhase)
+            }
             ProductAnalytics.handleScenePhaseChange(newPhase, userId: sessionStore.currentProfile?.id)
             guard newPhase == .active else { return }
             guard sessionStore.isOnboardingComplete || sessionStore.healthKitPromptCompleted else { return }
@@ -293,22 +296,71 @@ private struct RootShellView: View {
 }
 
 private struct SessionRestoreLoadingView: View {
+    private static let introTipAutoDismissSeconds: Double = 3
+
+    @State private var isShowingIntroTip = false
+    @State private var introTipDismissTask: Task<Void, Never>?
+
     var body: some View {
-        VStack(spacing: 22) {
-            FitUpBrandMark(fontSize: 32)
-                .frame(maxWidth: .infinity, alignment: .center)
+        ZStack {
+            VStack(spacing: 22) {
+                HomeIntroTipRevealSection(
+                    isShowingTip: $isShowingIntroTip,
+                    onTipRevealed: scheduleIntroTipAutoDismiss
+                )
 
-            HomeIntroTipView()
+                Spacer(minLength: 0)
 
-            ProgressView("Restoring session...")
-                .font(FitUpFont.body(14, weight: .medium))
-                .tint(FitUpColors.Neon.cyan)
+                ProgressView("Restoring session...")
+                    .font(FitUpFont.body(14, weight: .medium))
+                    .tint(FitUpColors.Neon.cyan)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 40)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+            if isShowingIntroTip {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        dismissIntroTip()
+                    }
+                    .accessibilityHidden(true)
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("FitUp. Restoring session.")
+        .onDisappear {
+            introTipDismissTask?.cancel()
+            introTipDismissTask = nil
+        }
+    }
+
+    private func scheduleIntroTipAutoDismiss() {
+        introTipDismissTask?.cancel()
+        introTipDismissTask = Task {
+            try? await Task.sleep(for: .seconds(Self.introTipAutoDismissSeconds))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                dismissIntroTip(animated: true)
+            }
+        }
+    }
+
+    private func dismissIntroTip(animated: Bool = true) {
+        introTipDismissTask?.cancel()
+        introTipDismissTask = nil
+        guard isShowingIntroTip else { return }
+        if animated {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                isShowingIntroTip = false
+            }
+        } else {
+            isShowingIntroTip = false
+        }
     }
 }
 

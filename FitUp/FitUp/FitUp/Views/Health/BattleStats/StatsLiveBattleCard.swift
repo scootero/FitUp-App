@@ -86,13 +86,12 @@ struct StatsLiveBattleCard: View {
                         .foregroundStyle(BattleStatsTheme.green)
                     Spacer()
                     Text("\(Int((100 - myPct).rounded()))%")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(BattleStatsTheme.textLabel)
+                        .font(.system(size: BattleStatsTheme.Typography.captionSmall, weight: .medium, design: .monospaced))
+                        .battleStatsStyle(.label, size: BattleStatsTheme.Typography.captionSmall, accent: .mint)
                 }
 
                 Text(leading ? "🔥 You're leading — keep pushing" : "⚠️ You're behind — time to grind")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(BattleStatsTheme.textSecondary)
+                    .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.bodySmall, accent: .mint)
                     .frame(maxWidth: .infinity)
                     .multilineTextAlignment(.center)
             }
@@ -160,8 +159,8 @@ struct StatsLiveBattleCard: View {
                     .fill(accent.opacity(0.25))
                     .frame(width: 44, height: 44)
                 Text(initials)
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundStyle(BattleStatsTheme.textPrimary)
+                    .font(.system(size: BattleStatsTheme.Typography.bodySmall, weight: .bold, design: .monospaced))
+                    .battleStatsStyle(.primary, size: BattleStatsTheme.Typography.bodySmall, weight: .bold, accent: .mint)
             }
             .overlay {
                 if emphasized {
@@ -171,14 +170,21 @@ struct StatsLiveBattleCard: View {
             }
 
             Text(steps.formatted())
-                .font(.system(size: 22, weight: .bold, design: .monospaced))
-                .foregroundStyle(BattleStatsTheme.textPrimary)
+                .battleStatsStyle(.primary, size: 26, weight: .bold, design: .monospaced, accent: .mint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
-            Text(label)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .foregroundStyle(emphasized ? accent : BattleStatsTheme.textLabel)
+            Group {
+                if emphasized {
+                    Text(label)
+                        .font(.system(size: BattleStatsTheme.Typography.caption, weight: .medium, design: .monospaced))
+                        .foregroundStyle(accent)
+                } else {
+                    Text(label)
+                        .font(.system(size: BattleStatsTheme.Typography.caption, weight: .medium, design: .monospaced))
+                        .battleStatsStyle(.label, size: BattleStatsTheme.Typography.caption, accent: .mint)
+                }
+            }
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }

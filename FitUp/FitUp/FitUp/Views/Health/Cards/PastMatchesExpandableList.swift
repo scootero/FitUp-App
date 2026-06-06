@@ -25,14 +25,20 @@ struct PastMatchesExpandableList: View {
 
     @State private var isListExpanded = false
 
-    private static let collapsedCount = 4
+    private static let panelCollapsedCount = 4
+    private static let embeddedVisibleRowCount = 3
+    private static let embeddedRowHeight: CGFloat = 128
 
-    private var displayedMatches: [ActivityCompletedMatch] {
-        isListExpanded ? matches : Array(matches.prefix(Self.collapsedCount))
+    private static var embeddedMaxListHeight: CGFloat {
+        CGFloat(embeddedVisibleRowCount) * embeddedRowHeight
     }
 
-    private var hiddenCount: Int {
-        max(0, matches.count - Self.collapsedCount)
+    private var panelDisplayedMatches: [ActivityCompletedMatch] {
+        isListExpanded ? matches : Array(matches.prefix(Self.panelCollapsedCount))
+    }
+
+    private var panelHiddenCount: Int {
+        max(0, matches.count - Self.panelCollapsedCount)
     }
 
     var body: some View {
@@ -65,7 +71,7 @@ struct PastMatchesExpandableList: View {
         VStack(alignment: .leading, spacing: isExpanded ? 8 : 0) {
             headerButton(useNeonTitle: false)
             if isExpanded {
-                expandedContent
+                embeddedExpandedContent
             }
         }
         .padding(.top, 4)
@@ -120,39 +126,46 @@ struct PastMatchesExpandableList: View {
 
     @ViewBuilder
     private var expandedContent: some View {
-        if isLoading {
-            HStack(spacing: 10) {
-                ProgressView()
-                    .tint(FitUpColors.Neon.cyan)
-                Text("Loading completed battles...")
-                    .font(FitUpFont.body(14, weight: .medium))
-                    .foregroundStyle(HomePageStyle.muted)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
-            .neonRowInsetPlate(accent: accent)
-        } else if matches.isEmpty {
-            Text(emptyMessage)
+        panelExpandedContent
+    }
+
+    @ViewBuilder
+    private var loadingState: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .tint(FitUpColors.Neon.cyan)
+            Text("Loading completed battles...")
                 .font(FitUpFont.body(14, weight: .medium))
                 .foregroundStyle(HomePageStyle.muted)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 12)
-                .neonRowInsetPlate(accent: accent)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .neonRowInsetPlate(accent: accent)
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        Text(emptyMessage)
+            .font(FitUpFont.body(14, weight: .medium))
+            .foregroundStyle(HomePageStyle.muted)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 12)
+            .neonRowInsetPlate(accent: accent)
+    }
+
+    @ViewBuilder
+    private var panelExpandedContent: some View {
+        if isLoading {
+            loadingState
+        } else if matches.isEmpty {
+            emptyState
         } else {
             VStack(spacing: 0) {
-                ForEach(Array(displayedMatches.enumerated()), id: \.element.id) { index, match in
-                    if index > 0 {
-                        NeonRowSeparator()
-                    }
+                matchRowsStack(matches: panelDisplayedMatches)
 
-                    PastMatchRow(match: match, rowIndex: index) {
-                        onOpenMatch(match)
-                    }
-                }
-
-                if matches.count > Self.collapsedCount {
+                if matches.count > Self.panelCollapsedCount {
                     NeonRowSeparator()
 
                     Button {
@@ -163,7 +176,7 @@ struct PastMatchesExpandableList: View {
                         HStack(spacing: 6) {
                             Image(systemName: isListExpanded ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 11, weight: .bold))
-                            Text(isListExpanded ? "Show less" : "Show \(hiddenCount) more")
+                            Text(isListExpanded ? "Show less" : "Show \(panelHiddenCount) more")
                                 .font(FitUpFont.mono(11, weight: .bold))
                                 .tracking(0.4)
                         }
@@ -173,6 +186,44 @@ struct PastMatchesExpandableList: View {
                         .neonRowInsetPlate(accent: FitUpColors.Neon.blue.opacity(0.65))
                     }
                     .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var embeddedExpandedContent: some View {
+        if isLoading {
+            loadingState
+        } else if matches.isEmpty {
+            emptyState
+        } else {
+            ScrollView {
+                matchRowsStack(matches: matches)
+            }
+            .frame(maxHeight: Self.embeddedMaxListHeight)
+            .scrollIndicators(matches.count > Self.embeddedVisibleRowCount ? .visible : .hidden)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.03))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(accent.opacity(0.18), lineWidth: 1)
+            }
+        }
+    }
+
+    private func matchRowsStack(matches rows: [ActivityCompletedMatch]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, match in
+                if index > 0 {
+                    NeonRowSeparator()
+                }
+
+                PastMatchRow(match: match, rowIndex: index) {
+                    onOpenMatch(match)
                 }
             }
         }

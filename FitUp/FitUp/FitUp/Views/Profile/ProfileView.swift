@@ -36,8 +36,6 @@ struct ProfileView: View {
     @State private var showFeedback = false
 
     @State private var showEditDailyStepGoal = false
-    @State private var dailyStepGoalDraft = ""
-    @State private var dailyStepGoalSaveError: String?
     @State private var displayedDailyStepGoal: Int = ReadinessGoals.loadFromUserDefaults().stepsGoal
 
     @AppStorage(DevMode.userDefaultsKey) private var devMode = false
@@ -85,7 +83,9 @@ struct ProfileView: View {
                 editDisplayNameSheet
             }
             .sheet(isPresented: $showEditDailyStepGoal) {
-                editDailyStepGoalSheet
+                EditDailyStepGoalSheet(initialGoal: displayedDailyStepGoal) { goal in
+                    displayedDailyStepGoal = goal
+                }
             }
         }
     }
@@ -354,8 +354,6 @@ struct ProfileView: View {
                 detail: displayedDailyStepGoal.formatted(),
                 showSeparator: true,
                 action: .chevron {
-                    dailyStepGoalDraft = "\(displayedDailyStepGoal)"
-                    dailyStepGoalSaveError = nil
                     showEditDailyStepGoal = true
                 }
             )
@@ -474,65 +472,6 @@ struct ProfileView: View {
     }
 
     // MARK: - Edit display name
-
-    private var editDailyStepGoalSheet: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Used for the Stats goal line and readiness. Stored on this device only.")
-                    .font(FitUpFont.body(13))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-
-                TextField("Daily steps", text: $dailyStepGoalDraft)
-                    .keyboardType(.numberPad)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .foregroundStyle(FitUpColors.Text.primary)
-                    .background(
-                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                            .fill(FitUpColors.Bg.base.opacity(0.55))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                            )
-                    )
-
-                if let err = dailyStepGoalSaveError, !err.isEmpty {
-                    Text(err)
-                        .font(FitUpFont.body(13, weight: .medium))
-                        .foregroundStyle(FitUpColors.Neon.pink)
-                }
-
-                Spacer()
-            }
-            .padding(20)
-            .background(BackgroundGradientView())
-            .navigationTitle("Daily Step Goal")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dailyStepGoalSaveError = nil
-                        showEditDailyStepGoal = false
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        let normalized = dailyStepGoalDraft
-                            .replacingOccurrences(of: ",", with: "")
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard let goal = Int(normalized), goal >= 1_000, goal <= 200_000 else {
-                            dailyStepGoalSaveError = "Enter a value between 1,000 and 200,000."
-                            return
-                        }
-                        ReadinessGoals.saveStepsGoal(goal)
-                        displayedDailyStepGoal = goal
-                        dailyStepGoalSaveError = nil
-                        showEditDailyStepGoal = false
-                    }
-                }
-            }
-        }
-    }
 
     private var editDisplayNameSheet: some View {
         NavigationStack {

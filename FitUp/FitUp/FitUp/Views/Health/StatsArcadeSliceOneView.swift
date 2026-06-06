@@ -12,7 +12,14 @@ struct StatsArcadeSliceOneView: View {
     let profileTimeZoneIdentifier: String?
     let battleStats: HealthBattleStats
     let rivalStats: [HomeRivalStat]
+    let completedMatches: [ActivityCompletedMatch]
+    let isLoadingCompletedMatches: Bool
     let activeMatchEdges: [HomeActiveMatch]
+    let stepsToday: Int
+    let stepsGoal: Int
+    let userIntradayDomain: StatsUserIntradayDomain?
+    let isUserIntradayLoading: Bool
+    let stepsLastUpdatedAt: Date?
     let battleStepsDisplay: StatsBattleStepsDisplay?
     let battleImpactMetric: StatsBattleImpactMetric?
     let personalRecords: StatsPersonalRecords?
@@ -21,16 +28,24 @@ struct StatsArcadeSliceOneView: View {
     var onOpenMatchDetails: (UUID, String) -> Void
     var onOpenChallenge: () -> Void = {}
     var onRematchRival: (ChallengePrefillOpponent) -> Void = { _ in }
+    var onLoadCompletedMatchesIfNeeded: () -> Void = {}
+    var onShowMetricExplainer: (StatsMetricExplainerKind) -> Void = { _ in }
+    var onEditStepsGoal: () -> Void = {}
 
     @State private var isAllRivalsSheetPresented = false
     @State private var selectedLiveBattleMatchId: UUID?
+    @State private var summaryPeriod: StatsSummaryPeriod = .allTime
 
-    private var topRivals: [HomeRivalStat] {
-        rivalStats.sorted {
-            if $0.finalizedDaysCompeted != $1.finalizedDaysCompeted {
-                return $0.finalizedDaysCompeted > $1.finalizedDaysCompeted
+    private var featuredRivalSlots: [StatsRivalSlot] {
+        StatsRivalSelection.pick(from: rivalStats)
+    }
+
+    private var allRivalsSorted: [HomeRivalStat] {
+        rivalStats.sorted { lhs, rhs in
+            if lhs.completedMatchCount != rhs.completedMatchCount {
+                return lhs.completedMatchCount > rhs.completedMatchCount
             }
-            return ($0.lastPlayedOn ?? .distantPast) > ($1.lastPlayedOn ?? .distantPast)
+            return (lhs.lastPlayedOn ?? .distantPast) > (rhs.lastPlayedOn ?? .distantPast)
         }
     }
 
@@ -52,14 +67,35 @@ struct StatsArcadeSliceOneView: View {
             || !rivalStats.isEmpty
     }
 
+    private var summaryPillDisplay: StatsSummaryPillDisplay {
+        StatsSummaryPillBuilder.build(
+            period: summaryPeriod,
+            battleStats: battleStats,
+            rivalStats: rivalStats,
+            completedMatches: completedMatches,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier,
+            hasResolvedBattleStats: hasResolvedBattleStats || battleStepsDisplay != nil
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: BattleStatsTheme.sectionSpacing) {
             StatsBattleStatsHeader(subtitle: StatsBattleStatsHeader.defaultSubtitle())
+                .padding(.bottom, 4)
+
+            StatsUserStepsTodayHeroCard(
+                stepsToday: stepsToday,
+                stepsGoal: stepsGoal,
+                domain: userIntradayDomain,
+                isLoading: isUserIntradayLoading,
+                lastUpdatedAt: stepsLastUpdatedAt,
+                onShowMetricExplainer: onShowMetricExplainer,
+                onEditStepsGoal: onEditStepsGoal
+            )
 
             StatsSummaryPillRow(
-                battleStats: battleStats,
-                rivalCount: rivalStats.count,
-                hasResolvedBattleStats: hasResolvedBattleStats || battleStepsDisplay != nil
+                summaryPeriod: $summaryPeriod,
+                display: summaryPillDisplay
             )
 
             if hasLiveBattles {
@@ -72,15 +108,25 @@ struct StatsArcadeSliceOneView: View {
                 )
             }
 
-            StatsBattleStepsCard(display: battleStepsDisplay)
+            StatsBattleStepsCard(
+                display: battleStepsDisplay,
+                onShowMetricExplainer: onShowMetricExplainer
+            )
 
-            StatsLifetimeGrid(display: lifetimeDisplay)
+            StatsLifetimeGrid(
+                display: lifetimeDisplay,
+                onShowMetricExplainer: onShowMetricExplainer
+            )
 
-            StatsBattleDayEffectCard(impact: battleImpactMetric)
+            StatsBattleDayEffectCard(
+                impact: battleImpactMetric,
+                onShowMetricExplainer: onShowMetricExplainer
+            )
 
             StatsPersonalRecordsCard(
                 records: personalRecords,
-                isLoading: isLoadingPersonalRecords
+                isLoading: isLoadingPersonalRecords,
+                onShowMetricExplainer: onShowMetricExplainer
             )
 
             StatsAchievementsGrid(achievements: achievements)
@@ -89,33 +135,42 @@ struct StatsArcadeSliceOneView: View {
 
             ActivityCalendarCard(
                 userId: calendarUserId,
-                profileTimeZoneIdentifier: profileTimeZoneIdentifier
+                profileTimeZoneIdentifier: profileTimeZoneIdentifier,
+                onOpenMatchDetails: onOpenMatchDetails
             )
         }
         .sheet(isPresented: $isAllRivalsSheetPresented) {
-            StatsArcadeAllRivalsSheet(rivals: topRivals)
+            StatsArcadeAllRivalsSheet(rivals: allRivalsSorted)
         }
     }
 
     @ViewBuilder
     private var rivalsSection: some View {
-        if !topRivals.isEmpty {
+        if !featuredRivalSlots.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    BattleStatsTheme.sectionTitle("YOUR RIVALS")
+                    BattleStatsTheme.sectionTitle("YOUR RIVALS", accent: .cool)
                     Spacer()
                     Button("View all →") {
                         isAllRivalsSheetPresented = true
                     }
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: BattleStatsTheme.Typography.captionSmall, weight: .semibold))
                     .foregroundStyle(BattleStatsTheme.green)
                     .buttonStyle(.plain)
                 }
 
-                ForEach(Array(topRivals.prefix(3))) { rival in
-                    StatsCompactRivalCard(rival: rival, onRematch: {
-                        onRematchRival(rival.challengePrefillOpponent())
-                    })
+                ForEach(featuredRivalSlots) { slot in
+                    StatsCompactRivalCard(
+                        category: slot.category,
+                        rival: slot.rival,
+                        completedMatches: completedMatches,
+                        isLoadingCompletedMatches: isLoadingCompletedMatches,
+                        onRematch: {
+                            onRematchRival(slot.rival.challengePrefillOpponent())
+                        },
+                        onOpenMatchDetails: onOpenMatchDetails,
+                        onLoadCompletedMatchesIfNeeded: onLoadCompletedMatchesIfNeeded
+                    )
                 }
             }
         }
@@ -131,7 +186,14 @@ struct StatsArcadeSliceOneView: View {
             profileTimeZoneIdentifier: nil,
             battleStats: .empty,
             rivalStats: [],
+            completedMatches: [],
+            isLoadingCompletedMatches: false,
             activeMatchEdges: [],
+            stepsToday: 8_432,
+            stepsGoal: 12_000,
+            userIntradayDomain: nil,
+            isUserIntradayLoading: false,
+            stepsLastUpdatedAt: Date().addingTimeInterval(-180),
             battleStepsDisplay: StatsBattleStepsDisplay(
                 todaySteps: 8420,
                 allTimeSteps: 1_204_500,

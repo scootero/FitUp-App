@@ -7,6 +7,7 @@ import SwiftUI
 
 struct StatsBattleStepsCard: View {
     let display: StatsBattleStepsDisplay?
+    var onShowMetricExplainer: (StatsMetricExplainerKind) -> Void = { _ in }
 
     private static let subCardMinHeight: CGFloat = 124
     private static let subCardCornerRadius: CGFloat = 16
@@ -21,7 +22,7 @@ struct StatsBattleStepsCard: View {
 
         BattleStatsTheme.battleStatsCard {
             VStack(alignment: .leading, spacing: 12) {
-                BattleStatsTheme.sectionTitle("BATTLE STEPS")
+                BattleStatsTheme.sectionTitle("BATTLE STEPS", accent: .warm)
 
                 LazyVGrid(
                     columns: [
@@ -32,6 +33,7 @@ struct StatsBattleStepsCard: View {
                 ) {
                     subCard(
                         title: "TODAY'S BATTLE STEPS",
+                        explainer: .todaysBattleSteps,
                         value: isTodayBattleDay ? todaySteps : nil,
                         subtitle: isTodayBattleDay
                             ? "Live steps on a battle day"
@@ -40,6 +42,7 @@ struct StatsBattleStepsCard: View {
                     )
                     subCard(
                         title: "ALL-TIME BATTLE STEPS",
+                        explainer: .allTimeBattleSteps,
                         value: hasData ? allTimeSteps : nil,
                         subtitle: "Total on battle days",
                         valueTint: BattleStatsTheme.blue
@@ -59,27 +62,26 @@ struct StatsBattleStepsCard: View {
     private func avgBattleDayFullWidthCard(value: Int?, subtitle: String) -> some View {
         VStack(spacing: 10) {
             Text("AVG BATTLE DAY")
-                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                .font(.system(size: BattleStatsTheme.Typography.caption, weight: .heavy, design: .rounded))
                 .tracking(1)
-                .foregroundStyle(BattleStatsTheme.textPrimary)
+                .battleStatsStyle(.primary, size: BattleStatsTheme.Typography.caption, weight: .heavy, accent: .warm)
                 .frame(maxWidth: .infinity)
 
             if let value {
                 Text(value.formatted())
-                    .font(.system(size: 34, weight: .black, design: .monospaced))
+                    .font(.system(size: 41, weight: .black, design: .monospaced))
                     .foregroundStyle(Self.avgBattleDayTint)
                     .shadow(color: Self.avgBattleDayTint.opacity(0.45), radius: 10)
                     .frame(maxWidth: .infinity)
             } else {
                 Text(BattleStatsTheme.unresolvedPlaceholder)
-                    .font(.system(size: 34, weight: .black, design: .monospaced))
+                    .font(.system(size: 41, weight: .black, design: .monospaced))
                     .foregroundStyle(Self.avgBattleDayTint)
                     .frame(maxWidth: .infinity)
             }
 
             Text(subtitle)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(BattleStatsTheme.textSecondary)
+                .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.bodySmall, accent: .warm)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
         }
@@ -88,25 +90,37 @@ struct StatsBattleStepsCard: View {
         .padding(.vertical, 16)
         .background {
             RoundedRectangle(cornerRadius: Self.subCardCornerRadius, style: .continuous)
-                .fill(Self.avgBattleDayTint.opacity(0.08))
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Self.avgBattleDayTint.opacity(0.2),
+                            Self.avgBattleDayTint.opacity(0.06),
+                            FitUpColors.Neon.yellow.opacity(0.1),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
         }
         .overlay {
             RoundedRectangle(cornerRadius: Self.subCardCornerRadius, style: .continuous)
                 .strokeBorder(Self.avgBattleDayTint.opacity(0.28), lineWidth: 1)
         }
+        .statsCardMetricInfoCorner(kind: .avgBattleDay, accent: .warm, onShow: onShowMetricExplainer)
     }
 
     private func subCard(
         title: String,
+        explainer: StatsMetricExplainerKind,
         value: Int?,
         subtitle: String,
         valueTint: Color
     ) -> some View {
         VStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 10, weight: .heavy))
+                .font(.system(size: BattleStatsTheme.Typography.caption, weight: .heavy))
                 .tracking(0.5)
-                .foregroundStyle(BattleStatsTheme.textPrimary.opacity(0.92))
+                .battleStatsStyle(.primary, size: BattleStatsTheme.Typography.caption, weight: .heavy, accent: .warm)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.85)
@@ -116,14 +130,13 @@ struct StatsBattleStepsCard: View {
                 StatsAnimatedStepCount(value: value, tint: valueTint, centered: true)
             } else {
                 Text(BattleStatsTheme.unresolvedPlaceholder)
-                    .font(.system(size: 26, weight: .black, design: .monospaced))
+                    .font(.system(size: 31, weight: .black, design: .monospaced))
                     .foregroundStyle(valueTint)
                     .frame(maxWidth: .infinity)
             }
 
             Text(subtitle)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(BattleStatsTheme.textSecondary)
+                .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.caption, accent: .warm)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
@@ -133,12 +146,23 @@ struct StatsBattleStepsCard: View {
         .padding(.vertical, 12)
         .background {
             RoundedRectangle(cornerRadius: Self.subCardCornerRadius, style: .continuous)
-                .fill(Color.white.opacity(0.04))
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            valueTint.opacity(0.18),
+                            valueTint.opacity(0.05),
+                            valueTint.opacity(0.12),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
         }
         .overlay {
             RoundedRectangle(cornerRadius: Self.subCardCornerRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+                .strokeBorder(valueTint.opacity(0.28), lineWidth: 0.5)
         }
+        .statsCardMetricInfoCorner(kind: explainer, accent: .warm, onShow: onShowMetricExplainer)
     }
 }
 
@@ -154,7 +178,7 @@ struct StatsAnimatedStepCount: View {
 
     var body: some View {
         Text(displayedValue.formatted())
-            .font(.system(size: 26, weight: .black, design: .monospaced))
+            .font(.system(size: 31, weight: .black, design: .monospaced))
             .foregroundStyle(tint)
             .shadow(color: tint.opacity(0.45), radius: 8)
             .contentTransition(.numericText())

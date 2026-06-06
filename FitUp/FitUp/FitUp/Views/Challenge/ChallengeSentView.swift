@@ -21,7 +21,7 @@ struct ChallengeSentView: View {
     @State private var autoDismissTask: Task<Void, Never>?
     @State private var exitFadeTask: Task<Void, Never>?
 
-    private static let autoDismissDelay: Duration = .seconds(2)
+    private static let autoDismissDelay: Duration = .seconds(2.5)
     private static let exitFadeDuration: Duration = .milliseconds(450)
 
     var body: some View {

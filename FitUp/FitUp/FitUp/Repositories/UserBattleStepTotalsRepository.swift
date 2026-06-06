@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import HealthKit
 import Supabase
 
 enum UserBattleStepTotalsRepositoryError: Error {
@@ -63,8 +64,9 @@ final class UserBattleStepTotalsRepository {
     func syncProvisionalBattleDays(
         profile: Profile,
         battleDateKeys: Set<String>
-    ) async {
-        guard !battleDateKeys.isEmpty else { return }
+    ) async -> HealthKitDaySyncCounts {
+        var counts = HealthKitDaySyncCounts()
+        guard !battleDateKeys.isEmpty else { return counts }
 
         let tzId = profile.timezone
         let timeZone = (tzId.flatMap { TimeZone(identifier: $0) }) ?? .current
@@ -72,7 +74,7 @@ final class UserBattleStepTotalsRepository {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         let now = Date()
-        guard let todayStart = calendar.dateInterval(of: .day, for: now)?.start else { return }
+        guard let todayStart = calendar.dateInterval(of: .day, for: now)?.start else { return counts }
 
         var eligibleKeys: [String] = []
         for offset in 0 ..< Self.rollingDayCount {
@@ -85,7 +87,7 @@ final class UserBattleStepTotalsRepository {
                 eligibleKeys.append(key)
             }
         }
-        guard !eligibleKeys.isEmpty else { return }
+        guard !eligibleKeys.isEmpty else { return counts }
 
         do {
             let c = try client
@@ -102,14 +104,20 @@ final class UserBattleStepTotalsRepository {
                         timeZone: timeZone
                     )
                 } catch {
+                    counts.skipped += 1
+                    if HealthKitService.hkErrorRawCode(error) == 6 {
+                        counts.skippedHK6 += 1
+                    }
+                    let logLevel: LogLevel = HealthKitSyncSessionContext.hasActiveSession ? .debug : .warning
                     AppLogger.log(
                         category: "healthkit_sync",
-                        level: .warning,
+                        level: logLevel,
                         message: "user_battle_step_totals: skipped day (HealthKit read failed)",
                         userId: profile.id,
                         metadata: [
                             "battle_date": key,
                             "error": error.localizedDescription,
+                            "hk_error_code": (error as? HKError).map { "\($0.code.rawValue)" } ?? "n/a",
                         ]
                     )
                     continue
@@ -122,6 +130,8 @@ final class UserBattleStepTotalsRepository {
                 try await c
                     .rpc("upsert_provisional_user_battle_step", params: params)
                     .execute()
+                counts.ok += 1
+                HealthKitDiagnosticsStore.markBackendWriteSuccess()
             }
         } catch {
             AppLogger.log(
@@ -132,6 +142,7 @@ final class UserBattleStepTotalsRepository {
                 metadata: ["error": error.localizedDescription]
             )
         }
+        return counts
     }
 
     private func dateFromCalendarDateKey(_ key: String, timeZone: TimeZone) -> Date? {

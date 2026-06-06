@@ -11,7 +11,7 @@ struct CalendarDayCell: View {
     let item: CalendarDayItem
     let mode: ActivityCalendarMode
     var layout: ActivityCalendarLayout = .compact
-    let battleState: CalendarDayBattleState
+    let battleSummary: CalendarDayBattleSummary
     let battleMargin: Int?
     let stepsState: CalendarDayStepsState?
     let isSelected: Bool
@@ -70,15 +70,26 @@ struct CalendarDayCell: View {
         Group {
             switch mode {
             case .battles:
-                CalendarDayRingView(
-                    style: .battle(state: battleState, margin: battleMargin),
-                    size: ringSize,
-                    layout: layout
-                )
+                VStack(spacing: 1) {
+                    CalendarDayRingView(
+                        style: .battle(summary: battleSummary, margin: battleMargin),
+                        size: ringSize,
+                        layout: layout
+                    )
+                    .frame(width: ringSize, height: ringSize)
+
+                    if battleSummary.matchCount > 1 {
+                        Text("x\(battleSummary.matchCount)")
+                            .font(FitUpFont.mono(layout == .expanded ? 7 : 8, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
             case .steps:
                 CalendarDayRingView(style: .steps(stepsState), size: ringSize, layout: layout)
+                    .frame(width: ringSize, height: ringSize)
             }
         }
-        .frame(width: ringSize, height: ringSize)
     }
 }

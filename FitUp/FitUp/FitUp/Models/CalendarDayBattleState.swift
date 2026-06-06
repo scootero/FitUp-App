@@ -57,6 +57,69 @@ enum CalendarDayBattleState: Equatable, Sendable {
     }
 }
 
+/// Per-date win/loss breakdown for Battles calendar ring indicators.
+struct CalendarDayBattleSummary: Equatable, Sendable {
+    let state: CalendarDayBattleState
+    let matchCount: Int
+    let wins: Int
+    let losses: Int
+    let voids: Int
+
+    var netScore: Int { wins - losses }
+
+    static let empty = CalendarDayBattleSummary(
+        state: .none,
+        matchCount: 0,
+        wins: 0,
+        losses: 0,
+        voids: 0
+    )
+
+    /// Merges multiple match-day rows for the same calendar date with W/L/V counts.
+    static func aggregateSummary(dayRows: [CalendarMatchDayRow], userId: UUID) -> CalendarDayBattleSummary {
+        guard !dayRows.isEmpty else { return .empty }
+
+        var hasInProgress = false
+        var wins = 0
+        var losses = 0
+        var voids = 0
+
+        for row in dayRows {
+            if row.status != "finalized" {
+                hasInProgress = true
+                continue
+            }
+            if row.isVoid {
+                voids += 1
+                continue
+            }
+            guard let winnerId = row.winnerUserId else {
+                voids += 1
+                continue
+            }
+            if winnerId == userId {
+                wins += 1
+            } else {
+                losses += 1
+            }
+        }
+
+        let state = CalendarDayBattleState.aggregate(dayRows: dayRows, userId: userId)
+        return CalendarDayBattleSummary(
+            state: state,
+            matchCount: dayRows.count,
+            wins: wins,
+            losses: losses,
+            voids: voids
+        )
+    }
+}
+
+struct CalendarBattleStatesResult: Equatable, Sendable {
+    let states: [String: CalendarDayBattleState]
+    let summaries: [String: CalendarDayBattleSummary]
+}
+
 /// Raw match day row used when aggregating calendar battle states.
 struct CalendarMatchDayRow: Equatable, Sendable {
     let calendarDate: String

@@ -312,6 +312,7 @@ struct HomeRivalStat: Identifiable, Equatable, Sendable {
     let daysWonByOpponent: Int?
     let avgMarginOnViewerWinDays: Double?
     let avgMarginOnOpponentWinDays: Double?
+    let avgViewerStepsPerBattleDay: Double?
     let recentSeriesResults: [String]?
     let activeMatchId: UUID?
     let computedAt: Date?
@@ -1361,6 +1362,7 @@ private struct HomeMyRivalStatsRPCRow: Decodable, Sendable {
     let days_won_by_opponent: Int?
     let avg_margin_on_viewer_win_days: Double?
     let avg_margin_on_opponent_win_days: Double?
+    let avg_viewer_steps_per_battle_day: Double?
     let recent_series_results: [String]?
     let active_match_id: UUID?
     let computed_at: Date?
@@ -1381,6 +1383,7 @@ private struct HomeMyRivalStatsRPCRow: Decodable, Sendable {
         case days_won_by_opponent
         case avg_margin_on_viewer_win_days
         case avg_margin_on_opponent_win_days
+        case avg_viewer_steps_per_battle_day
         case recent_series_results
         case active_match_id
         case computed_at
@@ -1403,6 +1406,7 @@ private struct HomeMyRivalStatsRPCRow: Decodable, Sendable {
         days_won_by_opponent = Self.decodeOptionalInt(c, key: .days_won_by_opponent)
         avg_margin_on_viewer_win_days = Self.decodeOptionalNumericDouble(c, key: .avg_margin_on_viewer_win_days)
         avg_margin_on_opponent_win_days = Self.decodeOptionalNumericDouble(c, key: .avg_margin_on_opponent_win_days)
+        avg_viewer_steps_per_battle_day = Self.decodeOptionalNumericDouble(c, key: .avg_viewer_steps_per_battle_day)
         recent_series_results = Self.decodeOptionalStringArray(c, key: .recent_series_results)
         active_match_id = try c.decodeIfPresent(UUID.self, forKey: .active_match_id)
         computed_at = try c.decodeIfPresent(Date.self, forKey: .computed_at)
@@ -1482,6 +1486,7 @@ private struct HomeMyRivalStatsRPCRow: Decodable, Sendable {
             daysWonByOpponent: days_won_by_opponent.map { max(0, $0) },
             avgMarginOnViewerWinDays: avg_margin_on_viewer_win_days,
             avgMarginOnOpponentWinDays: avg_margin_on_opponent_win_days,
+            avgViewerStepsPerBattleDay: avg_viewer_steps_per_battle_day,
             recentSeriesResults: recent_series_results,
             activeMatchId: active_match_id,
             computedAt: computed_at

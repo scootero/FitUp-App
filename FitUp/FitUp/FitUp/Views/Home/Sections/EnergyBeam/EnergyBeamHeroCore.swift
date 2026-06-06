@@ -1183,8 +1183,10 @@ private struct ProceduralEnergyBeamView: View {
                 }
                 .frame(width: w, height: stripHeight)
                 .frame(maxHeight: .infinity, alignment: .center)
+                .background(Color.clear)
             }
         }
+        .background(Color.clear)
         .frame(height: scaledBeamHeight(beamVisualTuning.beamOuterHeight))
         .onChange(of: marginRounded) { _, _ in
             guard !suppressImpactBursts else { return }
@@ -2342,6 +2344,7 @@ private struct MomentumChipView: View {
 /// Intraday chart on a fixed full-day axis (12 AM → midnight) with a top NOW marker and press-to-inspect.
 private struct DayBattleSparklinePreview: View {
     let domain: HomeHeroSparklineDomain
+    var stepsGoal: Int = 0
     var opponentIntradayLatestTickAt: Date? = nil
     var showMockTimelineLabel: Bool = false
     @Binding var blocksHeroCardNavigation: Bool
@@ -2354,6 +2357,7 @@ private struct DayBattleSparklinePreview: View {
     private var topBandHeight: CGFloat { HomeHeroCompactLayout.scaled(26, by: compactScale) }
     private var chartPad: CGPoint { CGPoint(x: 14, y: 10) }
     private var outerHorizontalPad: CGFloat { HomeHeroCompactLayout.scaled(10, by: compactScale) }
+    private var panelCornerRadius: CGFloat { HomeHeroCompactLayout.scaled(18, by: compactScale) }
 
     private var daySpan: TimeInterval {
         max(domain.dayEnd.timeIntervalSince(domain.dayStart), 1)
@@ -2363,6 +2367,41 @@ private struct DayBattleSparklinePreview: View {
 
     private var effectiveFraction: CGFloat {
         min(nowFraction, max(0, scrubbedFraction ?? nowFraction))
+    }
+
+    private var visibleSamples: [HomeHeroSparklineSample] {
+        domain.samples.filter { $0.timestamp <= domain.now }
+    }
+
+    /// Highest cumulative steps for either player in the visible window.
+    private var peakStepsInSeries: Int {
+        let userPeak = visibleSamples.map(\.userSteps).max() ?? 0
+        let opponentPeak = visibleSamples.map(\.opponentSteps).max() ?? 0
+        return max(userPeak, opponentPeak)
+    }
+
+    /// Goal-anchored Y scale; expands in 25% goal increments once either player exceeds the goal.
+    private var yScaleMaximum: Int {
+        let peak = peakStepsInSeries
+        guard stepsGoal > 0 else {
+            return max(peak, 1)
+        }
+        if peak <= stepsGoal {
+            return stepsGoal
+        }
+        var yMax = stepsGoal
+        let increment = max(Int((Double(stepsGoal) * 0.25).rounded()), 1)
+        while peak > yMax {
+            yMax += increment
+        }
+        return yMax
+    }
+
+    private var goalExceeded: Bool {
+        guard stepsGoal > 0 else { return false }
+        let userPeak = visibleSamples.map(\.userSteps).max() ?? 0
+        let opponentPeak = visibleSamples.map(\.opponentSteps).max() ?? 0
+        return userPeak >= stepsGoal || opponentPeak >= stepsGoal
     }
 
     /// Latest opponent sample on the fixed day axis (may trail viewer *Now*).
@@ -2389,21 +2428,23 @@ private struct DayBattleSparklinePreview: View {
                 let plotRect = CGRect(origin: plotOrigin, size: plotSize)
                 let pad = chartPad
                 let innerW = max(plotSize.width - pad.x * 2, 1)
-                let ptsU = timeSampledPoints(role: .user, plotRect: plotRect, pad: pad)
-                let ptsO = timeSampledPoints(role: .opponent, plotRect: plotRect, pad: pad)
+                let yMax = yScaleMaximum
+                let ptsU = timeSampledPoints(role: .user, plotRect: plotRect, pad: pad, yMax: yMax)
+                let ptsO = timeSampledPoints(role: .opponent, plotRect: plotRect, pad: pad, yMax: yMax)
                 let markerX = plotRect.minX + pad.x + effectiveFraction * innerW
                 let nowX = plotRect.minX + pad.x + nowFraction * innerW
                 let plotBottom = plotRect.maxY - pad.y
 
                 ZStack(alignment: .topLeading) {
-                    roundedChartBackground()
-                        .frame(width: w, height: h)
-
                     chartTextureOverlay(rect: plotRect)
                     fadedDistanceGrid(rect: plotRect)
                     noonGuideLine(plotRect: plotRect, pad: pad, innerW: innerW)
                     timeAxisTicks(rect: plotRect, pad: pad, innerW: innerW)
                     playerNowAxisTicks(rect: plotRect, pad: pad, innerW: innerW)
+
+                    if stepsGoal > 0 {
+                        goalReferenceLine(plotRect: plotRect, pad: pad, yMax: yMax)
+                    }
 
                     sparklineAreaFill(points: ptsU, color: FitUpColors.Neon.cyan, in: plotRect, pad: pad)
                     sparklineAreaFill(points: ptsO, color: FitUpColors.Neon.orange, in: plotRect, pad: pad)
@@ -2453,40 +2494,16 @@ private struct DayBattleSparklinePreview: View {
             #endif
         }
         .padding(outerHorizontalPad)
+        .neonInsetPanel(
+            accent: FitUpColors.Neon.green,
+            cornerRadius: panelCornerRadius,
+            glowEndRadius: HomeHeroCompactLayout.scaled(120, by: compactScale)
+        )
         .allowsTightening(true)
         .minimumScaleFactor(0.94)
         .accessibilityHint("Press and drag on the timeline to inspect pace at a specific time.")
-        .background {
-            let corner = HomeHeroCompactLayout.scaled(18, by: compactScale)
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.09),
-                            Color.white.opacity(0.05),
-                            Color.white.opacity(0.08),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    FitUpColors.Neon.green.opacity(0.12),
-                                    FitUpColors.Neon.cyan.opacity(0.1),
-                                    FitUpColors.Neon.orange.opacity(0.12),
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            lineWidth: 1
-                        )
-                }
-        }
-        .contentShape(RoundedRectangle(cornerRadius: HomeHeroCompactLayout.scaled(18, by: compactScale), style: .continuous))
+        .animation(.easeOut(duration: 0.45), value: yScaleMaximum)
+        .contentShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
         .overlay {
             GeometryReader { geo in
                 Color.clear
@@ -2559,7 +2576,7 @@ private struct DayBattleSparklinePreview: View {
         .frame(height: HomeHeroCompactLayout.scaled(22, by: compactScale))
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("12 AM to midnight. Noon and 12 PM at center.")
+        .accessibilityLabel("12 AM to midnight. Noon at center.")
     }
 
     private func playerAxisMarker(color: Color) -> some View {
@@ -2574,14 +2591,7 @@ private struct DayBattleSparklinePreview: View {
     }
 
     private var noonAxisLabels: some View {
-        VStack(spacing: 1) {
-            chartAxisLabel("NOON")
-            Text("12 PM")
-                .font(FitUpFont.body(HomeHeroCompactLayout.scaled(10, by: compactScale), weight: .heavy))
-                .foregroundStyle(Color.white.opacity(0.48))
-                .tracking(1.6 * compactScale)
-                .lineLimit(1)
-        }
+        chartAxisLabel("NOON")
     }
 
     private func timeFraction(_ date: Date) -> CGFloat {
@@ -2631,15 +2641,11 @@ private struct DayBattleSparklinePreview: View {
         return formatter.string(from: date)
     }
 
-    private func timeSampledPoints(role: SeriesRole, plotRect: CGRect, pad: CGPoint) -> [CGPoint] {
-        let samples = domain.samples.filter { $0.timestamp <= domain.now }
+    private func timeSampledPoints(role: SeriesRole, plotRect: CGRect, pad: CGPoint, yMax: Int) -> [CGPoint] {
+        let samples = visibleSamples
         guard samples.count >= 2 else { return [] }
 
-        let maxVal = max(
-            1,
-            samples.map(\.userSteps).max() ?? 0,
-            samples.map(\.opponentSteps).max() ?? 0
-        )
+        let maxVal = max(1, yMax)
 
         let minX = plotRect.minX + pad.x
         let maxX = plotRect.maxX - pad.x
@@ -2657,6 +2663,54 @@ private struct DayBattleSparklinePreview: View {
             let y = mapY(role == .user ? sample.userSteps : sample.opponentSteps)
             return CGPoint(x: x, y: y)
         }
+    }
+
+    private func yPosition(for cumulative: Int, plotRect: CGRect, pad: CGPoint, yMax: Int) -> CGFloat {
+        let maxVal = max(1, yMax)
+        let minY = plotRect.minY + pad.y
+        let maxY = plotRect.maxY - pad.y
+        let normalized = CGFloat(min(1, max(0, Double(cumulative) / Double(maxVal))))
+        return maxY - normalized * (maxY - minY)
+    }
+
+    private func goalReferenceLine(plotRect: CGRect, pad: CGPoint, yMax: Int) -> some View {
+        let goalY = yPosition(for: stepsGoal, plotRect: plotRect, pad: pad, yMax: yMax)
+        let innerLeft = plotRect.minX + pad.x
+        let innerRight = plotRect.maxX - pad.x
+        let lineColor = goalExceeded ? FitUpColors.Neon.green.opacity(0.42) : Color.white.opacity(0.3)
+        let labelColor = goalExceeded ? FitUpColors.Neon.green.opacity(0.78) : Color.white.opacity(0.5)
+        let labelSize = HomeHeroCompactLayout.scaled(8, by: compactScale)
+        let numberSize = HomeHeroCompactLayout.scaled(9, by: compactScale)
+
+        return ZStack(alignment: .topLeading) {
+            Path { path in
+                path.move(to: CGPoint(x: innerLeft, y: goalY))
+                path.addLine(to: CGPoint(x: innerRight, y: goalY))
+            }
+            .stroke(
+                lineColor,
+                style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [4, 6])
+            )
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Goal")
+                    .font(FitUpFont.body(labelSize, weight: .heavy))
+                    .foregroundStyle(labelColor)
+                    .tracking(0.8)
+                Text(stepsGoal.formatted())
+                    .font(FitUpFont.body(numberSize, weight: .bold))
+                    .foregroundStyle(labelColor.opacity(0.92))
+            }
+            .padding(.horizontal, HomeHeroCompactLayout.scaled(5, by: compactScale))
+            .padding(.vertical, HomeHeroCompactLayout.scaled(2, by: compactScale))
+            .background(Color.black.opacity(0.34))
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .position(
+                x: innerLeft + HomeHeroCompactLayout.scaled(24, by: compactScale),
+                y: goalY - HomeHeroCompactLayout.scaled(12, by: compactScale)
+            )
+        }
+        .allowsHitTesting(false)
     }
 
     /// Soft area fill under each series for a more chart-like read.
@@ -2773,12 +2827,6 @@ private struct DayBattleSparklinePreview: View {
             }
         }
         .allowsHitTesting(false)
-    }
-
-    /// Dark rounded plate behind chart paths.
-    private func roundedChartBackground() -> some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Color.black.opacity(0.22))
     }
 
     /// Wide-spaced faint mesh: few divisions + dim cyan/blue/orange gradient (neon wash, not white graph paper).
@@ -3130,6 +3178,8 @@ struct EnergyBeamHeroGlassCardView: View {
     let dayElapsedFraction: CGFloat
     let dayProgressCaption: String
     var showMockTimelineDebugLabel: Bool = false
+    /// Daily step goal from `readiness_steps_goal` (device-local); anchors chart Y-axis + goal line.
+    var stepsGoal: Int = ReadinessGoals.default.stepsGoal
     /// Last successful HealthKit **steps** read for “You” (Slice 6); `nil` hides that side until known.
     var viewerIntradayHealthKitSyncedAt: Date? = nil
     /// Latest opponent intraday tick timestamp from server (Slice 6).
@@ -3256,6 +3306,7 @@ struct EnergyBeamHeroGlassCardView: View {
 
             DayBattleSparklinePreview(
                 domain: sparklineDomain,
+                stepsGoal: stepsGoal,
                 opponentIntradayLatestTickAt: opponentIntradayLatestTickAt,
                 showMockTimelineLabel: showMockTimelineDebugLabel,
                 blocksHeroCardNavigation: $blocksHeroCardNavigation
@@ -3268,44 +3319,27 @@ struct EnergyBeamHeroGlassCardView: View {
                 .padding(.bottom, scaled(12))
         }
         .background {
-            ZStack {
-                RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                    .fill(FitUpColors.Bg.base.opacity(0.78))
-
-                RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color.clear,
-                                FitUpColors.Bg.base.opacity(0.22),
-                                FitUpColors.Bg.base.opacity(0.72),
-                                FitUpColors.Bg.base.opacity(0.94),
-                            ],
-                            center: .center,
-                            startRadius: 8,
-                            endRadius: 320
-                        )
-                    )
-
-                RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.22),
-                                FitUpColors.Neon.cyan.opacity(0.18),
-                                FitUpColors.Neon.orange.opacity(0.15),
-                                Color.white.opacity(0.12),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .fill(.clear)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.22),
+                            FitUpColors.Neon.cyan.opacity(0.18),
+                            FitUpColors.Neon.orange.opacity(0.15),
+                            Color.white.opacity(0.12),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+                .allowsHitTesting(false)
         }
         .clipShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
-        .shadow(color: FitUpColors.Neon.cyan.opacity(0.12), radius: scaled(28), y: scaled(10))
-        .shadow(color: .black.opacity(0.65), radius: scaled(18), y: scaled(10))
         .animation(
             EnergyBeamHeroLayout.marginTransitionAnimation(duration: EnergyBeamHeroLayout.marginDrivenAnimationSeconds),
             value: beamCollisionMarginPrecise
