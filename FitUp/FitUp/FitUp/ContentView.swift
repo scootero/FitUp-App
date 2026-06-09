@@ -32,6 +32,7 @@ struct ContentView: View {
         }
         .screenTransition()
         .onAppear {
+            notificationService.syncApplicationIconBadge()
             if !sessionStore.isLoadingSession {
                 ProductAnalytics.trackAppColdStartIfNeeded(userId: sessionStore.currentProfile?.id)
             }
@@ -64,6 +65,7 @@ struct ContentView: View {
             }
             ProductAnalytics.handleScenePhaseChange(newPhase, userId: sessionStore.currentProfile?.id)
             guard newPhase == .active else { return }
+            notificationService.syncApplicationIconBadge()
             guard sessionStore.isOnboardingComplete || sessionStore.healthKitPromptCompleted else { return }
             Task {
                 await MetricSyncCoordinator.shared.appDidBecomeActive()

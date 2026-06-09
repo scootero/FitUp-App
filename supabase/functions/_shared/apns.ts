@@ -19,6 +19,8 @@ export type AlertPushInput = {
   title?: string;
   body: string;
   payload: Record<string, unknown>;
+  /** Only included in the APNs payload when caller has a real unread count. */
+  badge?: number;
 };
 
 export type LiveActivityPushInput = {
@@ -34,15 +36,23 @@ export function apnsConfigured(): boolean {
 }
 
 export async function sendAlertPush(input: AlertPushInput): Promise<ApnsResult> {
-  const apsPayload = {
-    aps: {
-      alert: {
-        title: input.title ?? "FitUp",
-        body: input.body,
-      },
-      sound: "default",
-      badge: 1,
+  const aps: Record<string, unknown> = {
+    alert: {
+      title: input.title ?? "FitUp",
+      body: input.body,
     },
+    sound: "default",
+  };
+  if (
+    typeof input.badge === "number" &&
+    Number.isInteger(input.badge) &&
+    input.badge >= 0
+  ) {
+    aps.badge = input.badge;
+  }
+
+  const apsPayload = {
+    aps,
     ...input.payload,
   };
 

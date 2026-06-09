@@ -18,7 +18,7 @@ struct StatsUserStepsTodayHeroCard: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var displayedSteps: Int = 0
-    @State private var displayedUpdatedSeconds: Int?
+    @State private var displayedUpdatedMinutes: Int?
     @State private var introTask: Task<Void, Never>?
     @State private var introTargetSteps: Int = 0
 
@@ -123,7 +123,7 @@ struct StatsUserStepsTodayHeroCard: View {
 
                 if stepsGoal > 0 {
                     Text(stepsGoal.formatted())
-                        .font(FitUpFont.display(26, weight: .heavy))
+                        .font(FitUpFont.display(21, weight: .heavy))
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [BattleStatsTheme.gold, FitUpColors.Neon.yellow.opacity(0.92)],
@@ -134,18 +134,18 @@ struct StatsUserStepsTodayHeroCard: View {
                         .shadow(color: BattleStatsTheme.gold.opacity(0.45), radius: 6, x: 0, y: 2)
                 } else {
                     Text("—")
-                        .font(FitUpFont.display(26, weight: .heavy))
+                        .font(FitUpFont.display(21, weight: .heavy))
                         .foregroundStyle(BattleStatsTheme.gold.opacity(0.7))
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 10)
             .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(BattleStatsTheme.gold.opacity(0.12))
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .strokeBorder(BattleStatsTheme.gold.opacity(0.32), lineWidth: 1)
             }
         }
@@ -154,42 +154,35 @@ struct StatsUserStepsTodayHeroCard: View {
     }
 
     private var chartMetadataRow: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            HStack(spacing: 8) {
-                Spacer(minLength: 0)
-                Text("Updated: \(updatedRelativeLabel(relativeTo: context.date))")
-                Text("Apple Health")
-            }
-            .font(FitUpFont.body(BattleStatsTheme.Typography.caption, weight: .semibold))
-            .foregroundStyle(BattleStatsTheme.textPrimary.opacity(0.92))
-            .lineLimit(1)
-            .minimumScaleFactor(0.85)
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            Text("Updated: \(updatedRelativeLabel(relativeTo: context.date))")
+                .font(FitUpFont.body(11, weight: .medium))
+                .foregroundStyle(BattleStatsTheme.textLabel.opacity(0.45))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
     }
 
     private func updatedRelativeLabel(relativeTo now: Date = Date()) -> String {
         guard let lastUpdatedAt else { return "updating…" }
-        let seconds: Int
-        if introTask != nil, let displayedUpdatedSeconds {
-            seconds = displayedUpdatedSeconds
+        let minutes: Int
+        if introTask != nil, let displayedUpdatedMinutes {
+            minutes = displayedUpdatedMinutes
         } else {
-            seconds = max(0, Int(now.timeIntervalSince(lastUpdatedAt).rounded()))
+            minutes = max(0, Int(now.timeIntervalSince(lastUpdatedAt) / 60))
         }
-        if seconds <= 0 {
-            return "just now"
+        if minutes < 1 {
+            return "<1 min ago"
         }
-        if seconds == 1 {
-            return "1 sec ago"
+        if minutes == 1 {
+            return "1 min ago"
         }
-        return "\(seconds) sec ago"
+        return "\(minutes) min ago"
     }
 
     @ViewBuilder
     private var chartSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            chartMetadataRow
-                .padding(.horizontal, 2)
-
             if isLoading, domain == nil {
                 HStack(spacing: 8) {
                     ProgressView()
@@ -217,11 +210,15 @@ struct StatsUserStepsTodayHeroCard: View {
                     liveStepsToday: resolvedStepsToday
                 )
             }
+
+            chartMetadataRow
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.horizontal, 2)
         }
     }
 
-    private func secondsSince(_ date: Date) -> Int {
-        max(0, Int(Date().timeIntervalSince(date).rounded()))
+    private func minutesSince(_ date: Date) -> Int {
+        max(0, Int(Date().timeIntervalSince(date) / 60))
     }
 
     private func syncDisplayedSteps(animated: Bool) {
@@ -244,18 +241,18 @@ struct StatsUserStepsTodayHeroCard: View {
         introTask?.cancel()
         introTask = nil
 
-        let targetSeconds = lastUpdatedAt.map { secondsSince($0) }
-        let startSeconds = max((targetSeconds ?? 0) + 5, 10)
+        let targetMinutes = lastUpdatedAt.map { minutesSince($0) }
+        let startMinutes = max((targetMinutes ?? 0) + 3, 5)
         introTargetSteps = resolvedStepsToday
 
         if reduceMotion {
             displayedSteps = introTargetSteps
-            displayedUpdatedSeconds = targetSeconds
+            displayedUpdatedMinutes = targetMinutes
             return
         }
 
         displayedSteps = 0
-        displayedUpdatedSeconds = startSeconds
+        displayedUpdatedMinutes = startMinutes
 
         let frames = 25
         introTask = Task { @MainActor in
@@ -270,9 +267,9 @@ struct StatsUserStepsTodayHeroCard: View {
 
                 displayedSteps = Int((Double(targetSteps) * eased).rounded(.down))
 
-                if let targetSeconds {
-                    let interpolated = Double(startSeconds) + (Double(targetSeconds) - Double(startSeconds)) * eased
-                    displayedUpdatedSeconds = max(0, Int(interpolated.rounded()))
+                if let targetMinutes {
+                    let interpolated = Double(startMinutes) + (Double(targetMinutes) - Double(startMinutes)) * eased
+                    displayedUpdatedMinutes = max(0, Int(interpolated.rounded()))
                 }
 
                 if frame < frames {
@@ -281,7 +278,7 @@ struct StatsUserStepsTodayHeroCard: View {
             }
 
             displayedSteps = introTargetSteps
-            displayedUpdatedSeconds = targetSeconds
+            displayedUpdatedMinutes = targetMinutes
         }
     }
 
@@ -304,9 +301,9 @@ private struct StatsHeroAnimatedStepCount: View {
 
     var body: some View {
         Text(value, format: .number)
-            .font(FitUpFont.display(48, weight: .heavy))
+            .font(FitUpFont.display(36, weight: .heavy))
             .foregroundStyle(tint)
-            .shadow(color: tint.opacity(0.45), radius: 8)
+            .shadow(color: tint.opacity(0.45), radius: 6)
             .contentTransition(.numericText(countsDown: false))
             .animation(.linear(duration: 0.65), value: value)
     }

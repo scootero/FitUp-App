@@ -17,6 +17,7 @@ struct HealthView: View {
     @StateObject private var viewModel = HealthViewModel()
     @Environment(\.openURL) private var openURL
     @State private var statsMetricExplainer: StatsMetricExplainerKind?
+    @State private var statsCombinedMetricExplainer: [StatsMetricExplainerKind]?
     @State private var showEditDailyStepGoal = false
     #if DEBUG
     @State private var isLegacyStatsExpanded = false
@@ -50,6 +51,7 @@ struct HealthView: View {
                         Task { await viewModel.loadCompletedMatchesIfNeeded() }
                     },
                     onShowMetricExplainer: { statsMetricExplainer = $0 },
+                    onShowCombinedMetricExplainer: { statsCombinedMetricExplainer = $0 },
                     onEditStepsGoal: {
                         showEditDailyStepGoal = true
                     }
@@ -77,6 +79,12 @@ struct HealthView: View {
                 StatsMetricExplainerOverlay(
                     kind: explainer,
                     onDismiss: { statsMetricExplainer = nil }
+                )
+            }
+            if let kinds = statsCombinedMetricExplainer {
+                StatsCombinedMetricExplainerOverlay(
+                    kinds: kinds,
+                    onDismiss: { statsCombinedMetricExplainer = nil }
                 )
             }
         }

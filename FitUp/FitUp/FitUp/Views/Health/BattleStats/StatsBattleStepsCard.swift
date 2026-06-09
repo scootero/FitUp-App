@@ -7,11 +7,21 @@ import SwiftUI
 
 struct StatsBattleStepsCard: View {
     let display: StatsBattleStepsDisplay?
-    var onShowMetricExplainer: (StatsMetricExplainerKind) -> Void = { _ in }
+    var onShowCombinedMetricExplainer: ([StatsMetricExplainerKind]) -> Void = { _ in }
 
     private static let subCardMinHeight: CGFloat = 124
     private static let subCardCornerRadius: CGFloat = 16
     private static let avgBattleDayTint = BattleStatsTheme.gold
+    private static let subCardLabelSize = BattleStatsTheme.Typography.caption * 0.9
+    private static let subCardSubtitleSize = BattleStatsTheme.Typography.caption * 0.9
+    private static let avgCardSubtitleSize = BattleStatsTheme.Typography.bodySmall * 0.9
+    private static let metricValueSize: CGFloat = 24
+
+    private static let explainerKinds: [StatsMetricExplainerKind] = [
+        .todaysBattleSteps,
+        .allTimeBattleSteps,
+        .avgBattleDay,
+    ]
 
     var body: some View {
         let todaySteps = display?.todaySteps ?? 0
@@ -20,9 +30,10 @@ struct StatsBattleStepsCard: View {
         let hasData = display != nil
         let avgSteps = display?.averageFinalizedBattleDaySteps
 
-        BattleStatsTheme.battleStatsCard {
+        BattleStatsTheme.battleStatsCard(accent: .warm) {
             VStack(alignment: .leading, spacing: 12) {
                 BattleStatsTheme.sectionTitle("BATTLE STEPS", accent: .warm)
+                    .padding(.trailing, 32)
 
                 LazyVGrid(
                     columns: [
@@ -33,7 +44,6 @@ struct StatsBattleStepsCard: View {
                 ) {
                     subCard(
                         title: "TODAY'S BATTLE STEPS",
-                        explainer: .todaysBattleSteps,
                         value: isTodayBattleDay ? todaySteps : nil,
                         subtitle: isTodayBattleDay
                             ? "Live steps on a battle day"
@@ -42,7 +52,6 @@ struct StatsBattleStepsCard: View {
                     )
                     subCard(
                         title: "ALL-TIME BATTLE STEPS",
-                        explainer: .allTimeBattleSteps,
                         value: hasData ? allTimeSteps : nil,
                         subtitle: "Total on battle days",
                         valueTint: BattleStatsTheme.blue
@@ -55,6 +64,11 @@ struct StatsBattleStepsCard: View {
                 )
             }
         }
+        .statsCardCombinedMetricInfoCorner(
+            kinds: Self.explainerKinds,
+            accent: .warm,
+            onShow: onShowCombinedMetricExplainer
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Battle steps")
     }
@@ -62,28 +76,32 @@ struct StatsBattleStepsCard: View {
     private func avgBattleDayFullWidthCard(value: Int?, subtitle: String) -> some View {
         VStack(spacing: 10) {
             Text("AVG BATTLE DAY")
-                .font(.system(size: BattleStatsTheme.Typography.caption, weight: .heavy, design: .rounded))
+                .font(.system(size: Self.subCardLabelSize, weight: .heavy, design: .rounded))
                 .tracking(1)
-                .battleStatsStyle(.primary, size: BattleStatsTheme.Typography.caption, weight: .heavy, accent: .warm)
+                .battleStatsStyle(.primary, size: Self.subCardLabelSize, weight: .heavy, accent: .warm)
                 .frame(maxWidth: .infinity)
 
             if let value {
                 Text(value.formatted())
-                    .font(.system(size: 41, weight: .black, design: .monospaced))
+                    .font(.system(size: Self.metricValueSize, weight: .bold, design: .monospaced))
                     .foregroundStyle(Self.avgBattleDayTint)
                     .shadow(color: Self.avgBattleDayTint.opacity(0.45), radius: 10)
                     .frame(maxWidth: .infinity)
             } else {
                 Text(BattleStatsTheme.unresolvedPlaceholder)
-                    .font(.system(size: 41, weight: .black, design: .monospaced))
+                    .font(.system(size: Self.metricValueSize, weight: .bold, design: .monospaced))
                     .foregroundStyle(Self.avgBattleDayTint)
                     .frame(maxWidth: .infinity)
             }
 
             Text(subtitle)
-                .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.bodySmall, accent: .warm)
+                .battleStatsStyle(.secondary, size: Self.avgCardSubtitleSize, accent: .warm)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
+
+            if value == nil {
+                emptyMatchHint
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 14)
@@ -106,21 +124,19 @@ struct StatsBattleStepsCard: View {
             RoundedRectangle(cornerRadius: Self.subCardCornerRadius, style: .continuous)
                 .strokeBorder(Self.avgBattleDayTint.opacity(0.28), lineWidth: 1)
         }
-        .statsCardMetricInfoCorner(kind: .avgBattleDay, accent: .warm, onShow: onShowMetricExplainer)
     }
 
     private func subCard(
         title: String,
-        explainer: StatsMetricExplainerKind,
         value: Int?,
         subtitle: String,
         valueTint: Color
     ) -> some View {
         VStack(spacing: 8) {
             Text(title)
-                .font(.system(size: BattleStatsTheme.Typography.caption, weight: .heavy))
+                .font(.system(size: Self.subCardLabelSize, weight: .heavy))
                 .tracking(0.5)
-                .battleStatsStyle(.primary, size: BattleStatsTheme.Typography.caption, weight: .heavy, accent: .warm)
+                .battleStatsStyle(.primary, size: Self.subCardLabelSize, weight: .heavy, accent: .warm)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.85)
@@ -130,16 +146,20 @@ struct StatsBattleStepsCard: View {
                 StatsAnimatedStepCount(value: value, tint: valueTint, centered: true)
             } else {
                 Text(BattleStatsTheme.unresolvedPlaceholder)
-                    .font(.system(size: 31, weight: .black, design: .monospaced))
+                    .font(.system(size: Self.metricValueSize, weight: .bold, design: .monospaced))
                     .foregroundStyle(valueTint)
                     .frame(maxWidth: .infinity)
             }
 
             Text(subtitle)
-                .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.caption, accent: .warm)
+                .battleStatsStyle(.secondary, size: Self.subCardSubtitleSize, accent: .warm)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
+
+            if value == nil {
+                emptyMatchHint
+            }
         }
         .frame(maxWidth: .infinity, minHeight: Self.subCardMinHeight, alignment: .center)
         .padding(.horizontal, 10)
@@ -162,7 +182,14 @@ struct StatsBattleStepsCard: View {
             RoundedRectangle(cornerRadius: Self.subCardCornerRadius, style: .continuous)
                 .strokeBorder(valueTint.opacity(0.28), lineWidth: 0.5)
         }
-        .statsCardMetricInfoCorner(kind: explainer, accent: .warm, onShow: onShowMetricExplainer)
+    }
+
+    private var emptyMatchHint: some View {
+        Text("Complete a match first…")
+            .font(FitUpFont.body(BattleStatsTheme.Typography.captionSmall, weight: .medium))
+            .foregroundStyle(BattleStatsTheme.textLabel.opacity(0.55))
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
     }
 }
 
@@ -178,7 +205,7 @@ struct StatsAnimatedStepCount: View {
 
     var body: some View {
         Text(displayedValue.formatted())
-            .font(.system(size: 31, weight: .black, design: .monospaced))
+            .font(.system(size: 24, weight: .bold, design: .monospaced))
             .foregroundStyle(tint)
             .shadow(color: tint.opacity(0.45), radius: 8)
             .contentTransition(.numericText())

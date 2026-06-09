@@ -20,10 +20,18 @@ enum StatsSummaryPeriod: String, CaseIterable, Sendable {
 }
 
 struct StatsSummaryPillDisplay: Equatable, Sendable {
+    private static let unresolvedPlaceholder = "—"
+
     let record: String
     let winRate: String
     let streak: String
     let rivals: String
+
+    var hasAnyResolvedMetric: Bool {
+        record != Self.unresolvedPlaceholder
+            || winRate != Self.unresolvedPlaceholder
+            || streak != Self.unresolvedPlaceholder
+    }
 }
 
 enum StatsSummaryPillBuilder {
@@ -58,7 +66,7 @@ enum StatsSummaryPillBuilder {
         hasResolvedBattleStats: Bool
     ) -> StatsSummaryPillDisplay {
         guard hasResolvedBattleStats, battleStats.matchesPlayed > 0 else {
-            return unresolved(rivals: hasResolvedBattleStats ? "\(rivalCount)" : unresolvedPlaceholder)
+            return unresolved()
         }
 
         let record: String = {
@@ -104,7 +112,7 @@ enum StatsSummaryPillBuilder {
         }
 
         guard !monthMatches.isEmpty else {
-            return unresolved(rivals: "0")
+            return unresolved()
         }
 
         var wins = 0
@@ -141,12 +149,12 @@ enum StatsSummaryPillBuilder {
         )
     }
 
-    private static func unresolved(rivals: String) -> StatsSummaryPillDisplay {
+    private static func unresolved() -> StatsSummaryPillDisplay {
         StatsSummaryPillDisplay(
             record: unresolvedPlaceholder,
             winRate: unresolvedPlaceholder,
             streak: unresolvedPlaceholder,
-            rivals: rivals
+            rivals: unresolvedPlaceholder
         )
     }
 

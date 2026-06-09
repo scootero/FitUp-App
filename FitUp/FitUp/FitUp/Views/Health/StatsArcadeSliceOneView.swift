@@ -30,6 +30,7 @@ struct StatsArcadeSliceOneView: View {
     var onRematchRival: (ChallengePrefillOpponent) -> Void = { _ in }
     var onLoadCompletedMatchesIfNeeded: () -> Void = {}
     var onShowMetricExplainer: (StatsMetricExplainerKind) -> Void = { _ in }
+    var onShowCombinedMetricExplainer: ([StatsMetricExplainerKind]) -> Void = { _ in }
     var onEditStepsGoal: () -> Void = {}
 
     @State private var isAllRivalsSheetPresented = false
@@ -93,10 +94,12 @@ struct StatsArcadeSliceOneView: View {
                 onEditStepsGoal: onEditStepsGoal
             )
 
-            StatsSummaryPillRow(
-                summaryPeriod: $summaryPeriod,
-                display: summaryPillDisplay
-            )
+            if summaryPillDisplay.hasAnyResolvedMetric {
+                StatsSummaryPillRow(
+                    summaryPeriod: $summaryPeriod,
+                    display: summaryPillDisplay
+                )
+            }
 
             if hasLiveBattles {
                 StatsLiveBattleSection(
@@ -110,12 +113,12 @@ struct StatsArcadeSliceOneView: View {
 
             StatsBattleStepsCard(
                 display: battleStepsDisplay,
-                onShowMetricExplainer: onShowMetricExplainer
+                onShowCombinedMetricExplainer: onShowCombinedMetricExplainer
             )
 
             StatsLifetimeGrid(
                 display: lifetimeDisplay,
-                onShowMetricExplainer: onShowMetricExplainer
+                onShowCombinedMetricExplainer: onShowCombinedMetricExplainer
             )
 
             StatsBattleDayEffectCard(
@@ -126,7 +129,7 @@ struct StatsArcadeSliceOneView: View {
             StatsPersonalRecordsCard(
                 records: personalRecords,
                 isLoading: isLoadingPersonalRecords,
-                onShowMetricExplainer: onShowMetricExplainer
+                onShowCombinedMetricExplainer: onShowCombinedMetricExplainer
             )
 
             StatsAchievementsGrid(achievements: achievements)

@@ -135,12 +135,32 @@ final class NotificationService: NSObject, ObservableObject {
             return next
         }
         saveInboxToDefaults()
+        syncApplicationIconBadge()
     }
 
     func markInboxItemRead(_ itemId: UUID) {
         guard let idx = inboxItems.firstIndex(where: { $0.id == itemId }), inboxItems[idx].isRead == false else { return }
         inboxItems[idx].isRead = true
         saveInboxToDefaults()
+        syncApplicationIconBadge()
+    }
+
+    /// Mirrors `unreadInboxCount` on the home-screen app icon.
+    func syncApplicationIconBadge() {
+        let count = unreadInboxCount
+        if #available(iOS 16.0, *) {
+            UNUserNotificationCenter.current().setBadgeCount(count) { error in
+                if let error {
+                    AppLogger.log(
+                        category: "notifications",
+                        level: .warning,
+                        message: "setBadgeCount failed: \(error.localizedDescription)"
+                    )
+                }
+            }
+        } else {
+            UIApplication.shared.applicationIconBadgeNumber = count
+        }
     }
 
     var unreadInboxCount: Int {
@@ -282,6 +302,7 @@ final class NotificationService: NSObject, ObservableObject {
             inboxItems = Array(inboxItems.prefix(50))
         }
         saveInboxToDefaults()
+        syncApplicationIconBadge()
     }
 
     private func defaultTitle(for eventType: String) -> String {
@@ -337,6 +358,7 @@ final class NotificationService: NSObject, ObservableObject {
         let decoder = JSONDecoder()
         if let items = try? decoder.decode([InAppNotificationItem].self, from: data) {
             inboxItems = items
+            syncApplicationIconBadge()
         }
     }
 }
@@ -365,7 +387,7 @@ extension NotificationService: UNUserNotificationCenterDelegate {
             self.applyCelebrationQueuesFromNotificationPayload(userInfo: userInfo)
             self.requestHomeLightRefreshIfMatchLifecycle(userInfo: userInfo)
         }
-        completionHandler([.banner, .sound, .badge])
+        completionHandler([.banner, .sound])
     }
 
     /// Handle notification tap (foreground or background).

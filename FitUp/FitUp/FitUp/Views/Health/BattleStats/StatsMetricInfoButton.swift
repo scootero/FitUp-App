@@ -100,11 +100,11 @@ struct StatsCardInfoButton: View {
                         .frame(width: 28, height: 28)
                 case .cardCorner:
                     Image(systemName: "info.circle.fill")
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(BattleStatsTheme.textGradient(.sectionTitle, accent: accent))
                         .shadow(color: Color.black.opacity(0.38), radius: 2, y: 1)
-                        .shadow(color: accentHighlight.opacity(0.32), radius: 10)
-                        .frame(width: 52, height: 52)
+                        .shadow(color: accentHighlight.opacity(0.28), radius: 6)
+                        .frame(width: 34, height: 34)
                 }
             }
             .contentShape(Rectangle())
@@ -140,6 +140,22 @@ struct StatsMetricExplainerButton: View {
     }
 }
 
+struct StatsCombinedMetricExplainerButton: View {
+    let kinds: [StatsMetricExplainerKind]
+    var accent: BattleStatsTheme.SectionAccent = .cool
+    var onShow: ([StatsMetricExplainerKind]) -> Void
+
+    var body: some View {
+        StatsCardInfoButton(
+            style: .cardCorner,
+            accent: accent,
+            accessibilityTitle: "these metrics"
+        ) {
+            onShow(kinds)
+        }
+    }
+}
+
 extension View {
     func statsCardMetricInfoCorner(
         kind: StatsMetricExplainerKind,
@@ -148,6 +164,18 @@ extension View {
     ) -> some View {
         overlay(alignment: .topTrailing) {
             StatsMetricExplainerButton(kind: kind, accent: accent, onShow: onShow)
+                .padding(.top, StatsCardInfoCornerMetrics.topInset)
+                .padding(.trailing, StatsCardInfoCornerMetrics.trailingInset)
+        }
+    }
+
+    func statsCardCombinedMetricInfoCorner(
+        kinds: [StatsMetricExplainerKind],
+        accent: BattleStatsTheme.SectionAccent = .cool,
+        onShow: @escaping ([StatsMetricExplainerKind]) -> Void
+    ) -> some View {
+        overlay(alignment: .topTrailing) {
+            StatsCombinedMetricExplainerButton(kinds: kinds, accent: accent, onShow: onShow)
                 .padding(.top, StatsCardInfoCornerMetrics.topInset)
                 .padding(.trailing, StatsCardInfoCornerMetrics.trailingInset)
         }
@@ -370,6 +398,83 @@ struct StatsMetricExplainerOverlay: View {
                     )
             )
             .shadow(color: kind.accentColor.opacity(0.22), radius: 16, y: 8)
+            .onTapGesture { }
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        .zIndex(20)
+    }
+}
+
+struct StatsCombinedMetricExplainerOverlay: View {
+    let kinds: [StatsMetricExplainerKind]
+    var onDismiss: () -> Void
+
+    private var accentColor: Color {
+        kinds.first?.accentColor ?? BattleStatsTheme.gold
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.62)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onDismiss)
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top) {
+                    Text("About these metrics")
+                        .font(FitUpFont.display(22, weight: .heavy))
+                        .foregroundStyle(FitUpColors.Text.primary)
+                    Spacer(minLength: 8)
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .frame(width: 28, height: 28)
+                            .background(Color.white.opacity(0.08))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                }
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach(Array(kinds.enumerated()), id: \.offset) { index, kind in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(kind.title)
+                                    .font(FitUpFont.body(15, weight: .bold))
+                                    .foregroundStyle(FitUpColors.Text.primary)
+                                Text(kind.bodyText)
+                                    .font(FitUpFont.body(13, weight: .medium))
+                                    .foregroundStyle(FitUpColors.Text.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            if index < kinds.count - 1 {
+                                Divider()
+                                    .overlay(Color.white.opacity(0.12))
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: min(UIScreen.main.bounds.height * 0.45, 320))
+
+                Text("Tap anywhere to close")
+                    .font(FitUpFont.body(11, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .padding(18)
+            .frame(maxWidth: min(UIScreen.main.bounds.width - 40, 340))
+            .background(
+                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                    .fill(Color(rgb: 0x0A1020).opacity(0.97))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+                            .strokeBorder(accentColor.opacity(0.45), lineWidth: 1.1)
+                    )
+            )
+            .shadow(color: accentColor.opacity(0.22), radius: 16, y: 8)
             .onTapGesture { }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.97)))

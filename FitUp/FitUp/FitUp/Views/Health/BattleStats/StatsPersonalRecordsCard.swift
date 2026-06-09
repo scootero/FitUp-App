@@ -8,7 +8,7 @@ import SwiftUI
 struct StatsPersonalRecordsCard: View {
     let records: StatsPersonalRecords?
     let isLoading: Bool
-    var onShowMetricExplainer: (StatsMetricExplainerKind) -> Void = { _ in }
+    var onShowCombinedMetricExplainer: ([StatsMetricExplainerKind]) -> Void = { _ in }
 
     var body: some View {
         if isLoading {
@@ -27,6 +27,7 @@ struct StatsPersonalRecordsCard: View {
             BattleStatsTheme.battleStatsCard(accent: .warm) {
                 VStack(alignment: .leading, spacing: 12) {
                     personalRecordsHeader
+                        .padding(.trailing, 32)
 
                     VStack(spacing: 10) {
                         ForEach(records.rows) { row in
@@ -35,19 +36,26 @@ struct StatsPersonalRecordsCard: View {
                     }
                 }
             }
-            .statsCardMetricInfoCorner(kind: .personalRecords, accent: .warm, onShow: onShowMetricExplainer)
+            .statsCardCombinedMetricInfoCorner(
+                kinds: explainerKinds(for: records),
+                accent: .warm,
+                onShow: onShowCombinedMetricExplainer
+            )
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Personal records")
         }
+    }
+
+    private func explainerKinds(for records: StatsPersonalRecords) -> [StatsMetricExplainerKind] {
+        records.rows.compactMap { StatsMetricExplainerKind.personalRecordKind(forRowId: $0.id) }
     }
 
     private var personalRecordsHeader: some View {
         BattleStatsTheme.sectionLabel("PERSONAL RECORDS", accent: .warm)
     }
 
-    @ViewBuilder
     private func recordRow(_ row: StatsPersonalRecordRow) -> some View {
-        let content = HStack(spacing: 12) {
+        HStack(spacing: 12) {
             Text(row.icon)
                 .font(.system(size: 26))
                 .accessibilityHidden(true)
@@ -85,11 +93,5 @@ struct StatsPersonalRecordsCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(row.label), \(row.value)\(row.subtitle.map { ", \($0)" } ?? "")")
-
-        if let kind = StatsMetricExplainerKind.personalRecordKind(forRowId: row.id) {
-            content.statsCardMetricInfoCorner(kind: kind, accent: .warm, onShow: onShowMetricExplainer)
-        } else {
-            content
-        }
     }
 }

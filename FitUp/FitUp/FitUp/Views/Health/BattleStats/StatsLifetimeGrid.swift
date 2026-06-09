@@ -27,16 +27,28 @@ struct StatsLifetimeDisplay: Equatable, Sendable {
 
 struct StatsLifetimeGrid: View {
     let display: StatsLifetimeDisplay
-    var onShowMetricExplainer: (StatsMetricExplainerKind) -> Void = { _ in }
+    var onShowCombinedMetricExplainer: ([StatsMetricExplainerKind]) -> Void = { _ in }
+
+    private var explainerKinds: [StatsMetricExplainerKind] {
+        var kinds: [StatsMetricExplainerKind] = [
+            .allTimeBattleSteps,
+            .battlesCompleted,
+            .daysCompeted,
+        ]
+        if display.showsExtraImpact {
+            kinds.append(.extraBattleImpact)
+        }
+        return kinds
+    }
 
     var body: some View {
         BattleStatsTheme.battleStatsCard(accent: .cool) {
             VStack(alignment: .leading, spacing: 12) {
                 BattleStatsTheme.sectionTitle("LIFETIME", accent: .cool)
+                    .padding(.trailing, 32)
 
                 lifetimeCell(
                     label: "TOTAL BATTLE STEPS",
-                    explainer: .allTimeBattleSteps,
                     value: display.totalBattleSteps.map { $0.formatted() } ?? BattleStatsTheme.unresolvedPlaceholder,
                     color: BattleStatsTheme.blue
                 )
@@ -44,13 +56,11 @@ struct StatsLifetimeGrid: View {
                 HStack(spacing: 8) {
                     lifetimeCell(
                         label: "BATTLES COMPLETED",
-                        explainer: .battlesCompleted,
                         value: display.battlesCompleted.map { "\($0)" } ?? BattleStatsTheme.unresolvedPlaceholder,
                         color: BattleStatsTheme.purple
                     )
                     lifetimeCell(
                         label: "DAYS COMPETED",
-                        explainer: .daysCompeted,
                         value: display.daysCompeted.map { "\($0)" } ?? BattleStatsTheme.unresolvedPlaceholder,
                         color: BattleStatsTheme.orange
                     )
@@ -61,6 +71,11 @@ struct StatsLifetimeGrid: View {
                 }
             }
         }
+        .statsCardCombinedMetricInfoCorner(
+            kinds: explainerKinds,
+            accent: .cool,
+            onShow: onShowCombinedMetricExplainer
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Lifetime stats")
     }
@@ -118,7 +133,6 @@ struct StatsLifetimeGrid: View {
                 )
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .statsCardMetricInfoCorner(kind: .extraBattleImpact, accent: .mint, onShow: onShowMetricExplainer)
         .accessibilityLabel("Extra miles and steps walked from battles")
     }
 
@@ -133,17 +147,10 @@ struct StatsLifetimeGrid: View {
 
     private func lifetimeCell(
         label: String,
-        explainer: StatsMetricExplainerKind,
         value: String,
         color: Color
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(value)
-                .font(.system(size: 24, weight: .bold, design: .monospaced))
-                .foregroundStyle(color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
             HStack(spacing: 2) {
                 Text(label)
                     .font(.system(size: BattleStatsTheme.Typography.caption, weight: .medium, design: .monospaced))
@@ -152,6 +159,12 @@ struct StatsLifetimeGrid: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
             }
+
+            Text(value)
+                .font(.system(size: 24, weight: .bold, design: .monospaced))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
@@ -170,7 +183,6 @@ struct StatsLifetimeGrid: View {
                 )
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .statsCardMetricInfoCorner(kind: explainer, accent: .cool, onShow: onShowMetricExplainer)
         .accessibilityLabel("\(label), \(value)")
     }
 }
