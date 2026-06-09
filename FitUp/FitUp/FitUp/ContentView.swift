@@ -298,71 +298,25 @@ private struct RootShellView: View {
 }
 
 private struct SessionRestoreLoadingView: View {
-    private static let introTipAutoDismissSeconds: Double = 3
-
-    @State private var isShowingIntroTip = false
-    @State private var introTipDismissTask: Task<Void, Never>?
-
     var body: some View {
-        ZStack {
+        GeometryReader { geo in
             VStack(spacing: 22) {
-                HomeIntroTipRevealSection(
-                    isShowingTip: $isShowingIntroTip,
-                    onTipRevealed: scheduleIntroTipAutoDismiss
-                )
+                FitUpBrandMark(fontSize: 50)
+                    .frame(maxWidth: .infinity, alignment: .center)
 
-                Spacer(minLength: 0)
+                HomeIntroTipView()
 
                 ProgressView("Restoring session...")
                     .font(FitUpFont.body(14, weight: .medium))
                     .tint(FitUpColors.Neon.cyan)
-
-                Spacer(minLength: 0)
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 40)
+            .padding(.top, 56)
+            .frame(maxWidth: .infinity, maxHeight: geo.size.height * 0.75, alignment: .top)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-            if isShowingIntroTip {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        dismissIntroTip()
-                    }
-                    .accessibilityHidden(true)
-            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("FitUp. Restoring session.")
-        .onDisappear {
-            introTipDismissTask?.cancel()
-            introTipDismissTask = nil
-        }
-    }
-
-    private func scheduleIntroTipAutoDismiss() {
-        introTipDismissTask?.cancel()
-        introTipDismissTask = Task {
-            try? await Task.sleep(for: .seconds(Self.introTipAutoDismissSeconds))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                dismissIntroTip(animated: true)
-            }
-        }
-    }
-
-    private func dismissIntroTip(animated: Bool = true) {
-        introTipDismissTask?.cancel()
-        introTipDismissTask = nil
-        guard isShowingIntroTip else { return }
-        if animated {
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                isShowingIntroTip = false
-            }
-        } else {
-            isShowingIntroTip = false
-        }
     }
 }
 
