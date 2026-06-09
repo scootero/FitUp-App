@@ -14,10 +14,17 @@ struct OnboardingView: View {
     var body: some View {
         ZStack {
             BackgroundGradientView()
-            content
-                .padding(.horizontal, 16)
-                .padding(.top, 24)
-                .padding(.bottom, 28)
+            VStack(spacing: 0) {
+                OnboardingTopChrome(
+                    showsBack: viewModel.showsBack,
+                    onBack: { viewModel.goBack() }
+                )
+                stepContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 24)
+            .padding(.bottom, 28)
         }
         .onAppear {
             viewModel.analyticsUserId = sessionStore.currentProfile?.id
@@ -27,26 +34,20 @@ struct OnboardingView: View {
             viewModel.analyticsUserId = sessionStore.currentProfile?.id
             viewModel.logFlowStartIfNeeded()
         }
-        .onChange(of: viewModel.step) { _, step in
-            let stepKey: String
-            switch step {
-            case .hero: stepKey = "hero"
-            case .howItWorks: stepKey = "how_it_works"
-            case .permissions: stepKey = "permissions"
-            case .findFirstMatch: stepKey = "find_first_match"
+        .onChange(of: viewModel.step) { _, _ in
+            trackStepViewed()
+        }
+        .onChange(of: viewModel.matchSetupPhase) { _, _ in
+            if viewModel.step == .findFirstMatch {
+                trackStepViewed()
             }
-            ProductAnalytics.track(
-                ProductAnalytics.Event.onboardingStepViewed,
-                userId: sessionStore.currentProfile?.id,
-                properties: ["step": stepKey]
-            )
         }
         .trackProductScreen("onboarding", userId: sessionStore.currentProfile?.id)
         .screenTransition()
     }
 
     @ViewBuilder
-    private var content: some View {
+    private var stepContent: some View {
         switch viewModel.step {
         case .hero:
             OnboardingHeroView {
@@ -70,30 +71,60 @@ struct OnboardingView: View {
                 }
             )
         case .findFirstMatch:
-            FindFirstMatchView(
-                sevenDayAverageSteps: viewModel.sevenDayStepAverage,
-                thirtyDayAverageSteps: viewModel.thirtyDayStepAverage,
-                ninetyDayAverageSteps: viewModel.ninetyDayStepAverage,
-                isLoadingAverage: viewModel.isLoadingAverage,
-                isSubmitting: viewModel.isSubmittingSearch,
-                statusMessage: viewModel.statusMessage,
-                errorMessage: viewModel.errorMessage,
-                stepGoalTier: $viewModel.stepGoalTier,
-                dailyStepGoalText: $viewModel.dailyStepGoalText,
-                onSelectTier: { viewModel.selectStepGoalTier($0) },
-                onRetryAverage: {
-                    Task { await viewModel.refreshAllStepAverages() }
-                },
-                onFindOpponent: {
-                    Task {
-                        let success = await viewModel.submitFindOpponent(profileId: sessionStore.currentProfile?.id)
-                        guard success else { return }
-                        sessionStore.markOnboardingSearchVisible()
-                        sessionStore.markOnboardingComplete()
+            switch viewModel.matchSetupPhase {
+            case .stepGoal:
+                OnboardingStepGoalView(
+                    sevenDayAverageSteps: viewModel.sevenDayStepAverage,
+                    thirtyDayAverageSteps: viewModel.thirtyDayStepAverage,
+                    ninetyDayAverageSteps: viewModel.ninetyDayStepAverage,
+                    isLoadingAverage: viewModel.isLoadingAverage,
+                    errorMessage: viewModel.errorMessage,
+                    stepGoalTier: $viewModel.stepGoalTier,
+                    dailyStepGoalText: $viewModel.dailyStepGoalText,
+                    onSelectTier: { viewModel.selectStepGoalTier($0) },
+                    onRetryAverage: {
+                        Task { await viewModel.refreshAllStepAverages() }
+                    },
+                    onNext: { viewModel.advanceToStartMatch() }
+                )
+            case .startMatch:
+                OnboardingStartMatchView(
+                    isSubmitting: viewModel.isSubmittingSearch,
+                    isLoadingAverage: viewModel.isLoadingAverage,
+                    statusMessage: viewModel.statusMessage,
+                    errorMessage: viewModel.errorMessage,
+                    onFindOpponent: {
+                        Task {
+                            let success = await viewModel.submitFindOpponent(profileId: sessionStore.currentProfile?.id)
+                            guard success else { return }
+                            sessionStore.markOnboardingSearchVisible()
+                            sessionStore.markOnboardingComplete()
+                        }
                     }
-                }
-            )
+                )
+            }
         }
+    }
+
+    private func trackStepViewed() {
+        let stepKey: String
+        switch viewModel.step {
+        case .hero: stepKey = "hero"
+        case .howItWorks: stepKey = "how_it_works"
+        case .permissions: stepKey = "permissions"
+        case .findFirstMatch: stepKey = "find_first_match"
+        }
+
+        var properties: [String: String] = ["step": stepKey]
+        if viewModel.step == .findFirstMatch {
+            properties["substep"] = viewModel.matchSetupPhase == .stepGoal ? "step_goal" : "start_match"
+        }
+
+        ProductAnalytics.track(
+            ProductAnalytics.Event.onboardingStepViewed,
+            userId: sessionStore.currentProfile?.id,
+            properties: properties
+        )
     }
 }
 

@@ -33,7 +33,13 @@ final class OnboardingViewModel: ObservableObject {
         }
     }
 
+    enum MatchSetupPhase {
+        case stepGoal
+        case startMatch
+    }
+
     @Published private(set) var step: Step = .hero
+    @Published var matchSetupPhase: MatchSetupPhase = .stepGoal
     @Published private(set) var sevenDayStepAverage: Double?
     @Published private(set) var thirtyDayStepAverage: Double?
     @Published private(set) var ninetyDayStepAverage: Double?
@@ -71,6 +77,33 @@ final class OnboardingViewModel: ObservableObject {
     func completeHowItWorksStep() {
         step = .permissions
         errorMessage = nil
+    }
+
+    var showsBack: Bool {
+        step != .hero
+    }
+
+    func goBack() {
+        errorMessage = nil
+        switch step {
+        case .hero:
+            break
+        case .howItWorks:
+            step = .hero
+        case .permissions:
+            step = .howItWorks
+        case .findFirstMatch:
+            switch matchSetupPhase {
+            case .startMatch:
+                matchSetupPhase = .stepGoal
+            case .stepGoal:
+                step = .permissions
+            }
+        }
+    }
+
+    func advanceToStartMatch() {
+        matchSetupPhase = .startMatch
     }
 
     /// Requests Health, then notifications, on one conceptual step. Calls `onHealthPromptFinished` after the Health flow returns (for per-profile Health onboarding flag).
@@ -139,30 +172,46 @@ final class OnboardingViewModel: ObservableObject {
             )
         }
 
+        matchSetupPhase = .stepGoal
         step = .findFirstMatch
     }
 
-    /// Rounds to nearest 50; floors at 500 for a sensible minimum display target.
-    private static func roundStepGoalSuggestion(_ raw: Double) -> Int {
-        max(500, Int((raw / 50.0).rounded() * 50))
+    private static let defaultEasyGoal = 3_000
+    private static let defaultModerateGoal = 5_000
+    private static let defaultAggressiveGoal = 8_000
+    private static let easyGoalMinimum = 1_000
+
+    private static func roundToNearest100(_ raw: Double) -> Int {
+        Int((raw / 100.0).rounded() * 100)
     }
 
-    /// 30d average when available, else 7d, else a neutral default for suggestion math only.
-    private var suggestionBaselineSteps: Double {
-        if let t = thirtyDayStepAverage, t > 0 { return t }
-        if let s = sevenDayStepAverage, s > 0 { return s }
-        return 10_000
+    private var tierGoals: (easy: Int, moderate: Int, aggressive: Int) {
+        let nonZeroAverages = [sevenDayStepAverage, thirtyDayStepAverage, ninetyDayStepAverage]
+            .compactMap { $0 }
+            .filter { $0 > 0 }
+
+        guard !nonZeroAverages.isEmpty else {
+            return (
+                easy: Self.defaultEasyGoal,
+                moderate: Self.defaultModerateGoal,
+                aggressive: Self.defaultAggressiveGoal
+            )
+        }
+
+        let mean = nonZeroAverages.reduce(0, +) / Double(nonZeroAverages.count)
+        let moderate = Self.roundToNearest100(mean)
+        let easy = max(Self.easyGoalMinimum, Self.roundToNearest100(Double(moderate - 2_000)))
+        let aggressive = Self.roundToNearest100(Double(moderate + 2_000))
+        return (easy: easy, moderate: moderate, aggressive: aggressive)
     }
 
     func suggestedGoal(for tier: StepGoalTier) -> Int {
-        let base = suggestionBaselineSteps
-        let mult: Double
+        let goals = tierGoals
         switch tier {
-        case .easy: mult = 1.05
-        case .moderate: mult = 1.15
-        case .aggressive: mult = 1.30
+        case .easy: return goals.easy
+        case .moderate: return goals.moderate
+        case .aggressive: return goals.aggressive
         }
-        return Self.roundStepGoalSuggestion(base * mult)
     }
 
     func selectStepGoalTier(_ tier: StepGoalTier) {

@@ -46,13 +46,13 @@ enum ChallengeFormatType: CaseIterable {
     var howItWorksLine: String {
         switch self {
         case .daily:
-            return "One competition day — highest step count wins."
+            return "Highest step count wins — ends at midnight same day."
         case .firstTo3:
-            return "Up to 3 competition days — first to 2 day-wins."
+            return "First to 2 day-wins — up to 3 days if tied."
         case .bestOf5:
-            return "Up to 5 competition days — first to 3 day-wins."
+            return "First to 3 day-wins — up to 5 days if tied."
         case .bestOf7:
-            return "Up to 7 competition days — first to 4 day-wins."
+            return "First to 4 day-wins — up to 7 days if tied."
         }
     }
 

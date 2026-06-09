@@ -24,9 +24,6 @@ struct ProfileView: View {
 
     @AppStorage("firstMatchWon") private var firstMatchWon = false
 
-    // Notifications toggle — persisted to Supabase on change.
-    @State private var notificationsEnabled = true
-
     // Paywall sheet presented from "Manage Plan" / Upgrade rows.
     @State private var showPaywall = false
 
@@ -59,16 +56,7 @@ struct ProfileView: View {
             }
             .task {
                 await viewModel.load(profile: profile)
-                if let enabled = profile?.notificationsEnabled {
-                    notificationsEnabled = enabled
-                }
                 syncDisplayedDailyStepGoal()
-            }
-            .onChange(of: notificationsEnabled) { _, newValue in
-                guard let authUserId = profile?.authUserId else { return }
-                Task {
-                    await ProfileRepository().updateNotificationsEnabled(newValue, authUserId: authUserId)
-                }
             }
             .sheet(isPresented: $showPaywall) {
                 PaywallView { showPaywall = false }
@@ -270,12 +258,37 @@ struct ProfileView: View {
                 showSeparator: true,
                 action: .chevron { showFeedback = true }
             )
-            SettingsRowView(
-                sfSymbol: "bell",
-                label: "Notifications",
-                showSeparator: true,
-                action: .toggle($notificationsEnabled)
-            )
+            NavigationLink {
+                LiveActivitiesNotificationsSettingsView(profile: profile)
+            } label: {
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.07))
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "bell.badge")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Text.secondary)
+                        }
+                        Text("Live Activities & Notifications")
+                            .font(FitUpFont.body(14))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 13)
+                    .contentShape(Rectangle())
+                    Rectangle()
+                        .fill(Color.white.opacity(0.05))
+                        .frame(height: 1)
+                        .padding(.leading, 54)
+                }
+            }
+            .buttonStyle(.plain)
             SettingsRowView(
                 sfSymbol: "shield",
                 label: "Privacy",

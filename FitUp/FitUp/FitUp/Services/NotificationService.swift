@@ -90,6 +90,14 @@ final class NotificationService: NSObject, ObservableObject {
 
     /// Store the Live Activity push token on the profile.
     func storeLiveActivityToken(_ token: Data) {
+        guard NotificationPreferences.isLiveActivitiesEnabled else {
+            AppLogger.log(
+                category: "notifications",
+                level: .debug,
+                message: "Live Activity push token upload suppressed by user preference"
+            )
+            return
+        }
         let hex = token.map { String(format: "%02x", $0) }.joined()
         AppLogger.log(category: "notifications", level: .debug, message: "Live Activity push token updated")
         Task {

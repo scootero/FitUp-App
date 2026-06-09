@@ -23,6 +23,7 @@ struct PostAuthDisplayNameView: View {
                     VStack(spacing: 12) {
                         nameField
                         Button("Continue") {
+                            fieldFocused = false
                             Task { await submit() }
                         }
                         .solidButton(color: FitUpColors.Neon.cyan)
@@ -42,7 +43,9 @@ struct PostAuthDisplayNameView: View {
                 .padding(.top, 24)
                 .padding(.bottom, 32)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
+        .fitUpKeyboardDoneToolbar { fieldFocused = false }
         .trackProductScreen("post_auth_display_name", userId: sessionStore.currentProfile?.id)
         .screenTransition()
         .onAppear {
@@ -75,6 +78,10 @@ struct PostAuthDisplayNameView: View {
             .textInputAutocapitalization(.words)
             .disableAutocorrection(true)
             .focused($fieldFocused)
+            .submitLabel(.continue)
+            .onSubmit {
+                Task { await submit() }
+            }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .foregroundStyle(FitUpColors.Text.primary)

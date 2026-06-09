@@ -25,8 +25,10 @@ enum SettingsRowAction {
 struct SettingsRowView: View {
     let sfSymbol: String
     let label: String
+    var helperText: String? = nil
     var detail: String? = nil
     var isDanger: Bool = false
+    var isDisabled: Bool = false
     var showSeparator: Bool = true
     var action: SettingsRowAction = .chevron()
 
@@ -34,9 +36,7 @@ struct SettingsRowView: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 iconSquare
-                Text(label)
-                    .font(FitUpFont.body(14))
-                    .foregroundStyle(isDanger ? FitUpColors.Neon.pink : FitUpColors.Text.primary)
+                labelColumn
                 Spacer(minLength: 8)
                 if let detail, !detail.isEmpty {
                     Text(detail)
@@ -48,6 +48,7 @@ struct SettingsRowView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 13)
+            .opacity(isDisabled ? 0.45 : 1)
             .contentShape(Rectangle())
             .onTapGesture {
                 if case .chevron(let onTap) = action { onTap() }
@@ -63,6 +64,25 @@ struct SettingsRowView: View {
     }
 
     // MARK: - Sub-views
+
+    @ViewBuilder
+    private var labelColumn: some View {
+        if let helperText, !helperText.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(FitUpFont.body(14))
+                    .foregroundStyle(isDanger ? FitUpColors.Neon.pink : FitUpColors.Text.primary)
+                Text(helperText)
+                    .font(FitUpFont.body(12))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            Text(label)
+                .font(FitUpFont.body(14))
+                .foregroundStyle(isDanger ? FitUpColors.Neon.pink : FitUpColors.Text.primary)
+        }
+    }
 
     @ViewBuilder
     private var iconSquare: some View {
@@ -90,6 +110,7 @@ struct SettingsRowView: View {
             Toggle("", isOn: binding)
                 .labelsHidden()
                 .tint(FitUpColors.Neon.cyan)
+                .disabled(isDisabled)
 
         case .badge(let label, let color):
             NeonBadge(label: label, color: color)

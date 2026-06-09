@@ -385,8 +385,11 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/Info-Additional.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = FitUp;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitUp reads your steps, active calories, and resting heart rate from Apple Health to score 1v1 battles and show your stats. This data is not used for advertising and is never entered manually.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitUp uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitUp does not use this data for advertising.";
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "FitUp uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitUp does not use this data for advertising.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -428,8 +431,11 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/Info-Additional.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = FitUp;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitUp reads your steps, active calories, and resting heart rate from Apple Health to score 1v1 battles and show your stats. This data is not used for advertising and is never entered manually.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitUp uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitUp does not use this data for advertising.";
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "FitUp uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitUp does not use this data for advertising.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -466,6 +472,7 @@
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/FitUpWidgetExtension-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "FitUp Live Activity";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -493,6 +500,7 @@
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/FitUpWidgetExtension-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "FitUp Live Activity";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

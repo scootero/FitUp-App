@@ -14,6 +14,7 @@ struct EditDailyStepGoalSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: String
     @State private var saveError: String?
+    @FocusState private var fieldFocused: Bool
 
     init(initialGoal: Int, onSave: @escaping (Int) -> Void) {
         self.initialGoal = initialGoal
@@ -30,6 +31,7 @@ struct EditDailyStepGoalSheet: View {
 
                 TextField("Daily steps", text: $draft)
                     .keyboardType(.numberPad)
+                    .focused($fieldFocused)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                     .foregroundStyle(FitUpColors.Text.primary)
@@ -54,15 +56,19 @@ struct EditDailyStepGoalSheet: View {
             .background(BackgroundGradientView())
             .navigationTitle("Daily Step Goal")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.interactively)
+            .fitUpKeyboardDoneToolbar { fieldFocused = false }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
+                        fieldFocused = false
                         saveError = nil
                         dismiss()
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        fieldFocused = false
                         let normalized = draft
                             .replacingOccurrences(of: ",", with: "")
                             .trimmingCharacters(in: .whitespacesAndNewlines)

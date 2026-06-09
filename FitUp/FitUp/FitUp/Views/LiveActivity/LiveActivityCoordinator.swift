@@ -37,6 +37,15 @@ final class LiveActivityCoordinator {
         theirScore: Int,
         dayNumber: Int
     ) {
+        guard NotificationPreferences.isLiveActivitiesEnabled else {
+            AppLogger.log(
+                category: "notifications",
+                level: .debug,
+                message: "Live Activity suppressed by user preference",
+                metadata: ["action": "start"]
+            )
+            return
+        }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
         // Resume existing if same match — still apply latest ContentState from Home (local update).
@@ -126,6 +135,15 @@ final class LiveActivityCoordinator {
         theirScore: Int,
         dayNumber: Int
     ) {
+        guard NotificationPreferences.isLiveActivitiesEnabled else {
+            AppLogger.log(
+                category: "notifications",
+                level: .debug,
+                message: "Live Activity suppressed by user preference",
+                metadata: ["action": "update"]
+            )
+            return
+        }
         guard let activity = currentActivity else { return }
         let newState = FitUpActivityAttributes.ContentState(
             myTotal: myTotal,
@@ -172,6 +190,15 @@ final class LiveActivityCoordinator {
     private func subscribeToPushTokenUpdates() {
         pushTokenTask?.cancel()
         guard let activity = currentActivity else { return }
+        guard NotificationPreferences.isLiveActivitiesEnabled else {
+            AppLogger.log(
+                category: "notifications",
+                level: .debug,
+                message: "Live Activity suppressed by user preference",
+                metadata: ["action": "token_subscribe"]
+            )
+            return
+        }
 
         pushTokenTask = Task {
             for await tokenData in activity.pushTokenUpdates {
