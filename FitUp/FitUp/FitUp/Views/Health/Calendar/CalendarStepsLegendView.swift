@@ -24,8 +24,12 @@ struct CalendarStepsLegendView: View {
                 label: "In progress"
             )
             legendItem(
+                ring: { restDayRing },
+                label: "Rest day"
+            )
+            legendItem(
                 ring: { emptyRing },
-                label: "No steps"
+                label: "Today / pending"
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -77,6 +81,22 @@ struct CalendarStepsLegendView: View {
         Circle()
             .stroke(Color.white.opacity(0.13), lineWidth: lineWidth)
             .frame(width: innerDiameter, height: innerDiameter)
+    }
+
+    private var restDayRing: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white.opacity(0.9))
+                .frame(width: innerDiameter, height: innerDiameter)
+                .overlay {
+                    Circle()
+                        .strokeBorder(Color.black.opacity(0.2), lineWidth: max(1, lineWidth * 0.85))
+                }
+
+            Image(systemName: "skull.fill")
+                .font(.system(size: ringSize * 0.38, weight: .semibold))
+                .foregroundStyle(Color.black)
+        }
     }
 }
 

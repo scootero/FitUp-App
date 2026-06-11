@@ -3357,13 +3357,17 @@ struct EnergyBeamHeroGlassCardView: View {
 
     private var headerBlock: some View {
         VStack(spacing: 5) {
-            FitUpMiniLogoPreview()
-            Text("TODAY'S BATTLE")
-                .font(FitUpFont.body(11, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.42))
-                .tracking(2.6)
-                .minimumScaleFactor(0.85)
-                .allowsTightening(true)
+            HomeIntroTipAutoReveal {
+                FitUpMiniLogoPreview()
+            }
+            if matchHeaderContent == nil {
+                Text("TODAY'S BATTLE")
+                    .font(FitUpFont.body(11, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.42))
+                    .tracking(2.6)
+                    .minimumScaleFactor(0.85)
+                    .allowsTightening(true)
+            }
         }
     }
 

@@ -37,10 +37,16 @@ enum MainTab: String, CaseIterable, Identifiable {
 
 struct FloatingTabBar: View {
     @Binding var selected: MainTab
+    /// When false, the center Battle card uses a slow fiery red glow to invite a new match.
+    var hasActiveBattle: Bool
     var onBattle: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let barHeight: CGFloat = 68
     private let battleCorner: CGFloat = 16
+
+    private var showsIdleBattleFire: Bool { !hasActiveBattle }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -104,47 +110,116 @@ struct FloatingTabBar: View {
         Button(action: onBattle) {
             VStack(spacing: 4) {
                 Text("⚔️")
-                    .font(.system(size: 17))
+                    .font(.system(size: showsIdleBattleFire ? 18 : 17))
                 Text("BATTLE")
                     .font(FitUpFont.body(9, weight: .bold))
                     .tracking(0.5)
-                    .foregroundStyle(.white.opacity(0.95))
+                    .foregroundStyle(.white.opacity(showsIdleBattleFire ? 1 : 0.95))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            .padding(.vertical, showsIdleBattleFire ? 9 : 8)
             .padding(.horizontal, 4)
-            .offset(y: -1)
-            .scaleEffect(1.03)
+            .offset(y: showsIdleBattleFire ? -4 : -1)
+            .scaleEffect(showsIdleBattleFire ? 1.08 : 1.03)
             .background {
+                Group {
+                    if showsIdleBattleFire {
+                        idleBattleFireBackground
+                    } else {
+                        activeBattleBackground
+                    }
+                }
+            }
+            .animation(.easeInOut(duration: 0.55), value: showsIdleBattleFire)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showsIdleBattleFire ? "Start a battle" : "Battle")
+    }
+
+    private var activeBattleBackground: some View {
+        RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue, FitUpColors.Neon.purple.opacity(0.92)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .shadow(color: FitUpColors.Neon.cyan.opacity(0.48), radius: 14, x: 0, y: 3)
+            .shadow(color: FitUpColors.Neon.blue.opacity(0.34), radius: 18, x: 0, y: 6)
+            .overlay(alignment: .top) { battleCardTopShine }
+            .overlay { battleCardOuterStroke }
+    }
+
+    @ViewBuilder
+    private var idleBattleFireBackground: some View {
+        if reduceMotion {
+            idleBattleFireBackground(at: 0)
+        } else {
+            TimelineView(.animation(minimumInterval: 1 / 24, paused: false)) { timeline in
+                idleBattleFireBackground(at: timeline.date.timeIntervalSinceReferenceDate)
+            }
+        }
+    }
+
+    private func idleBattleFireBackground(at time: TimeInterval) -> some View {
+        let angle = Angle(degrees: (time * 8).truncatingRemainder(dividingBy: 360))
+        let pulse = 0.55 + 0.45 * sin(time * 0.62)
+        let drift = sin(time * 0.38) * 0.14
+
+        return RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
+            .fill(
+                AngularGradient(
+                    colors: [
+                        Color(rgb: 0xFF1A00),
+                        FitUpColors.Neon.red,
+                        FitUpColors.Neon.orange,
+                        FitUpColors.Neon.yellow.opacity(0.96),
+                        Color(rgb: 0xFF4500),
+                        FitUpColors.Neon.red.opacity(0.94),
+                        Color(rgb: 0xFF1A00),
+                    ],
+                    center: .center,
+                    angle: angle
+                )
+            )
+            .overlay {
                 RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.blue, FitUpColors.Neon.purple.opacity(0.92)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                            colors: [
+                                FitUpColors.Neon.yellow.opacity(0.24 + 0.08 * pulse),
+                                Color.clear,
+                                FitUpColors.Neon.red.opacity(0.20 + 0.07 * pulse),
+                            ],
+                            startPoint: UnitPoint(x: 0.44 + drift, y: 1),
+                            endPoint: UnitPoint(x: 0.56 - drift, y: 0)
                         )
                     )
-                    .shadow(color: FitUpColors.Neon.cyan.opacity(0.48), radius: 14, x: 0, y: 3)
-                    .shadow(color: FitUpColors.Neon.blue.opacity(0.34), radius: 18, x: 0, y: 6)
-                    .overlay(alignment: .top) {
-                        RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.36), lineWidth: 0.7)
-                            .blur(radius: 0.2)
-                            .mask(
-                                LinearGradient(
-                                    colors: [Color.white, Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
-                            .strokeBorder(Color(red: 5 / 255, green: 5 / 255, blue: 10 / 255, opacity: 0.92), lineWidth: 2)
-                    }
+                    .blendMode(.screen)
             }
-        }
-        .buttonStyle(.plain)
+            .shadow(color: FitUpColors.Neon.orange.opacity(0.36 + 0.16 * pulse), radius: 14 + 5 * pulse, x: 0, y: 4)
+            .shadow(color: FitUpColors.Neon.red.opacity(0.30 + 0.12 * pulse), radius: 20 + 7 * pulse, x: 0, y: 7)
+            .overlay(alignment: .top) { battleCardTopShine }
+            .overlay { battleCardOuterStroke }
+    }
+
+    private var battleCardTopShine: some View {
+        RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
+            .strokeBorder(Color.white.opacity(0.36), lineWidth: 0.7)
+            .blur(radius: 0.2)
+            .mask(
+                LinearGradient(
+                    colors: [Color.white, Color.clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+    }
+
+    private var battleCardOuterStroke: some View {
+        RoundedRectangle(cornerRadius: battleCorner, style: .continuous)
+            .strokeBorder(Color(red: 5 / 255, green: 5 / 255, blue: 10 / 255, opacity: 0.92), lineWidth: 2)
     }
 
     private func tabButton(_ tab: MainTab) -> some View {
@@ -172,13 +247,26 @@ struct FloatingTabBar: View {
     }
 }
 
-#Preview {
+#Preview("Idle fire") {
     struct PreviewHost: View {
         @State private var tab: MainTab = .home
         var body: some View {
             ZStack(alignment: .bottom) {
                 BackgroundGradientView()
-                FloatingTabBar(selected: $tab, onBattle: {})
+                FloatingTabBar(selected: $tab, hasActiveBattle: false, onBattle: {})
+            }
+        }
+    }
+    return PreviewHost()
+}
+
+#Preview("Active battle") {
+    struct PreviewHost: View {
+        @State private var tab: MainTab = .home
+        var body: some View {
+            ZStack(alignment: .bottom) {
+                BackgroundGradientView()
+                FloatingTabBar(selected: $tab, hasActiveBattle: true, onBattle: {})
             }
         }
     }

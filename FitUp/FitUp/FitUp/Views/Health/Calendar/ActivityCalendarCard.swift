@@ -10,6 +10,7 @@ import SwiftUI
 struct ActivityCalendarCard: View {
     let userId: UUID?
     let profileTimeZoneIdentifier: String?
+    var profileCreatedAt: Date? = nil
     var onOpenMatchDetails: (UUID, String) -> Void = { _, _ in }
 
     var body: some View {
@@ -17,6 +18,7 @@ struct ActivityCalendarCard: View {
             ActivityCalendarCardContent(
                 userId: userId,
                 profileTimeZoneIdentifier: profileTimeZoneIdentifier,
+                profileCreatedAt: profileCreatedAt,
                 onOpenMatchDetails: onOpenMatchDetails
             )
         } else {
@@ -25,40 +27,21 @@ struct ActivityCalendarCard: View {
     }
 
     private var signedOutPlaceholder: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            cardHeader
-            Text("Sign in to view your activity calendar.")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.62))
+        BattleStatsTheme.battleStatsCard(accent: .mint) {
+            VStack(alignment: .leading, spacing: 10) {
+                BattleStatsTheme.sectionTitle("ACTIVITY CALENDAR", accent: .mint)
+                Text("Sign in to view your activity calendar.")
+                    .font(.system(size: BattleStatsTheme.Typography.captionSmall, weight: .semibold))
+                    .foregroundStyle(BattleStatsTheme.textLabel)
+            }
         }
-        .padding(14)
-        .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(cardTint.opacity(0.42), lineWidth: 1.4)
-        }
-    }
-
-    private var cardHeader: some View {
-        Text("ACTIVITY CALENDAR")
-            .font(.system(size: 18, weight: .black))
-            .tracking(2)
-            .foregroundStyle(cardTint)
-    }
-
-    private var cardTint: Color {
-        Color(red: 0.18, green: 1, blue: 0.54)
-    }
-
-    private var cardBackground: Color {
-        Color(red: 0.02, green: 0.03, blue: 0.06)
     }
 }
 
 private struct ActivityCalendarCardContent: View {
     let userId: UUID
     let profileTimeZoneIdentifier: String?
+    let profileCreatedAt: Date?
     var onOpenMatchDetails: (UUID, String) -> Void
 
     @StateObject private var viewModel: ActivityCalendarViewModel
@@ -66,15 +49,18 @@ private struct ActivityCalendarCardContent: View {
     init(
         userId: UUID,
         profileTimeZoneIdentifier: String?,
+        profileCreatedAt: Date?,
         onOpenMatchDetails: @escaping (UUID, String) -> Void
     ) {
         self.userId = userId
         self.profileTimeZoneIdentifier = profileTimeZoneIdentifier
+        self.profileCreatedAt = profileCreatedAt
         self.onOpenMatchDetails = onOpenMatchDetails
         _viewModel = StateObject(
             wrappedValue: ActivityCalendarViewModel(
                 userId: userId,
-                profileTimeZoneIdentifier: profileTimeZoneIdentifier
+                profileTimeZoneIdentifier: profileTimeZoneIdentifier,
+                profileCreatedAt: profileCreatedAt
             )
         )
     }
@@ -83,29 +69,49 @@ private struct ActivityCalendarCardContent: View {
         viewModel.selectedDayItem != nil
     }
 
-    private var cardTint: Color {
-        Color(red: 0.18, green: 1, blue: 0.54)
-    }
-
-    private var cardBackground: Color {
-        Color(red: 0.02, green: 0.03, blue: 0.06)
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("ACTIVITY CALENDAR")
-                .font(.system(size: 15, weight: .black))
-                .tracking(2)
-                .foregroundStyle(cardTint)
+        BattleStatsTheme.battleStatsCard(accent: .mint) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("ACTIVITY CALENDAR")
+                    .font(.system(
+                        size: ActivityCalendarLayout.expanded.cardSectionTitleSize,
+                        weight: .heavy,
+                        design: .rounded
+                    ))
+                    .tracking(1.8)
+                    .foregroundStyle(FitUpColors.Text.title)
+                    .frame(maxWidth: .infinity, alignment: .center)
 
-            ActivityCalendarScrollContent(viewModel: viewModel, layout: .expanded)
-        }
-        .padding(10)
-        .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(cardTint.opacity(0.42), lineWidth: 1.4)
+                HStack(alignment: .center, spacing: 10) {
+                    CalendarMonthTitleLabel(
+                        title: viewModel.monthTitle,
+                        monthsFromCurrent: viewModel.monthsFromCurrent,
+                        fontSize: ActivityCalendarLayout.expanded.monthSubtitleSize
+                    )
+
+                    Spacer(minLength: 0)
+
+                    CalendarMonthNavControls(
+                        centerLabel: viewModel.monthShortTitle,
+                        canGoNext: viewModel.canGoToNextMonth,
+                        size: ActivityCalendarLayout.expanded.monthNavSize,
+                        onPrevious: {
+                            viewModel.dismissDayDetail()
+                            viewModel.goToPreviousMonth()
+                        },
+                        onNext: {
+                            viewModel.dismissDayDetail()
+                            viewModel.goToNextMonth()
+                        },
+                        onToday: {
+                            viewModel.dismissDayDetail()
+                            viewModel.goToToday()
+                        }
+                    )
+                }
+
+                ActivityCalendarScrollContent(viewModel: viewModel, layout: .expanded)
+            }
         }
         .onAppear {
             viewModel.start()

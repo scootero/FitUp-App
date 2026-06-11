@@ -8,9 +8,11 @@
 import SwiftUI
 
 enum CalendarDayRingStyle: Equatable {
+    case notApplicable
     case ghost
-    case battle(summary: CalendarDayBattleSummary, margin: Int?)
-    case steps(CalendarDayStepsState?)
+    case restDay
+    case battle(summary: CalendarDayBattleSummary, margin: Int?, showsNoBattleDay: Bool, showsRestDay: Bool)
+    case steps(CalendarDayStepsState?, showsRestDay: Bool)
 }
 
 struct CalendarDayRingView: View {
@@ -35,13 +37,28 @@ struct CalendarDayRingView: View {
 
     var body: some View {
         switch style {
+        case .notApplicable:
+            notApplicableRing
         case .ghost:
             ghostRing
-        case .battle(let summary, let margin):
-            battleIndicator(summary: summary, margin: margin)
-        case .steps(let state):
-            stepsIndicator(state)
+        case .restDay:
+            restDayRing
+        case .battle(let summary, let margin, let showsNoBattleDay, let showsRestDay):
+            battleIndicator(
+                summary: summary,
+                margin: margin,
+                showsNoBattleDay: showsNoBattleDay,
+                showsRestDay: showsRestDay
+            )
+        case .steps(let state, let showsRestDay):
+            stepsIndicator(state, showsRestDay: showsRestDay)
         }
+    }
+
+    private var notApplicableRing: some View {
+        Circle()
+            .fill(Color.black)
+            .frame(width: innerDiameter, height: innerDiameter)
     }
 
     private var ghostRing: some View {
@@ -50,13 +67,51 @@ struct CalendarDayRingView: View {
             .frame(width: innerDiameter, height: innerDiameter)
     }
 
+    private var noBattleRing: some View {
+        ZStack {
+            ghostRing
+            Text("❌")
+                .font(.system(size: size * (layout == .expanded ? 0.3 : 0.28)))
+        }
+    }
+
+    private var restDayRing: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white.opacity(0.9))
+                .frame(width: innerDiameter, height: innerDiameter)
+                .overlay {
+                    Circle()
+                        .strokeBorder(Color.black.opacity(0.2), lineWidth: max(1, lineWidth * 0.85))
+                }
+
+            Image(systemName: "skull.fill")
+                .font(.system(size: size * 0.38, weight: .semibold))
+                .foregroundStyle(Color.black)
+        }
+    }
+
     @ViewBuilder
-    private func battleIndicator(summary: CalendarDayBattleSummary, margin: Int?) -> some View {
-        let indicator = CalendarBattleDayIndicator.resolve(summary: summary, margin: margin)
+    private func battleIndicator(
+        summary: CalendarDayBattleSummary,
+        margin: Int?,
+        showsNoBattleDay: Bool,
+        showsRestDay: Bool
+    ) -> some View {
+        let indicator = CalendarBattleDayIndicator.resolve(
+            summary: summary,
+            margin: margin,
+            showsNoBattleDay: showsNoBattleDay,
+            showsRestDay: showsRestDay
+        )
 
         switch indicator {
         case .ghost:
             ghostRing
+        case .noBattle:
+            noBattleRing
+        case .restDay:
+            restDayRing
         case .live(let trimProgress, let label):
             liveBattleRing(trimProgress: trimProgress, label: label)
         case .filled(let label, let fillColor, let glowColor):
@@ -110,7 +165,7 @@ struct CalendarDayRingView: View {
     }
 
     @ViewBuilder
-    private func stepsIndicator(_ state: CalendarDayStepsState?) -> some View {
+    private func stepsIndicator(_ state: CalendarDayStepsState?, showsRestDay: Bool) -> some View {
         if let state, state.steps > 0 {
             let progress = state.goalMet ? 1.0 : state.progress
             let ringColor = state.goalMet ? stepsGoalRingColor : stepsProgressRingColor
@@ -141,6 +196,8 @@ struct CalendarDayRingView: View {
                     .lineLimit(1)
                     .padding(.horizontal, size * 0.12)
             }
+        } else if showsRestDay {
+            restDayRing
         } else {
             ghostRing
         }
@@ -149,13 +206,16 @@ struct CalendarDayRingView: View {
 
 #Preview {
     HStack(spacing: 16) {
+        CalendarDayRingView(style: .notApplicable)
         CalendarDayRingView(style: .ghost)
-        CalendarDayRingView(style: .battle(summary: CalendarDayBattleSummary(state: .wonAny, matchCount: 1, wins: 1, losses: 0, voids: 0), margin: nil))
-        CalendarDayRingView(style: .battle(summary: CalendarDayBattleSummary(state: .lostAll, matchCount: 1, wins: 0, losses: 1, voids: 0), margin: nil))
-        CalendarDayRingView(style: .battle(summary: CalendarDayBattleSummary(state: .voidOnly, matchCount: 1, wins: 0, losses: 0, voids: 1), margin: nil))
-        CalendarDayRingView(style: .battle(summary: CalendarDayBattleSummary(state: .inProgress, matchCount: 1, wins: 0, losses: 0, voids: 0), margin: 850))
-        CalendarDayRingView(style: .battle(summary: CalendarDayBattleSummary(state: .wonAny, matchCount: 2, wins: 2, losses: 0, voids: 0), margin: nil))
-        CalendarDayRingView(style: .steps(CalendarDayStepsState(steps: 8420, stepsGoal: 12000)))
+        CalendarDayRingView(style: .restDay)
+        CalendarDayRingView(style: .battle(summary: CalendarDayBattleSummary(state: .wonAny, matchCount: 1, wins: 1, losses: 0, voids: 0), margin: nil, showsNoBattleDay: false, showsRestDay: false))
+        CalendarDayRingView(style: .battle(summary: CalendarDayBattleSummary(state: .lostAll, matchCount: 1, wins: 0, losses: 1, voids: 0), margin: nil, showsNoBattleDay: false, showsRestDay: false))
+        CalendarDayRingView(style: .battle(summary: CalendarDayBattleSummary(state: .voidOnly, matchCount: 1, wins: 0, losses: 0, voids: 1), margin: nil, showsNoBattleDay: false, showsRestDay: false))
+        CalendarDayRingView(style: .battle(summary: CalendarDayBattleSummary(state: .inProgress, matchCount: 1, wins: 0, losses: 0, voids: 0), margin: 850, showsNoBattleDay: false, showsRestDay: false))
+        CalendarDayRingView(style: .battle(summary: .empty, margin: nil, showsNoBattleDay: true, showsRestDay: false))
+        CalendarDayRingView(style: .steps(CalendarDayStepsState(steps: 8420, stepsGoal: 12000), showsRestDay: false))
+        CalendarDayRingView(style: .steps(nil, showsRestDay: true))
     }
     .padding()
     .background { FitUpColors.Bg.base }

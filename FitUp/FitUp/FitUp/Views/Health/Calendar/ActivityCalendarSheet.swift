@@ -10,17 +10,24 @@ import SwiftUI
 struct ActivityCalendarSheet: View {
     let userId: UUID
     let profileTimeZoneIdentifier: String?
+    let profileCreatedAt: Date?
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: ActivityCalendarViewModel
 
-    init(userId: UUID, profileTimeZoneIdentifier: String?) {
+    init(
+        userId: UUID,
+        profileTimeZoneIdentifier: String?,
+        profileCreatedAt: Date? = nil
+    ) {
         self.userId = userId
         self.profileTimeZoneIdentifier = profileTimeZoneIdentifier
+        self.profileCreatedAt = profileCreatedAt
         _viewModel = StateObject(
             wrappedValue: ActivityCalendarViewModel(
                 userId: userId,
-                profileTimeZoneIdentifier: profileTimeZoneIdentifier
+                profileTimeZoneIdentifier: profileTimeZoneIdentifier,
+                profileCreatedAt: profileCreatedAt
             )
         )
     }

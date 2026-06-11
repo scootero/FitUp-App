@@ -10,6 +10,7 @@ import SwiftUI
 struct PodiumView: View {
     /// Top rows in rank order. Only real rows are rendered (no placeholders).
     let rows: [LeaderboardDisplayRow]
+    var onUserTap: (LeaderboardDisplayRow) -> Void = { _ in }
 
     private let secondHeight: CGFloat = 68
     private let firstHeight: CGFloat = 82
@@ -34,18 +35,26 @@ struct PodiumView: View {
     }
 
     private func podiumColumnFirst(row: LeaderboardDisplayRow, height: CGFloat) -> some View {
-        VStack(spacing: 8) {
-            podiumAvatar(
-                row: row,
-                size: 58,
-                tier: .gold,
-                showCrown: true
-            )
+        Button {
+            if !row.isCurrentUser {
+                onUserTap(row)
+            }
+        } label: {
+            VStack(spacing: 8) {
+                podiumAvatar(
+                    row: row,
+                    size: 58,
+                    tier: .gold,
+                    showCrown: true
+                )
 
-            podiumCardBody(row: row, height: height, tier: .gold, medal: "🥇")
-                .frame(width: columnWidth, height: height)
-                .neonLeaderboardPodiumCard(tier: .gold, cornerRadius: cardCornerRadius)
+                podiumCardBody(row: row, height: height, tier: .gold, medal: "🥇")
+                    .frame(width: columnWidth, height: height)
+                    .neonLeaderboardPodiumCard(tier: .gold, cornerRadius: cardCornerRadius)
+            }
         }
+        .buttonStyle(.plain)
+        .disabled(row.isCurrentUser)
     }
 
     private func podiumColumn(
@@ -54,18 +63,26 @@ struct PodiumView: View {
         tier: LeaderboardPodiumTier,
         avatarSize: CGFloat
     ) -> some View {
-        VStack(spacing: 8) {
-            podiumAvatar(row: row, size: avatarSize, tier: tier, showCrown: false)
+        Button {
+            if !row.isCurrentUser {
+                onUserTap(row)
+            }
+        } label: {
+            VStack(spacing: 8) {
+                podiumAvatar(row: row, size: avatarSize, tier: tier, showCrown: false)
 
-            podiumCardBody(
-                row: row,
-                height: height,
-                tier: tier,
-                medal: tier == .silver ? "🥈" : "🥉"
-            )
-            .frame(width: columnWidth, height: height)
-            .neonLeaderboardPodiumCard(tier: tier, cornerRadius: cardCornerRadius)
+                podiumCardBody(
+                    row: row,
+                    height: height,
+                    tier: tier,
+                    medal: tier == .silver ? "🥈" : "🥉"
+                )
+                .frame(width: columnWidth, height: height)
+                .neonLeaderboardPodiumCard(tier: tier, cornerRadius: cardCornerRadius)
+            }
         }
+        .buttonStyle(.plain)
+        .disabled(row.isCurrentUser)
     }
 
     private func podiumAvatar(

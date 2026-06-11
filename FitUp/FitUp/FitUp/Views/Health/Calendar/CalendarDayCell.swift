@@ -14,6 +14,9 @@ struct CalendarDayCell: View {
     let battleSummary: CalendarDayBattleSummary
     let battleMargin: Int?
     let stepsState: CalendarDayStepsState?
+    let showsRestDay: Bool
+    let showsNoBattleDay: Bool
+    let isBeforeJoinDate: Bool
     let isSelected: Bool
     let onTap: () -> Void
 
@@ -36,14 +39,14 @@ struct CalendarDayCell: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, layout.cellVerticalPadding)
         .background {
-            if isSelected {
+            if isSelected, !isBeforeJoinDate {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(FitUpColors.Neon.cyan.opacity(0.7), lineWidth: 1.2)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(FitUpColors.Neon.cyan.opacity(0.1))
                     )
-            } else if item.isToday {
+            } else if item.isToday, !isBeforeJoinDate {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(FitUpColors.Neon.orange.opacity(0.75), lineWidth: 1.2)
                     .background(
@@ -60,6 +63,9 @@ struct CalendarDayCell: View {
         if item.isToday {
             return FitUpColors.Neon.orange
         }
+        if isBeforeJoinDate, item.isWithinDisplayedMonth {
+            return FitUpColors.Text.tertiary.opacity(0.4)
+        }
         if item.isWithinDisplayedMonth {
             return FitUpColors.Text.primary
         }
@@ -68,27 +74,41 @@ struct CalendarDayCell: View {
 
     private var ringView: some View {
         Group {
-            switch mode {
-            case .battles:
-                VStack(spacing: 1) {
+            if isBeforeJoinDate {
+                CalendarDayRingView(style: .notApplicable, size: ringSize, layout: layout)
+                    .frame(width: ringSize, height: ringSize)
+            } else {
+                switch mode {
+                case .battles:
+                    VStack(spacing: 1) {
+                        CalendarDayRingView(
+                            style: .battle(
+                                summary: battleSummary,
+                                margin: battleMargin,
+                                showsNoBattleDay: showsNoBattleDay,
+                                showsRestDay: showsRestDay
+                            ),
+                            size: ringSize,
+                            layout: layout
+                        )
+                        .frame(width: ringSize, height: ringSize)
+
+                        if battleSummary.matchCount > 1 {
+                            Text("x\(battleSummary.matchCount)")
+                                .font(FitUpFont.mono(layout == .expanded ? 7 : 8, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Text.tertiary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                    }
+                case .steps:
                     CalendarDayRingView(
-                        style: .battle(summary: battleSummary, margin: battleMargin),
+                        style: .steps(stepsState, showsRestDay: showsRestDay),
                         size: ringSize,
                         layout: layout
                     )
                     .frame(width: ringSize, height: ringSize)
-
-                    if battleSummary.matchCount > 1 {
-                        Text("x\(battleSummary.matchCount)")
-                            .font(FitUpFont.mono(layout == .expanded ? 7 : 8, weight: .semibold))
-                            .foregroundStyle(FitUpColors.Text.tertiary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
                 }
-            case .steps:
-                CalendarDayRingView(style: .steps(stepsState), size: ringSize, layout: layout)
-                    .frame(width: ringSize, height: ringSize)
             }
         }
     }

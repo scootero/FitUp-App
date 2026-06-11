@@ -10,6 +10,7 @@ import SwiftUI
 struct StatsArcadeSliceOneView: View {
     let calendarUserId: UUID?
     let profileTimeZoneIdentifier: String?
+    var profileCreatedAt: Date? = nil
     let battleStats: HealthBattleStats
     let rivalStats: [HomeRivalStat]
     let completedMatches: [ActivityCompletedMatch]
@@ -24,6 +25,7 @@ struct StatsArcadeSliceOneView: View {
     let battleImpactMetric: StatsBattleImpactMetric?
     let personalRecords: StatsPersonalRecords?
     let achievements: [StatsAchievementItem]
+    @Binding var isAchievementsOverflowExpanded: Bool
     let isLoadingPersonalRecords: Bool
     var onOpenMatchDetails: (UUID, String) -> Void
     var onOpenChallenge: () -> Void = {}
@@ -81,70 +83,110 @@ struct StatsArcadeSliceOneView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BattleStatsTheme.sectionSpacing) {
-            StatsBattleStatsHeader(subtitle: StatsBattleStatsHeader.defaultSubtitle())
-                .padding(.bottom, 4)
+            collapseAchievementsOnOutsideTap {
+                StatsBattleStatsHeader(subtitle: StatsBattleStatsHeader.defaultSubtitle())
+                    .padding(.bottom, 4)
+            }
 
-            StatsUserStepsTodayHeroCard(
-                stepsToday: stepsToday,
-                stepsGoal: stepsGoal,
-                domain: userIntradayDomain,
-                isLoading: isUserIntradayLoading,
-                lastUpdatedAt: stepsLastUpdatedAt,
-                onShowMetricExplainer: onShowMetricExplainer,
-                onEditStepsGoal: onEditStepsGoal
-            )
+            collapseAchievementsOnOutsideTap {
+                StatsUserStepsTodayHeroCard(
+                    profileId: calendarUserId,
+                    profileTimeZoneIdentifier: profileTimeZoneIdentifier,
+                    stepsToday: stepsToday,
+                    stepsGoal: stepsGoal,
+                    domain: userIntradayDomain,
+                    isLoading: isUserIntradayLoading,
+                    lastUpdatedAt: stepsLastUpdatedAt,
+                    onShowMetricExplainer: onShowMetricExplainer,
+                    onEditStepsGoal: onEditStepsGoal
+                )
+            }
+
+            collapseAchievementsOnOutsideTap {
+                ActivityCalendarCard(
+                    userId: calendarUserId,
+                    profileTimeZoneIdentifier: profileTimeZoneIdentifier,
+                    profileCreatedAt: profileCreatedAt ?? (calendarUserId != nil ? Date() : nil),
+                    onOpenMatchDetails: onOpenMatchDetails
+                )
+            }
 
             if summaryPillDisplay.hasAnyResolvedMetric {
-                StatsSummaryPillRow(
-                    summaryPeriod: $summaryPeriod,
-                    display: summaryPillDisplay
-                )
+                collapseAchievementsOnOutsideTap {
+                    StatsSummaryPillRow(
+                        summaryPeriod: $summaryPeriod,
+                        display: summaryPillDisplay
+                    )
+                }
             }
 
             if hasLiveBattles {
-                StatsLiveBattleSection(
-                    matches: activeMatchEdges,
-                    selectedMatchId: $selectedLiveBattleMatchId,
-                    onOpenMatchDetails: { match in
-                        onOpenMatchDetails(match.id, match.opponent.displayName)
-                    }
+                collapseAchievementsOnOutsideTap {
+                    StatsLiveBattleSection(
+                        matches: activeMatchEdges,
+                        selectedMatchId: $selectedLiveBattleMatchId,
+                        onOpenMatchDetails: { match in
+                            onOpenMatchDetails(match.id, match.opponent.displayName)
+                        }
+                    )
+                }
+            }
+
+            collapseAchievementsOnOutsideTap {
+                StatsBattleStepsCard(
+                    display: battleStepsDisplay,
+                    onShowCombinedMetricExplainer: onShowCombinedMetricExplainer
                 )
             }
 
-            StatsBattleStepsCard(
-                display: battleStepsDisplay,
-                onShowCombinedMetricExplainer: onShowCombinedMetricExplainer
+            collapseAchievementsOnOutsideTap {
+                StatsLifetimeGrid(
+                    display: lifetimeDisplay,
+                    onShowCombinedMetricExplainer: onShowCombinedMetricExplainer
+                )
+            }
+
+            collapseAchievementsOnOutsideTap {
+                StatsBattleDayEffectCard(
+                    impact: battleImpactMetric,
+                    onShowMetricExplainer: onShowMetricExplainer
+                )
+            }
+
+            collapseAchievementsOnOutsideTap {
+                StatsPersonalRecordsCard(
+                    records: personalRecords,
+                    isLoading: isLoadingPersonalRecords,
+                    onShowCombinedMetricExplainer: onShowCombinedMetricExplainer
+                )
+            }
+
+            StatsAchievementsGrid(
+                achievements: achievements,
+                isOverflowExpanded: $isAchievementsOverflowExpanded,
+                showsEmptyMatchHint: lifetimeDisplay.showsEmptyMatchHint
             )
 
-            StatsLifetimeGrid(
-                display: lifetimeDisplay,
-                onShowCombinedMetricExplainer: onShowCombinedMetricExplainer
-            )
-
-            StatsBattleDayEffectCard(
-                impact: battleImpactMetric,
-                onShowMetricExplainer: onShowMetricExplainer
-            )
-
-            StatsPersonalRecordsCard(
-                records: personalRecords,
-                isLoading: isLoadingPersonalRecords,
-                onShowCombinedMetricExplainer: onShowCombinedMetricExplainer
-            )
-
-            StatsAchievementsGrid(achievements: achievements)
-
-            rivalsSection
-
-            ActivityCalendarCard(
-                userId: calendarUserId,
-                profileTimeZoneIdentifier: profileTimeZoneIdentifier,
-                onOpenMatchDetails: onOpenMatchDetails
-            )
+            collapseAchievementsOnOutsideTap {
+                rivalsSection
+            }
         }
         .sheet(isPresented: $isAllRivalsSheetPresented) {
             StatsArcadeAllRivalsSheet(rivals: allRivalsSorted)
         }
+    }
+
+    private func collapseAchievementsOnOutsideTap<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    guard isAchievementsOverflowExpanded else { return }
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                        isAchievementsOverflowExpanded = false
+                    }
+                }
+            )
     }
 
     @ViewBuilder
@@ -183,10 +225,13 @@ struct StatsArcadeSliceOneView: View {
 }
 
 #Preview {
+    @Previewable @State var isAchievementsOverflowExpanded = false
+
     ScrollView {
         StatsArcadeSliceOneView(
             calendarUserId: nil,
             profileTimeZoneIdentifier: nil,
+            profileCreatedAt: nil,
             battleStats: .empty,
             rivalStats: [],
             completedMatches: [],
@@ -207,6 +252,7 @@ struct StatsArcadeSliceOneView: View {
             battleImpactMetric: nil,
             personalRecords: nil,
             achievements: StatsAchievementCatalog.allItems(),
+            isAchievementsOverflowExpanded: $isAchievementsOverflowExpanded,
             isLoadingPersonalRecords: false,
             onOpenMatchDetails: { _, _ in },
             onOpenChallenge: {},

@@ -9,11 +9,12 @@ import SwiftUI
 
 struct LeaderboardView: View {
     let profile: Profile?
-    var onChallengeUser: (ChallengePrefillOpponent) -> Void
 
     @StateObject private var viewModel = LeaderboardViewModel()
+    @State private var peerProfileSheet: LeaderboardPeerProfileItem?
 
     var body: some View {
+        ZStack {
         GeometryReader { scrollGeo in
             ZStack(alignment: .bottom) {
                 LeaderboardArcadeBackground()
@@ -45,29 +46,14 @@ struct LeaderboardView: View {
                         } else if viewModel.podiumRows.isEmpty && viewModel.listRows.isEmpty {
                             emptyLeaderboardState
                         } else {
-                            PodiumView(rows: viewModel.podiumRows)
+                            PodiumView(rows: viewModel.podiumRows) { row in
+                                openPeerProfile(row)
+                            }
                                 .padding(.bottom, 22)
 
                             ForEach(viewModel.listRows) { row in
                                 RankedRowView(row: row, scrollGeo: scrollGeo) {
-                                    if let uid = profile?.id {
-                                        ProductAnalytics.track(
-                                            ProductAnalytics.Event.opponentProfileViewed,
-                                            userId: uid,
-                                            properties: [
-                                                "opponent_user_id": row.id.uuidString,
-                                                "source": "leaderboard",
-                                            ]
-                                        )
-                                    }
-                                    onChallengeUser(
-                                        ChallengePrefillOpponent(
-                                            id: row.id,
-                                            displayName: row.displayName,
-                                            initials: row.initials,
-                                            colorHex: row.colorHex
-                                        )
-                                    )
+                                    openPeerProfile(row)
                                 }
                                 .padding(.bottom, 10)
                             }
@@ -87,6 +73,18 @@ struct LeaderboardView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if let item = peerProfileSheet, let profile {
+                PeerProfileView(
+                    peerId: item.peerId,
+                    viewer: profile,
+                    onClose: { peerProfileSheet = nil }
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .zIndex(2)
+            }
+        }
+        .animation(.spring(response: 0.36, dampingFraction: 0.86), value: peerProfileSheet != nil)
         .onPreferenceChange(LeaderboardUserRowVisibilityPreferenceKey.self) { visible in
             viewModel.isCurrentUserListRowVisible = visible
         }
@@ -217,4 +215,24 @@ struct LeaderboardView: View {
         let formatted = f.string(from: NSNumber(value: value)) ?? "\(value)"
         return "\(formatted) steps"
     }
+
+    private func openPeerProfile(_ row: LeaderboardDisplayRow) {
+        guard !row.isCurrentUser else { return }
+        if let uid = profile?.id {
+            ProductAnalytics.track(
+                ProductAnalytics.Event.opponentProfileViewed,
+                userId: uid,
+                properties: [
+                    "opponent_user_id": row.id.uuidString,
+                    "source": "leaderboard",
+                ]
+            )
+        }
+        peerProfileSheet = LeaderboardPeerProfileItem(peerId: row.id)
+    }
+}
+
+private struct LeaderboardPeerProfileItem: Identifiable, Equatable {
+    let peerId: UUID
+    var id: UUID { peerId }
 }

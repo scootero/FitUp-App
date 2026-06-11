@@ -38,6 +38,8 @@ final class ActivityCalendarViewModel: ObservableObject {
     @Published private(set) var battleDayDetail: CalendarDayBattleDetail?
     @Published private(set) var stepsDayDetail: CalendarDayStepsDetail?
     @Published private(set) var isDayDetailLoading = false
+    @Published private(set) var rollingAvg7Steps: Double?
+    @Published private(set) var rollingAvg30Steps: Double?
 
     var monthTitle: String {
         CalendarMonthLayout.monthTitle(
@@ -53,8 +55,26 @@ final class ActivityCalendarViewModel: ObservableObject {
         )
     }
 
+    /// Zero when viewing the current profile month; negative for earlier months.
+    var monthsFromCurrent: Int {
+        CalendarMonthLayout.monthsBetween(
+            displayedMonth,
+            and: Date(),
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
+    }
+
+    var isDisplayingCurrentMonth: Bool {
+        monthsFromCurrent == 0
+    }
+
+    var canGoToNextMonth: Bool {
+        monthsFromCurrent < 0
+    }
+
     private let userId: UUID
     private let profileTimeZoneIdentifier: String?
+    private let profileCreatedAt: Date
     private let calendarRepository: CalendarRepository
     private let homeRepository: HomeRepository
     private let stepsGoal: Int
@@ -64,16 +84,45 @@ final class ActivityCalendarViewModel: ObservableObject {
     private var battleMarginCache: [String: [String: Int]] = [:]
     private var stepsCache: [String: [String: CalendarDayStepsState]] = [:]
     private var loadTask: Task<Void, Never>?
+    private var paceBaselinesTask: Task<Void, Never>?
+
+    var paceChipInputs: CalendarPaceChipInputs? {
+        guard isDisplayingCurrentMonth,
+              !showHealthAccessBanner,
+              let avg7 = rollingAvg7Steps, avg7 > 0,
+              let avg30 = rollingAvg30Steps, avg30 > 0
+        else { return nil }
+
+        let todaySteps = stepsByDate[profileTodayDateKey]?.steps ?? 0
+        return CalendarPaceChipInputs(
+            todaySteps: todaySteps,
+            avg7: avg7,
+            avg30: avg30,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
+    }
 
     init(
         userId: UUID,
         profileTimeZoneIdentifier: String?,
+        profileCreatedAt: Date? = nil,
         initialMonth: Date = Date(),
         calendarRepository: CalendarRepository = CalendarRepository(),
         homeRepository: HomeRepository = HomeRepository()
     ) {
         self.userId = userId
         self.profileTimeZoneIdentifier = profileTimeZoneIdentifier
+        if let profileCreatedAt {
+            self.profileCreatedAt = profileCreatedAt
+        } else {
+            self.profileCreatedAt = Date()
+            AppLogger.log(
+                category: "activity_calendar",
+                level: .warning,
+                message: "profile_created_at_missing_using_now",
+                userId: userId
+            )
+        }
         self.displayedMonth = CalendarMonthLayout.startOfMonth(
             for: initialMonth,
             profileTimeZoneIdentifier: profileTimeZoneIdentifier
@@ -86,6 +135,7 @@ final class ActivityCalendarViewModel: ObservableObject {
 
     func start() {
         loadMonthData(forceRefresh: false)
+        loadPaceBaselinesIfNeeded()
     }
 
     func reload() {
@@ -93,7 +143,10 @@ final class ActivityCalendarViewModel: ObservableObject {
         battleSummaryCache.removeAll()
         battleMarginCache.removeAll()
         stepsCache.removeAll()
+        rollingAvg7Steps = nil
+        rollingAvg30Steps = nil
         loadMonthData(forceRefresh: true)
+        loadPaceBaselinesIfNeeded(forceRefresh: true)
     }
 
     func goToPreviousMonth() {
@@ -107,6 +160,7 @@ final class ActivityCalendarViewModel: ObservableObject {
     }
 
     func goToNextMonth() {
+        guard canGoToNextMonth else { return }
         displayedMonth = CalendarMonthLayout.addMonths(
             1,
             to: displayedMonth,
@@ -146,6 +200,32 @@ final class ActivityCalendarViewModel: ObservableObject {
 
     func stepsState(for dateKey: String) -> CalendarDayStepsState? {
         stepsByDate[dateKey]
+    }
+
+    /// Whether the calendar day falls before the user's FitUp join date (profile creation).
+    func isBeforeJoinDate(for dateKey: String) -> Bool {
+        dateKey < profileCreatedDateKey
+    }
+
+    /// Battles mode: past completed day on/after join with no battle logged.
+    func showsNoBattleDay(for dateKey: String) -> Bool {
+        guard mode == .battles else { return false }
+        guard !isBeforeJoinDate(for: dateKey) else { return false }
+        guard dateKey < profileTodayDateKey else { return false }
+        let summary = battleSummary(for: dateKey)
+        return summary.matchCount == 0 || summary.state == .none
+    }
+
+    /// Past completed days on/after account creation with no steps (steps mode only).
+    func showsRestDay(for dateKey: String) -> Bool {
+        false
+    }
+
+    private var profileCreatedDateKey: String {
+        HomeRepository.formatProfileCalendarDate(
+            profileCreatedAt,
+            profileTimeZoneIdentifier: profileTimeZoneIdentifier
+        )
     }
 
     func selectDay(_ item: CalendarDayItem) {
@@ -378,5 +458,41 @@ final class ActivityCalendarViewModel: ObservableObject {
         let year = calendar.component(.year, from: month)
         let monthNum = calendar.component(.month, from: month)
         return String(format: "%04d-%02d", year, monthNum)
+    }
+
+    private func loadPaceBaselinesIfNeeded(forceRefresh: Bool = false) {
+        if !forceRefresh,
+           rollingAvg7Steps != nil,
+           rollingAvg30Steps != nil {
+            return
+        }
+
+        paceBaselinesTask?.cancel()
+        paceBaselinesTask = Task {
+            async let avg7 = HealthKitService.fetchNDayStepAverage(days: 7)
+            async let avg30 = HealthKitService.fetchNDayStepAverage(days: 30)
+
+            var resolved7: Double?
+            var resolved30: Double?
+
+            do {
+                let value = try await avg7
+                if value > 0 { resolved7 = value }
+            } catch {
+                resolved7 = nil
+            }
+
+            do {
+                let value = try await avg30
+                if value > 0 { resolved30 = value }
+            } catch {
+                resolved30 = nil
+            }
+
+            guard !Task.isCancelled else { return }
+
+            rollingAvg7Steps = resolved7
+            rollingAvg30Steps = resolved30
+        }
     }
 }

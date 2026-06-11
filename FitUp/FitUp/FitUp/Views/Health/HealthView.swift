@@ -19,6 +19,7 @@ struct HealthView: View {
     @State private var statsMetricExplainer: StatsMetricExplainerKind?
     @State private var statsCombinedMetricExplainer: [StatsMetricExplainerKind]?
     @State private var showEditDailyStepGoal = false
+    @State private var isAchievementsOverflowExpanded = false
     #if DEBUG
     @State private var isLegacyStatsExpanded = false
     #endif
@@ -29,6 +30,7 @@ struct HealthView: View {
                 StatsArcadeSliceOneView(
                     calendarUserId: profile?.id,
                     profileTimeZoneIdentifier: profile?.timezone,
+                    profileCreatedAt: profile?.createdAt,
                     battleStats: viewModel.battleStats,
                     rivalStats: viewModel.rivalStats,
                     completedMatches: viewModel.completedMatches,
@@ -43,6 +45,7 @@ struct HealthView: View {
                     battleImpactMetric: viewModel.statsBattleImpactMetric,
                     personalRecords: viewModel.statsPersonalRecords,
                     achievements: viewModel.statsAchievements,
+                    isAchievementsOverflowExpanded: $isAchievementsOverflowExpanded,
                     isLoadingPersonalRecords: viewModel.isLoadingPersonalRecords,
                     onOpenMatchDetails: onOpenMatchDetails,
                     onOpenChallenge: onOpenChallenge,
@@ -71,6 +74,15 @@ struct HealthView: View {
             .padding(.horizontal, 16)
         }
         .scrollIndicators(.hidden)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 12).onChanged { _ in
+                guard isAchievementsOverflowExpanded else { return }
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                    isAchievementsOverflowExpanded = false
+                }
+            },
+            including: isAchievementsOverflowExpanded ? .gesture : .subviews
+        )
         .onReceive(NotificationCenter.default.publisher(for: .fitupMetricSyncDidComplete)) { _ in
             Task { await viewModel.refreshBattleStepsAfterSync() }
         }

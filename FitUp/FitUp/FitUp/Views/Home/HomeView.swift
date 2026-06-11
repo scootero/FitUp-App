@@ -12,6 +12,8 @@ private let useEnergyBeamHomeHero = true
 private let homeEnergyBeamHeroSkeletonHeight: CGFloat = 345
 /// Horizontal inset for the energy beam hero only (slightly tighter than the rest of Home).
 private let homeHeroHorizontalPadding: CGFloat = 15
+/// Slightly wider than the hero so the intro tip card breathes on empty Home.
+private let homeIntroTipHorizontalPadding: CGFloat = 11
 /// Fixed side gutters for hero battle chevrons — reserved even when a direction is unavailable so the card stays centered.
 private let homeHeroChevronGutterWidth: CGFloat = 22
 
@@ -532,9 +534,16 @@ struct HomeView: View {
                 handoffFinishTask?.cancel()
             }
         } else {
-            energyBeamHeroCard(match: nil, onStartBattle: { onOpenChallenge(nil) })
-                .padding(.top, 10)
-                .padding(.horizontal, homeHeroHorizontalPadding)
+            VStack(spacing: 10) {
+                if viewModel.activeStepMatchesForHomeUX.isEmpty {
+                    HomeIntroTipView(layout: .homeEmptyState)
+                        .padding(.horizontal, homeIntroTipHorizontalPadding)
+                }
+
+                energyBeamHeroCard(match: nil, onStartBattle: { onOpenChallenge(nil) })
+                    .padding(.horizontal, homeHeroHorizontalPadding)
+            }
+            .padding(.top, 10)
         }
     }
 

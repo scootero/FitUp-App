@@ -225,7 +225,7 @@ enum StatsMetricExplainerKind: Equatable {
         case .battleMargin: return "Battle margin"
         case .todaysBattleSteps: return "Today's battle steps"
         case .allTimeBattleSteps: return "All-time battle steps"
-        case .avgBattleDay: return "Avg battle day"
+        case .avgBattleDay: return "Average battle day steps"
         case .battlesCompleted: return "Battles completed"
         case .daysCompeted: return "Days competed"
         case .extraBattleImpact: return "Extra steps from battles"

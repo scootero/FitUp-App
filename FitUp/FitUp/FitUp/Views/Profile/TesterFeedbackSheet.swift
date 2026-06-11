@@ -34,25 +34,53 @@ struct TesterFeedbackSheet: View {
 
     let userId: UUID
     var screenName: String?
+    var promptHints: [String]?
+    var feedbackSource: String = "testflight_sheet"
     var onSuccess: (() -> Void)?
+
+    private var usesPromptHints: Bool {
+        guard let promptHints else { return false }
+        return !promptHints.isEmpty
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 BackgroundGradientView()
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("What should we know? Bugs, ideas, and rough edges are all welcome.")
-                        .font(FitUpFont.body(14, weight: .medium))
-                        .foregroundStyle(FitUpColors.Text.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if usesPromptHints {
+                        Text("Share anything that comes to mind — a few ideas to get you started:")
+                            .font(FitUpFont.body(14, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                    Picker("Category", selection: $category) {
-                        ForEach(TesterFeedbackCategory.allCases) { c in
-                            Text(c.label).tag(c)
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(promptHints ?? [], id: \.self) { hint in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text("•")
+                                        .font(FitUpFont.body(13, weight: .semibold))
+                                        .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.85))
+                                    Text(hint)
+                                        .font(FitUpFont.body(13, weight: .medium))
+                                        .foregroundStyle(FitUpColors.Text.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
                         }
+                    } else {
+                        Text("What should we know? Bugs, ideas, and rough edges are all welcome.")
+                            .font(FitUpFont.body(14, weight: .medium))
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Picker("Category", selection: $category) {
+                            ForEach(TesterFeedbackCategory.allCases) { c in
+                                Text(c.label).tag(c)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(FitUpColors.Neon.cyan)
                     }
-                    .pickerStyle(.menu)
-                    .tint(FitUpColors.Neon.cyan)
 
                     TextEditor(text: $message)
                         .font(FitUpFont.body(15, weight: .regular))
@@ -100,14 +128,15 @@ struct TesterFeedbackSheet: View {
         isSubmitting = true
         errorText = nil
         do {
-            var ctx: [String: String] = ["source": "testflight_sheet"]
+            let resolvedCategory = usesPromptHints ? "testflight_prompt" : category.rawValue
+            var ctx: [String: String] = ["source": feedbackSource]
             if let screenName, !screenName.isEmpty {
                 ctx["screen"] = String(screenName.prefix(200))
             }
             try await TesterFeedbackRepository().submit(
                 message: String(text.prefix(4000)),
                 userId: userId,
-                category: category.rawValue,
+                category: resolvedCategory,
                 screenName: screenName.map { String($0.prefix(200)) },
                 context: ctx
             )
@@ -115,7 +144,7 @@ struct TesterFeedbackSheet: View {
             ProductAnalytics.track(
                 ProductAnalytics.Event.feedbackSubmitted,
                 userId: userId,
-                properties: ["category": category.rawValue]
+                properties: ["category": resolvedCategory]
             )
             onSuccess?()
             dismiss()

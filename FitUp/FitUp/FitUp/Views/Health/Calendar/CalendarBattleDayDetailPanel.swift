@@ -18,11 +18,7 @@ struct CalendarBattleDayDetailPanel: View {
             header
 
             if detail.matches.isEmpty {
-                Text(detail.summaryLine)
-                    .font(FitUpFont.body(12))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 8)
+                restDayShameContent
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -47,13 +43,42 @@ struct CalendarBattleDayDetailPanel: View {
             Text(detail.displayTitle)
                 .font(FitUpFont.display(17, weight: .bold))
                 .foregroundStyle(FitUpColors.Text.primary)
-            Text(detail.summaryLine)
-                .font(FitUpFont.body(11))
-                .foregroundStyle(FitUpColors.Text.secondary)
+            if !detail.matches.isEmpty {
+                Text(detail.summaryLine)
+                    .font(FitUpFont.body(11))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+            }
         }
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
         .padding(.bottom, 4)
+    }
+
+    private var restDayShameContent: some View {
+        VStack(spacing: 18) {
+            Text("You didn't battle — come on!")
+                .font(FitUpFont.display(17, weight: .heavy))
+                .foregroundStyle(FitUpColors.Text.primary)
+                .multilineTextAlignment(.center)
+
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.92))
+                    .frame(width: 112, height: 112)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(Color.black.opacity(0.18), lineWidth: 1.5)
+                    }
+
+                Image(systemName: "skull.fill")
+                    .font(.system(size: 60, weight: .semibold))
+                    .foregroundStyle(Color.black)
+            }
+            .shadow(color: Color.black.opacity(0.35), radius: 14, y: 5)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 20)
+        .padding(.bottom, 12)
     }
 
     private var matchSeparator: some View {

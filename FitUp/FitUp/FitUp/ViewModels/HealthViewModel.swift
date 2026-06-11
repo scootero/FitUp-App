@@ -145,6 +145,7 @@ final class HealthViewModel: ObservableObject {
     private let battleStatsRepository = BattleStatsRepository()
     private let homeRepository = HomeRepository()
     private let activityRepository = ActivityRepository()
+    private let friendshipRepository = FriendshipRepository()
     private let calendarRepository = CalendarRepository()
     private let userBattleStepTotalsRepository = UserBattleStepTotalsRepository()
     private let statsSnapshotCacheStore = StatsPageSnapshotCacheStore()
@@ -1182,10 +1183,12 @@ final class HealthViewModel: ObservableObject {
             endDateKey: todayKey
         )
         async let completedTask = activityRepository.loadCompletedMatches(currentUserId: userId)
+        async let friendCountTask = fetchAcceptedFriendCount(userId: userId)
 
         let margins = await marginsTask
         let battleKeys = await battleKeysTask
         let completed = await completedTask
+        let acceptedFriendCount = await friendCountTask
         completedMatches = completed
 
         var dailySteps: [String: Int] = [:]
@@ -1211,10 +1214,103 @@ final class HealthViewModel: ObservableObject {
 
         let longestStreak = StatsPersonalRecordsBuilder.longestMatchWinStreakCount(from: completed)
         let dominatorDays = StatsAchievementCatalog.dominatorDayCount(margins: margins)
+        let hasUpsetVictory = StatsAchievementCatalog.hasUpsetVictory(from: completed)
+        let hasPhotoFinish = StatsAchievementCatalog.hasPhotoFinish(margins: margins)
+        let hasStepCrusher = StatsAchievementCatalog.hasStepCrusher(
+            dailySteps: dailySteps,
+            battleDateKeys: battleKeys
+        )
+        let hasBounceBack = StatsAchievementCatalog.hasBounceBack(from: completed)
+        let hasPerfectWeek = StatsAchievementCatalog.hasPerfectWeek(margins: margins, calendar: calendar)
+        let hasMarathonMatch = StatsAchievementCatalog.hasMarathonMatch(from: completed)
+        let hasRivalSlayer = StatsAchievementCatalog.hasRivalSlayer(from: completed)
+        let hasSocialButterfly = StatsAchievementCatalog.hasSocialButterfly(
+            acceptedFriendCount: acceptedFriendCount
+        )
+        let hourlyBattleAchievements = await checkHourlyBattleAchievements(
+            battleDateKeys: battleKeys,
+            dailySteps: dailySteps,
+            timeZone: tz
+        )
         statsAchievements = StatsAchievementCatalog.allItems(
             battleStats: battleStats,
             longestMatchWinStreak: longestStreak,
-            dominatorDayCount: dominatorDays
+            dominatorDayCount: dominatorDays,
+            hasUpsetVictory: hasUpsetVictory,
+            hasNightWalker: hourlyBattleAchievements.hasNightWalker,
+            hasMorningWalker: hourlyBattleAchievements.hasMorningWalker,
+            hasPhotoFinish: hasPhotoFinish,
+            hasStepCrusher: hasStepCrusher,
+            hasBounceBack: hasBounceBack,
+            hasPerfectWeek: hasPerfectWeek,
+            hasMarathonMatch: hasMarathonMatch,
+            hasRivalSlayer: hasRivalSlayer,
+            hasSocialButterfly: hasSocialButterfly
+        )
+    }
+
+    private func fetchAcceptedFriendCount(userId: UUID) async -> Int {
+        do {
+            let rows = try await friendshipRepository.fetchFriendshipRows(currentProfileId: userId)
+            return rows.filter { $0.status == "accepted" }.count
+        } catch {
+            return 0
+        }
+    }
+
+    private struct HourlyBattleAchievements: Sendable {
+        let hasNightWalker: Bool
+        let hasMorningWalker: Bool
+    }
+
+    /// Night Walker: 2,500+ steps between 9 PM and 5 AM. Morning Walker: 1,500+ steps before 9 AM.
+    private func checkHourlyBattleAchievements(
+        battleDateKeys: Set<String>,
+        dailySteps: [String: Int],
+        timeZone: TimeZone
+    ) async -> HourlyBattleAchievements {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = timeZone
+
+        var hasNightWalker = false
+        var hasMorningWalker = false
+
+        let candidateKeys = battleDateKeys
+            .filter { (dailySteps[$0] ?? 0) > 0 }
+            .sorted(by: >)
+            .prefix(StatsAchievementCatalog.hourlyBattleAchievementMaxDaysToScan)
+
+        for key in candidateKeys {
+            guard !hasNightWalker || !hasMorningWalker else { break }
+            guard let date = formatter.date(from: key) else { continue }
+            do {
+                let buckets = try await HealthKitService.fetchIntradayHourlyDeltas(
+                    metricType: .steps,
+                    for: date,
+                    timeZone: timeZone
+                )
+                if !hasNightWalker {
+                    let nightSteps = StatsAchievementCatalog.nightSteps(from: buckets, calendar: calendar)
+                    hasNightWalker = nightSteps >= StatsAchievementCatalog.nightWalkerStepThreshold
+                }
+                if !hasMorningWalker {
+                    let morningSteps = StatsAchievementCatalog.morningSteps(from: buckets, calendar: calendar)
+                    hasMorningWalker = morningSteps >= StatsAchievementCatalog.morningWalkerStepThreshold
+                }
+            } catch {
+                continue
+            }
+        }
+
+        return HourlyBattleAchievements(
+            hasNightWalker: hasNightWalker,
+            hasMorningWalker: hasMorningWalker
         )
     }
 

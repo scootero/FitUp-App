@@ -316,7 +316,7 @@ struct HomeEnergyBeamHeroCard: View {
                         opponentIntradayLatestTickAt: opponentIntradayLatestTickAt,
                         blocksHeroCardNavigation: $blocksHeroCardNavigation,
                         beamCollisionMarginPreciseOverride: debugBeamLabEnabled ? beamCollision : nil,
-                        showTopBrandHeader: false,
+                        showTopBrandHeader: true,
                         beamVisualTuning: .endingProduction,
                         beamIntroStartedAt: reduceMotion ? nil : beamIntroStartedAt,
                         beamIntroHoldGhost: reduceMotion ? false : holdIntroGhostBeforeFirstPlay,

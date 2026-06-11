@@ -197,6 +197,65 @@ enum BattleStatsTheme {
     static func textGradient(_ tone: TextTone, accent: SectionAccent = .neutral) -> LinearGradient {
         tone.gradient(accent: accent)
     }
+
+    /// Achievement cell titles: warm gray-gold on the left, full gold on the right.
+    static func achievementTitleGradient(unlocked: Bool) -> LinearGradient {
+        if unlocked {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.62, green: 0.58, blue: 0.46).opacity(0.92),
+                    gold.opacity(0.78),
+                    gold,
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        } else {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.58, green: 0.55, blue: 0.48).opacity(0.72),
+                    gold.opacity(0.52),
+                    gold.opacity(0.68),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        }
+    }
+
+    /// Gray top-right badge when battle stats have resolved but the user has no matches yet.
+    static var noBattleDataBadge: some View {
+        Text("No battle data")
+            .font(FitUpFont.body(Typography.captionSmall, weight: .medium))
+            .foregroundStyle(textLabel.opacity(0.55))
+    }
+
+    /// Footer copy at the bottom of parent cards when the user has not completed a match.
+    static var completeMatchFirstFooter: some View {
+        Text("Complete a match first…")
+            .font(FitUpFont.body(Typography.captionSmall, weight: .medium))
+            .foregroundStyle(textLabel.opacity(0.55))
+            .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    /// Section header row with optional empty-state badge; reserves trailing space for the info button.
+    static func sectionHeaderRow<Trailing: View>(
+        title: String,
+        accent: SectionAccent = .neutral,
+        showsNoBattleDataBadge: Bool = false,
+        reservesInfoButtonSpace: Bool = true,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            sectionTitle(title, accent: accent)
+            Spacer(minLength: 4)
+            if showsNoBattleDataBadge {
+                noBattleDataBadge
+            }
+            trailing()
+        }
+        .padding(.trailing, reservesInfoButtonSpace ? 32 : 0)
+    }
 }
 
 // MARK: - Gradient text styling

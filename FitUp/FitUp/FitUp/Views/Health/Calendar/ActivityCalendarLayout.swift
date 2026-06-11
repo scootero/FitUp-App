@@ -49,14 +49,60 @@ enum ActivityCalendarLayout {
     var sectionSpacing: CGFloat {
         switch self {
         case .compact: 12
-        case .expanded: 8
+        case .expanded: 5
+        }
+    }
+
+    var showsMonthRow: Bool {
+        switch self {
+        case .compact: true
+        case .expanded: false
+        }
+    }
+
+    var monthSubtitleSize: CGFloat {
+        switch self {
+        case .compact: 16
+        case .expanded: 18
         }
     }
 
     var headerTitleSize: CGFloat {
         switch self {
         case .compact: 20
-        case .expanded: 16
+        case .expanded: 18
+        }
+    }
+
+    var cardSectionTitleSize: CGFloat {
+        switch self {
+        case .compact: 17
+        case .expanded: 19
+        }
+    }
+
+    var monthNavSize: CalendarMonthNavSize {
+        .compact
+    }
+
+    var centersModeSwitcher: Bool {
+        switch self {
+        case .compact: false
+        case .expanded: true
+        }
+    }
+
+    var modeSwitcherVerticalPadding: CGFloat {
+        switch self {
+        case .compact: 0
+        case .expanded: 5
+        }
+    }
+
+    var modeSwitcherSize: CalendarModePillSize {
+        switch self {
+        case .compact: .compact
+        case .expanded: .expanded
         }
     }
 }

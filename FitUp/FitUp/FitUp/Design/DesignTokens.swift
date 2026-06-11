@@ -184,23 +184,78 @@ struct GlassCardModifier: ViewModifier {
     }
 }
 
-/// Frosted system material for the Home intro tip — no stacked gray gradients.
+/// Slow liquid neon wash for the intro tip — light on GPU (12 fps, no stacked blurs).
+private struct HomeIntroTipLiquidBackdrop: View {
+    private let shape = RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 12, paused: false)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            let angle = Angle(degrees: (t * 2.4).truncatingRemainder(dividingBy: 360))
+            let centerX = 0.5 + CGFloat(sin(t * 0.34)) * 0.11
+            let centerY = 0.5 + CGFloat(cos(t * 0.29)) * 0.09
+            let ripple = 1.0 + CGFloat(sin(t * 0.42)) * 0.038
+            let sheenShift = CGFloat(sin(t * 0.22)) * 0.14
+
+            shape
+                .fill(Color(red: 10 / 255, green: 16 / 255, blue: 28 / 255, opacity: 0.34))
+                .background {
+                    shape.fill(.ultraThinMaterial)
+                }
+                .overlay {
+                    shape
+                        .fill(
+                            AngularGradient(
+                                colors: [
+                                    FitUpColors.Neon.cyan.opacity(0.26),
+                                    FitUpColors.Neon.blue.opacity(0.20),
+                                    FitUpColors.Neon.purple.opacity(0.18),
+                                    FitUpColors.Neon.green.opacity(0.14),
+                                    FitUpColors.Neon.cyan.opacity(0.26),
+                                ],
+                                center: UnitPoint(x: centerX, y: centerY),
+                                angle: angle
+                            )
+                        )
+                        .scaleEffect(ripple)
+                        .blendMode(.screen)
+                }
+                .overlay {
+                    shape
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.14),
+                                    Color.clear,
+                                    FitUpColors.Neon.cyan.opacity(0.08),
+                                ],
+                                startPoint: UnitPoint(x: 0.12 + sheenShift, y: 0),
+                                endPoint: UnitPoint(x: 0.88 - sheenShift, y: 1)
+                            )
+                        )
+                        .blendMode(.plusLighter)
+                        .opacity(0.55)
+                }
+                .overlay {
+                    shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 0.9)
+                }
+                .overlay {
+                    shape
+                        .strokeBorder(FitUpColors.Neon.cyan.opacity(0.16), lineWidth: 1)
+                        .padding(-0.5)
+                }
+        }
+        .shadow(color: FitUpColors.Neon.cyan.opacity(0.16), radius: 12, x: 0, y: 3)
+        .shadow(color: Color.black.opacity(0.22), radius: 8, x: 0, y: 4)
+    }
+}
+
+/// Frosted liquid glass for the Home intro tip — slow color drift, more see-through.
 struct HomeIntroTipGlassCardModifier: ViewModifier {
     func body(content: Content) -> some View {
-        content
-            .background {
-                RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                    .fill(.regularMaterial)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                            .fill(Color.black.opacity(0.36))
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
-                    }
-                    .shadow(color: Color.black.opacity(0.28), radius: 10, x: 0, y: 5)
-            }
+        content.background {
+            HomeIntroTipLiquidBackdrop()
+        }
     }
 }
 

@@ -133,6 +133,20 @@ enum CalendarMonthLayout {
         return calendar.date(byAdding: .month, value: delta, to: start) ?? start
     }
 
+    /// Signed month delta from current month to `displayedMonth` (0 = current, negative = earlier).
+    static func monthsBetween(
+        _ displayedMonth: Date,
+        and referenceDate: Date,
+        profileTimeZoneIdentifier: String?
+    ) -> Int {
+        let tz = profileTimeZoneIdentifier.flatMap { TimeZone(identifier: $0) } ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = tz
+        let displayedStart = startOfMonth(for: displayedMonth, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
+        let referenceStart = startOfMonth(for: referenceDate, profileTimeZoneIdentifier: profileTimeZoneIdentifier)
+        return calendar.dateComponents([.month], from: referenceStart, to: displayedStart).month ?? 0
+    }
+
     private static func monthKey(for date: Date, calendar: Calendar) -> String {
         let year = calendar.component(.year, from: date)
         let month = calendar.component(.month, from: date)

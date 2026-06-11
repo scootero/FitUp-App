@@ -9,6 +9,8 @@ import SwiftUI
 
 enum CalendarBattleDayIndicatorStyle: Equatable, Sendable {
     case ghost
+    case noBattle
+    case restDay
     case live(trimProgress: Double, label: String)
     case filled(label: String, fillColor: Color, glowColor: Color)
 }
@@ -16,9 +18,15 @@ enum CalendarBattleDayIndicatorStyle: Equatable, Sendable {
 enum CalendarBattleDayIndicator {
     private static let marginCap: Double = 2_000
 
-    static func resolve(summary: CalendarDayBattleSummary, margin: Int?) -> CalendarBattleDayIndicatorStyle {
+    static func resolve(
+        summary: CalendarDayBattleSummary,
+        margin: Int?,
+        showsNoBattleDay: Bool = false,
+        showsRestDay: Bool = false
+    ) -> CalendarBattleDayIndicatorStyle {
         if summary.matchCount == 0 || summary.state == .none {
-            return .ghost
+            if showsNoBattleDay { return .noBattle }
+            return showsRestDay ? .restDay : .ghost
         }
 
         if summary.state == .inProgress {

@@ -7,7 +7,14 @@
 
 import SwiftUI
 
+enum HomeIntroTipLayout {
+    case loadingScreen
+    case homeEmptyState
+}
+
 struct HomeIntroTipView: View {
+    var layout: HomeIntroTipLayout = .loadingScreen
+
     private static let lines = [
         "FitUp is a 1v1 steps competition app.",
         "Whoever has the most steps at the end of each day wins that day.",
@@ -20,23 +27,120 @@ struct HomeIntroTipView: View {
         endPoint: .trailing
     )
 
+    private var lineSpacing: CGFloat {
+        switch layout {
+        case .loadingScreen: 8
+        case .homeEmptyState: 5
+        }
+    }
+
+    private var fontSize: CGFloat {
+        switch layout {
+        case .loadingScreen: 15
+        case .homeEmptyState: 14
+        }
+    }
+
+    private var horizontalPadding: CGFloat {
+        switch layout {
+        case .loadingScreen: 16
+        case .homeEmptyState: 20
+        }
+    }
+
+    private var verticalPadding: CGFloat {
+        switch layout {
+        case .loadingScreen: 14
+        case .homeEmptyState: 10
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: lineSpacing) {
             ForEach(Self.lines, id: \.self) { line in
                 Text(line)
-                    .font(FitUpFont.body(15, weight: .semibold))
+                    .font(FitUpFont.body(fontSize, weight: .semibold))
                     .foregroundStyle(Self.fitGradient)
                     .shadow(color: Color.black.opacity(0.35), radius: 1, y: 1)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, verticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .homeIntroTipGlassCard()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Self.lines.joined(separator: " "))
+    }
+}
+
+/// Tap trigger → `HomeIntroTipView` below → auto-fades after a few seconds (hero card FitUp logo).
+struct HomeIntroTipAutoReveal<Trigger: View>: View {
+    @ViewBuilder var trigger: () -> Trigger
+    var accessibilityLabel: String = "FitUp"
+    var accessibilityHint: String = "Shows a short description of the app."
+
+    private let autoDismissSeconds: Double = 3
+
+    @State private var isShowingTip = false
+    @State private var dismissTask: Task<Void, Never>?
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Button(action: revealTip) {
+                trigger()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityHint(accessibilityHint)
+
+            if isShowingTip {
+                HomeIntroTipView()
+                    .transition(
+                        .scale(scale: 0.94, anchor: .top)
+                            .combined(with: .opacity)
+                    )
+            }
+        }
+        .animation(.spring(response: 0.36, dampingFraction: 0.78), value: isShowingTip)
+        .onDisappear {
+            dismissTask?.cancel()
+            dismissTask = nil
+        }
+    }
+
+    private func revealTip() {
+        dismissTask?.cancel()
+        if !isShowingTip {
+            withAnimation(.spring(response: 0.36, dampingFraction: 0.78)) {
+                isShowingTip = true
+            }
+        }
+        scheduleAutoDismiss()
+    }
+
+    private func scheduleAutoDismiss() {
+        dismissTask = Task {
+            try? await Task.sleep(for: .seconds(autoDismissSeconds))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                dismissTip(animated: true)
+            }
+        }
+    }
+
+    private func dismissTip(animated: Bool) {
+        dismissTask?.cancel()
+        dismissTask = nil
+        guard isShowingTip else { return }
+        if animated {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                isShowingTip = false
+            }
+        } else {
+            isShowingTip = false
+        }
     }
 }
 

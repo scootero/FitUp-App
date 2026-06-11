@@ -33,12 +33,14 @@ struct ContentView: View {
         .screenTransition()
         .onAppear {
             notificationService.syncApplicationIconBadge()
+            TestFlightFeedbackPromptStore.recordSessionStartIfNeeded()
             if !sessionStore.isLoadingSession {
                 ProductAnalytics.trackAppColdStartIfNeeded(userId: sessionStore.currentProfile?.id)
             }
         }
         .onChange(of: sessionStore.isLoadingSession) { _, loading in
             if !loading {
+                TestFlightFeedbackPromptStore.recordSessionStartIfNeeded()
                 ProductAnalytics.trackAppColdStartIfNeeded(userId: sessionStore.currentProfile?.id)
             }
         }
@@ -80,9 +82,18 @@ struct ContentView: View {
     }
 }
 
+private enum TestFlightFeedbackPromptHints {
+    static let bullets = [
+        "What feels interesting or useful about FitUp?",
+        "What feels confusing or missing?",
+        "What would make this app worth supporting monthly?",
+    ]
+}
+
 private struct RootShellView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @EnvironmentObject private var notificationService: NotificationService
+    @Environment(\.scenePhase) private var scenePhase
 
     let profile: Profile?
     let showOnboardingSearching: Bool
@@ -92,6 +103,8 @@ private struct RootShellView: View {
     @State private var challengeLaunchContext: ChallengeLaunchContext?
     @State private var matchDetailsContext: MatchDetailsContext?
     @State private var showingPaywall = false
+    @State private var showTestFlightFeedbackPrompt = false
+    @State private var showTestFlightFeedbackForm = false
 
     var body: some View {
         FitUpAppChromeContainer(
@@ -126,8 +139,21 @@ private struct RootShellView: View {
         .animation(.easeInOut(duration: 0.22), value: matchDetailsContext != nil)
         .environmentObject(sessionStore)
         .environmentObject(notificationService)
+        .task(id: profile?.id) {
+            homeViewModel.start(
+                profile: profile,
+                showOnboardingSearching: showOnboardingSearching,
+                sessionStore: sessionStore
+            )
+        }
+        .onChange(of: sessionStore.homeSnapshotRefreshToken) { _, _ in
+            Task { await homeViewModel.reload(force: true) }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            FloatingTabBar(selected: $selectedTab) {
+            FloatingTabBar(
+                selected: $selectedTab,
+                hasActiveBattle: homeViewModel.activeBattleCount > 0
+            ) {
                 challengeLaunchContext = .battleEntry
             }
             .ignoresSafeArea(edges: .bottom)
@@ -209,11 +235,89 @@ private struct RootShellView: View {
             }
             .presentationDetents([.medium])
         }
+        .sheet(isPresented: $showTestFlightFeedbackPrompt) {
+            TestFlightFeedbackPromptSheet(
+                onGiveFeedback: {
+                    TestFlightFeedbackPromptStore.markPromptPresentedForCurrentPeriod()
+                    showTestFlightFeedbackPrompt = false
+                    showTestFlightFeedbackForm = true
+                },
+                onNotNow: {
+                    TestFlightFeedbackPromptStore.markPromptPresentedForCurrentPeriod()
+                    showTestFlightFeedbackPrompt = false
+                }
+            )
+            .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showTestFlightFeedbackForm) {
+            if let userId = profile?.id {
+                TesterFeedbackSheet(
+                    userId: userId,
+                    screenName: "testflight_feedback_prompt",
+                    promptHints: TestFlightFeedbackPromptHints.bullets,
+                    feedbackSource: "testflight_timed_prompt",
+                    onSuccess: {
+                        TestFlightFeedbackPromptStore.markFeedbackSubmitted()
+                    }
+                )
+            }
+        }
+        .task(id: testFlightFeedbackPromptTaskIdentity) {
+            await scheduleTestFlightFeedbackPromptIfEligible()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task { await scheduleTestFlightFeedbackPromptIfEligible() }
+        }
         .onChange(of: notificationService.pendingDeepLink) { _, deepLink in
             guard let deepLink else { return }
             _ = notificationService.consumeDeepLink()
             handleDeepLink(deepLink)
         }
+    }
+
+    private var testFlightFeedbackPromptTaskIdentity: String {
+        [
+            profile?.id.uuidString ?? "nil",
+            String(matchDetailsContext != nil),
+            String(challengeLaunchContext != nil),
+            String(showingPaywall),
+            String(sessionStore.presentFriendsListSheet),
+            String(sessionStore.becameFriendsChallenge != nil),
+            String(showTestFlightFeedbackPrompt),
+            String(showTestFlightFeedbackForm),
+        ].joined(separator: "|")
+    }
+
+    @MainActor
+    private func scheduleTestFlightFeedbackPromptIfEligible() async {
+        guard scenePhase == .active else { return }
+        guard !showTestFlightFeedbackPrompt, !showTestFlightFeedbackForm else { return }
+        guard isTestFlightFeedbackPromptPresentationClear else { return }
+        guard isTestFlightFeedbackPromptEligible else { return }
+
+        let delay = TestFlightFeedbackPromptStore.presentationDelay
+        try? await Task.sleep(for: .seconds(delay))
+        guard !Task.isCancelled else { return }
+        guard scenePhase == .active else { return }
+        guard !showTestFlightFeedbackPrompt, !showTestFlightFeedbackForm else { return }
+        guard isTestFlightFeedbackPromptPresentationClear else { return }
+        guard isTestFlightFeedbackPromptEligible else { return }
+
+        showTestFlightFeedbackPrompt = true
+        TestFlightFeedbackPromptStore.markPromptPresentedForCurrentPeriod()
+    }
+
+    private var isTestFlightFeedbackPromptEligible: Bool {
+        TestFlightFeedbackPromptStore.shouldPresent()
+    }
+
+    private var isTestFlightFeedbackPromptPresentationClear: Bool {
+        matchDetailsContext == nil
+            && challengeLaunchContext == nil
+            && !showingPaywall
+            && !sessionStore.presentFriendsListSheet
+            && sessionStore.becameFriendsChallenge == nil
     }
 
     private func handleDeepLink(_ deepLink: NotificationDeepLink) {
@@ -289,9 +393,7 @@ private struct RootShellView: View {
             )
             .trackProductScreen("profile", userId: sessionStore.currentProfile?.id)
         case .ranks:
-            LeaderboardView(profile: profile) { opponent in
-                challengeLaunchContext = .prefilled(opponent: opponent)
-            }
+            LeaderboardView(profile: profile)
             .trackProductScreen("leaderboard", userId: sessionStore.currentProfile?.id)
         }
     }

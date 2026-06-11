@@ -13,26 +13,35 @@ struct ActivityCalendarScrollContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: layout.sectionSpacing) {
-            CalendarModePillSwitcher(mode: $viewModel.mode)
-                .frame(maxWidth: 220)
+            CalendarModePillSwitcher(mode: $viewModel.mode, size: layout.modeSwitcherSize)
+                .frame(
+                    maxWidth: layout.centersModeSwitcher ? .infinity : 220,
+                    alignment: layout.centersModeSwitcher ? .center : .leading
+                )
+                .padding(.vertical, layout.modeSwitcherVerticalPadding)
 
-            CalendarMonthHeaderView(
-                monthTitle: viewModel.monthTitle,
-                centerLabel: viewModel.monthShortTitle,
-                headerTitleSize: layout.headerTitleSize,
-                onPrevious: {
-                    viewModel.dismissDayDetail()
-                    viewModel.goToPreviousMonth()
-                },
-                onNext: {
-                    viewModel.dismissDayDetail()
-                    viewModel.goToNextMonth()
-                },
-                onToday: {
-                    viewModel.dismissDayDetail()
-                    viewModel.goToToday()
-                }
-            )
+            if layout.showsMonthRow {
+                CalendarMonthHeaderView(
+                    monthTitle: viewModel.monthTitle,
+                    centerLabel: viewModel.monthShortTitle,
+                    monthsFromCurrent: viewModel.monthsFromCurrent,
+                    canGoNext: viewModel.canGoToNextMonth,
+                    headerTitleSize: layout.headerTitleSize,
+                    navSize: layout.monthNavSize,
+                    onPrevious: {
+                        viewModel.dismissDayDetail()
+                        viewModel.goToPreviousMonth()
+                    },
+                    onNext: {
+                        viewModel.dismissDayDetail()
+                        viewModel.goToNextMonth()
+                    },
+                    onToday: {
+                        viewModel.dismissDayDetail()
+                        viewModel.goToToday()
+                    }
+                )
+            }
 
             if viewModel.showHealthAccessBanner, viewModel.mode == .steps {
                 healthAccessBanner
@@ -52,14 +61,43 @@ struct ActivityCalendarScrollContent: View {
                 battleSummary: { viewModel.battleSummary(for: $0) },
                 battleMargin: { viewModel.battleMargin(for: $0) },
                 stepsState: { viewModel.stepsState(for: $0) },
+                showsRestDay: { viewModel.showsRestDay(for: $0) },
+                showsNoBattleDay: { viewModel.showsNoBattleDay(for: $0) },
+                isBeforeJoinDate: { viewModel.isBeforeJoinDate(for: $0) },
                 onSelectDay: { viewModel.selectDay($0) }
             )
             .opacity(viewModel.isLoading ? 0.65 : 1)
 
-            if viewModel.mode == .steps {
-                CalendarStepsLegendView(ringSize: layout == .expanded ? 14 : 12)
-                    .padding(.top, 2)
+            calendarFooterRow
+                .padding(.top, 2)
+        }
+    }
+
+    @ViewBuilder
+    private var calendarFooterRow: some View {
+        let ringSize: CGFloat = layout == .expanded ? 14 : 12
+        let showsLegend = viewModel.mode == .steps
+        let paceInputs = viewModel.paceChipInputs
+
+        if showsLegend || paceInputs != nil {
+            HStack(alignment: .bottom, spacing: 8) {
+                if showsLegend {
+                    CalendarStepsLegendView(ringSize: ringSize)
+                        .layoutPriority(0)
+                }
+
+                if paceInputs != nil {
+                    Spacer(minLength: 6)
+                }
+
+                if let paceInputs {
+                    CalendarPaceChipView(inputs: paceInputs, layout: layout)
+                        .layoutPriority(1)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: showsLegend ? .leading : .trailing)
+            .padding(.top, layout == .expanded ? 4 : 2)
         }
     }
 

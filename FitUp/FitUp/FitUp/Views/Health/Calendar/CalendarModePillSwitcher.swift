@@ -7,8 +7,35 @@
 
 import SwiftUI
 
+enum CalendarModePillSize {
+    case compact
+    case expanded
+
+    var fontSize: CGFloat {
+        switch self {
+        case .compact: 10
+        case .expanded: 12
+        }
+    }
+
+    var horizontalPadding: CGFloat {
+        switch self {
+        case .compact: 12
+        case .expanded: 14
+        }
+    }
+
+    var verticalPadding: CGFloat {
+        switch self {
+        case .compact: 5
+        case .expanded: 7
+        }
+    }
+}
+
 struct CalendarModePillSwitcher: View {
     @Binding var mode: ActivityCalendarMode
+    var size: CalendarModePillSize = .compact
 
     var body: some View {
         HStack(spacing: 6) {
@@ -31,10 +58,10 @@ struct CalendarModePillSwitcher: View {
             mode = option
         } label: {
             Text(option.pillLabel)
-                .font(FitUpFont.body(10, weight: .bold))
+                .font(FitUpFont.body(size.fontSize, weight: .bold))
                 .foregroundStyle(isSelected ? Color.white : FitUpColors.Text.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
+                .padding(.horizontal, size.horizontalPadding)
+                .padding(.vertical, size.verticalPadding)
                 .background {
                     if isSelected {
                         Capsule()

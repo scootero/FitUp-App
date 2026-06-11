@@ -15,6 +15,9 @@ struct CalendarMonthGridView: View {
     let battleSummary: (String) -> CalendarDayBattleSummary
     let battleMargin: (String) -> Int?
     let stepsState: (String) -> CalendarDayStepsState?
+    let showsRestDay: (String) -> Bool
+    let showsNoBattleDay: (String) -> Bool
+    let isBeforeJoinDate: (String) -> Bool
     let onSelectDay: (CalendarDayItem) -> Void
 
     private let weekdaySymbols = ["M", "T", "W", "T", "F", "S", "S"]
@@ -43,6 +46,9 @@ struct CalendarMonthGridView: View {
                         battleSummary: battleSummary(item.id),
                         battleMargin: battleMargin(item.id),
                         stepsState: stepsState(item.id),
+                        showsRestDay: showsRestDay(item.id),
+                        showsNoBattleDay: showsNoBattleDay(item.id),
+                        isBeforeJoinDate: isBeforeJoinDate(item.id),
                         isSelected: selectedDayId == item.id,
                         onTap: { onSelectDay(item) }
                     )
