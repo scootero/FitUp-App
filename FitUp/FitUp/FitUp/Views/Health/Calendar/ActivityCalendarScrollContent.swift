@@ -69,35 +69,19 @@ struct ActivityCalendarScrollContent: View {
             .opacity(viewModel.isLoading ? 0.65 : 1)
 
             calendarFooterRow
-                .padding(.top, 2)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private var calendarFooterRow: some View {
-        let ringSize: CGFloat = layout == .expanded ? 14 : 12
-        let showsLegend = viewModel.mode == .steps
-        let paceInputs = viewModel.paceChipInputs
-
-        if showsLegend || paceInputs != nil {
-            HStack(alignment: .bottom, spacing: 8) {
-                if showsLegend {
-                    CalendarStepsLegendView(ringSize: ringSize)
-                        .layoutPriority(0)
-                }
-
-                if paceInputs != nil {
-                    Spacer(minLength: 6)
-                }
-
-                if let paceInputs {
-                    CalendarPaceChipView(inputs: paceInputs, layout: layout)
-                        .layoutPriority(1)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        if let paceInputs = viewModel.paceChipInputs {
+            HStack {
+                Spacer(minLength: 0)
+                CalendarPaceChipView(inputs: paceInputs, layout: layout)
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: showsLegend ? .leading : .trailing)
-            .padding(.top, layout == .expanded ? 4 : 2)
+            .frame(maxWidth: .infinity)
         }
     }
 

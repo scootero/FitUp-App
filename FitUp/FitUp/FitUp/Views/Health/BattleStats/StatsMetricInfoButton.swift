@@ -33,6 +33,57 @@ enum StatsRivalMetricExplainer: String, Identifiable {
     }
 }
 
+// MARK: - Anchored metric info popover
+
+struct StatsMetricInfoPopoverContent: View {
+    let title: String
+    let bodyText: String
+    var accent: BattleStatsTheme.SectionAccent = .neutral
+
+    static let contentPadding: CGFloat = 14
+    static let maxWidth: CGFloat = 260
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .battleStatsStyle(.primary, weight: .bold)
+            Text(bodyText)
+                .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.bodySmall)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Self.contentPadding)
+        .frame(maxWidth: Self.maxWidth, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .background { popoverBackground }
+    }
+
+    private var popoverBackground: some View {
+        RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
+            .fill(Color(rgb: 0x0A1020).opacity(0.97))
+            .overlay(
+                RoundedRectangle(cornerRadius: FitUpRadius.sm, style: .continuous)
+                    .strokeBorder(accentBorderColor.opacity(0.35), lineWidth: 1)
+            )
+    }
+
+    private var accentBorderColor: Color {
+        switch accent {
+        case .neutral: return Color.white
+        case .warm: return BattleStatsTheme.gold
+        case .cool: return BattleStatsTheme.blue
+        case .mint: return BattleStatsTheme.green
+        }
+    }
+}
+
+extension View {
+    func statsMetricInfoPopoverChrome() -> some View {
+        presentationCompactAdaptation(.popover)
+            .presentationBackground(.clear)
+            .presentationCornerRadius(0)
+    }
+}
+
 struct StatsMetricInfoButton: View {
     let explainer: StatsRivalMetricExplainer
     @State private var isPresented = false
@@ -50,16 +101,12 @@ struct StatsMetricInfoButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel("About \(explainer.title)")
         .popover(isPresented: $isPresented, arrowEdge: .top) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(explainer.title)
-                    .battleStatsStyle(.primary, weight: .bold)
-                Text(explainer.bodyText)
-                    .battleStatsStyle(.secondary, size: BattleStatsTheme.Typography.bodySmall)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(14)
-            .frame(maxWidth: 260, alignment: .leading)
-            .presentationCompactAdaptation(.popover)
+            StatsMetricInfoPopoverContent(
+                title: explainer.title,
+                bodyText: explainer.bodyText,
+                accent: .cool
+            )
+            .statsMetricInfoPopoverChrome()
         }
     }
 }
@@ -388,6 +435,7 @@ struct StatsMetricExplainerOverlay: View {
                     .frame(maxWidth: .infinity, alignment: .center)
             }
             .padding(18)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: min(UIScreen.main.bounds.width - 40, 340))
             .background(
                 RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)
@@ -457,6 +505,7 @@ struct StatsCombinedMetricExplainerOverlay: View {
                         }
                     }
                 }
+                .scrollBounceBehavior(.basedOnSize, axes: .vertical)
                 .frame(maxHeight: min(UIScreen.main.bounds.height * 0.45, 320))
 
                 Text("Tap anywhere to close")
@@ -465,6 +514,7 @@ struct StatsCombinedMetricExplainerOverlay: View {
                     .frame(maxWidth: .infinity, alignment: .center)
             }
             .padding(18)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: min(UIScreen.main.bounds.width - 40, 340))
             .background(
                 RoundedRectangle(cornerRadius: FitUpRadius.md, style: .continuous)

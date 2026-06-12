@@ -192,7 +192,7 @@ enum CalendarPaceComparison {
         var columnHeader: String {
             switch self {
             case .sevenDay:
-                return "Today's steps VS\nseven day average"
+                return "steps today VS 7 days avg"
             case .thirtyDay:
                 return "Today's steps VS\n30 day average"
             }

@@ -111,6 +111,7 @@ private struct ActivityCalendarCardContent: View {
                 }
 
                 ActivityCalendarScrollContent(viewModel: viewModel, layout: .expanded)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .onAppear {

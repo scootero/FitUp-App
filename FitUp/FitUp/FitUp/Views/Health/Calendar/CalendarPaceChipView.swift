@@ -17,7 +17,7 @@ struct CalendarPaceChipView: View {
 
     private var isExpanded: Bool { layout == .expanded }
 
-    private var headerFontSize: CGFloat { isExpanded ? 8.5 : 7.5 }
+    private var headerFontSize: CGFloat { isExpanded ? 13 : 11 }
     private var percentFontSize: CGFloat { isExpanded ? 18.7 : 15.3 }
     private var statusFontSize: CGFloat { isExpanded ? 7.5 : 6.5 }
     private var cornerRadius: CGFloat { isExpanded ? 14 : 11 }
@@ -60,7 +60,7 @@ struct CalendarPaceChipView: View {
         }
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)
-        .padding(.top, isExpanded ? 6 : 4)
+        .padding(.top, isExpanded ? 2 : 1)
         .background { chipBackground(display: display) }
         .overlay(alignment: .topTrailing) {
             paceInfoButton(display: display)
@@ -87,8 +87,9 @@ struct CalendarPaceChipView: View {
                 .font(FitUpFont.body(headerFontSize, weight: .bold))
                 .foregroundStyle(FitUpColors.Text.secondary)
                 .multilineTextAlignment(.center)
-                .lineSpacing(1)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity)
 
             Text(CalendarPaceComparison.formattedPercent(pct))
                 .font(FitUpFont.mono(percentFontSize, weight: .heavy))
@@ -135,19 +136,13 @@ struct CalendarPaceChipView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("About step pace")
-        .popover(isPresented: $isInfoPresented, arrowEdge: .top) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(CalendarPaceComparison.infoTitle)
-                    .font(FitUpFont.body(14, weight: .bold))
-                    .foregroundStyle(FitUpColors.Text.primary)
-                Text(CalendarPaceComparison.infoBody)
-                    .font(FitUpFont.body(12, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(14)
-            .frame(maxWidth: 260, alignment: .leading)
-            .presentationCompactAdaptation(.popover)
+        .popover(isPresented: $isInfoPresented, arrowEdge: .bottom) {
+            StatsMetricInfoPopoverContent(
+                title: CalendarPaceComparison.infoTitle,
+                bodyText: CalendarPaceComparison.infoBody,
+                accent: .mint
+            )
+            .statsMetricInfoPopoverChrome()
         }
     }
 

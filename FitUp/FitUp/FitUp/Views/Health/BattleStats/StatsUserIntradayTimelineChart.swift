@@ -399,7 +399,7 @@ struct StatsUserIntradayTimelineChart: View {
         }
     }
 
-    /// Diagonal pace reference from 8 AM at baseline to day end at the step goal.
+    /// Curved expected-pace reference from 8 AM at baseline to day end at the step goal.
     private func goalPaceGuideLine(plotRect: CGRect, pad: CGPoint, yMax: Int) -> some View {
         let innerLeft = plotRect.minX + pad.x
         let innerRight = plotRect.maxX - pad.x
@@ -410,32 +410,56 @@ struct StatsUserIntradayTimelineChart: View {
         let eightAMFraction = domain.timeFraction(eightAM)
         let startX = innerLeft + eightAMFraction * (innerRight - innerLeft)
 
-        let linePath = Path { path in
-            path.move(to: CGPoint(x: startX, y: plotBottom))
-            path.addLine(to: CGPoint(x: innerRight, y: goalY))
+        let linePath = goalPaceGuidePath(
+            startX: startX,
+            endY: goalY,
+            startY: plotBottom,
+            paceStartFraction: eightAMFraction,
+            innerLeft: innerLeft,
+            innerRight: innerRight
+        )
+
+        return linePath
+            .stroke(
+                Color.white.opacity(0.11),
+                style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round)
+            )
+            .allowsHitTesting(false)
+    }
+
+    /// Slow early progress, a mid-day lift, then a mellow finish into the goal.
+    private func goalPaceGuidePath(
+        startX: CGFloat,
+        endY: CGFloat,
+        startY: CGFloat,
+        paceStartFraction: CGFloat,
+        innerLeft: CGFloat,
+        innerRight: CGFloat
+    ) -> Path {
+        let sampleCount = 28
+        var points: [CGPoint] = []
+        points.reserveCapacity(sampleCount + 1)
+
+        for i in 0 ... sampleCount {
+            let t = CGFloat(i) / CGFloat(sampleCount)
+            let fraction = paceStartFraction + (1 - paceStartFraction) * t
+            let x = innerLeft + fraction * (innerRight - innerLeft)
+            let progress = paceGuideProgress(alongNormalizedDay: t)
+            let y = startY + (endY - startY) * progress
+            points.append(CGPoint(x: x, y: y))
         }
 
-        return StatsNeonDashedGuideLine(
-            path: linePath,
-            gradientStart: UnitPoint(
-                x: startX / max(plotRect.width, 1),
-                y: plotBottom / max(plotRect.height, 1)
-            ),
-            gradientEnd: UnitPoint(
-                x: innerRight / max(plotRect.width, 1),
-                y: goalY / max(plotRect.height, 1)
-            ),
-            palette: [
-                BattleStatsTheme.gold,
-                FitUpColors.Neon.yellow,
-                BattleStatsTheme.orange,
-                FitUpColors.Neon.cyan.opacity(0.85),
-            ],
-            dash: [7, 5],
-            glowWidth: 4.2,
-            coreWidth: 1.65
-        )
-        .allowsHitTesting(false)
+        if points.first?.x != startX {
+            points[0] = CGPoint(x: startX, y: startY)
+        }
+
+        return smoothPath(for: points)
+    }
+
+    private func paceGuideProgress(alongNormalizedDay t: CGFloat) -> CGFloat {
+        let clamped = min(1, max(0, t))
+        // Slight mid-day bulge above a straight line, easing into the goal by day end.
+        return clamped + 0.14 * sin(.pi * clamped)
     }
 
     private func goalReferenceLine(plotRect: CGRect, pad: CGPoint, yMax: Int) -> some View {
@@ -467,9 +491,11 @@ struct StatsUserIntradayTimelineChart: View {
             gradientStart: UnitPoint(x: 0, y: goalY / max(plotRect.height, 1)),
             gradientEnd: UnitPoint(x: 1, y: goalY / max(plotRect.height, 1)),
             palette: palette,
-            dash: [6, 5],
+            dash: [18, 15],
             glowWidth: 3.8,
-            coreWidth: 1.55
+            coreWidth: 1.55,
+            dashPhaseSpeed: 6,
+            dashFlowDirection: -1
         )
         .allowsHitTesting(false)
     }
@@ -565,7 +591,7 @@ struct StatsUserIntradayTimelineChart: View {
 
 // MARK: - Chart overlays
 
-/// Animated fluorescent dashed guide (pace diagonal + goal horizontal).
+/// Animated fluorescent dashed guide (goal horizontal).
 private struct StatsNeonDashedGuideLine: View {
     let path: Path
     let gradientStart: UnitPoint
@@ -574,12 +600,20 @@ private struct StatsNeonDashedGuideLine: View {
     var dash: [CGFloat] = [6, 5]
     var glowWidth: CGFloat = 3.5
     var coreWidth: CGFloat = 1.5
+    var dashPhaseSpeed: CGFloat = 18
+    var dashFlowDirection: CGFloat = 1
+
+    private var dashPatternLength: CGFloat {
+        max(dash.reduce(0, +), 1)
+    }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 12, paused: false)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
-            let phase = CGFloat(t * 18).truncatingRemainder(dividingBy: 30)
-            let shift = CGFloat(sin(t * 1.05)) * 0.14
+            let phase = dashFlowDirection
+                * CGFloat(t * Double(dashPhaseSpeed))
+                .truncatingRemainder(dividingBy: Double(dashPatternLength * 3))
+            let shift = CGFloat(sin(t * Double(dashPhaseSpeed) / 17.14)) * 0.14
             let gradient = LinearGradient(
                 colors: palette,
                 startPoint: UnitPoint(x: gradientStart.x + shift, y: gradientStart.y - shift * 0.35),
