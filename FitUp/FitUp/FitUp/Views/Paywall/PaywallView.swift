@@ -2,9 +2,8 @@
 //  PaywallView.swift
 //  FitUp
 //
-//  Slice 13 — Full paywall sheet backed by RevenueCat.
-//  Annual plan is shown first (prominent, gold glass).
-//  Monthly plan below (base glass).
+//  Slice 13 — Paywall sheet backed by RevenueCat.
+//  Launch: monthly Pro at $2.99 with 7-day free trial (intro offer from StoreKit).
 //
 
 import Combine
@@ -15,6 +14,7 @@ struct PaywallView: View {
     var onDismiss: () -> Void
 
     @EnvironmentObject private var sessionStore: SessionStore
+    @Environment(\.openURL) private var openURL
     @StateObject private var vm = PaywallViewModel()
 
     var body: some View {
@@ -26,6 +26,7 @@ struct PaywallView: View {
                     headerSection
                     featuresList
                     plansSection
+                    legalLinks
                     restoreButton
                     dismissButton
                 }
@@ -64,7 +65,7 @@ struct PaywallView: View {
                 .font(FitUpFont.display(32, weight: .black))
                 .foregroundStyle(FitUpColors.Text.primary)
 
-            Text("Compete without limits.")
+            Text("Unlimited battles. Every duration. No cooldown.")
                 .font(FitUpFont.body(14, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
         }
@@ -75,8 +76,9 @@ struct PaywallView: View {
     private var featuresList: some View {
         VStack(alignment: .leading, spacing: 10) {
             FeatureBullet(icon: "infinity", text: "Unlimited simultaneous matches")
+            FeatureBullet(icon: "calendar", text: "1-, 3-, 5-, and 7-day battles")
+            FeatureBullet(icon: "person.2.fill", text: "Challenge anyone in FitUp")
             FeatureBullet(icon: "chart.bar.fill", text: "Live leaderboard & streak bonuses")
-            FeatureBullet(icon: "bolt.fill", text: "Priority matchmaking & detailed stats")
         }
     }
 
@@ -84,63 +86,33 @@ struct PaywallView: View {
 
     private var plansSection: some View {
         VStack(spacing: 12) {
-            annualCard
             monthlyCard
         }
     }
 
-    private var annualCard: some View {
+    private var monthlyCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                NeonBadge(label: "BEST VALUE", color: FitUpColors.Neon.yellow)
+                NeonBadge(label: "PRO MONTHLY", color: FitUpColors.Neon.yellow)
                 Spacer()
-                NeonBadge(label: "SAVE 58%", color: FitUpColors.Neon.yellow)
+                if vm.hasFreeTrial {
+                    NeonBadge(label: "7-DAY FREE TRIAL", color: FitUpColors.Neon.cyan)
+                }
             }
 
-            Text(vm.annualPriceString)
+            Text(vm.monthlyPriceString)
                 .font(FitUpFont.display(26, weight: .black))
                 .foregroundStyle(FitUpColors.Neon.yellow)
 
-            Text("per year · billed annually")
+            Text(vm.billingSubtitle)
                 .font(FitUpFont.body(12, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
 
-            Button {
-                Task {
-                    let pid = sessionStore.currentProfile?.id
-                    await vm.purchaseAnnual(profileId: pid)
-                    if vm.didPurchase { onDismiss() }
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    if vm.isPurchasingAnnual {
-                        ProgressView()
-                            .tint(Color.black)
-                            .scaleEffect(0.85)
-                    }
-                    Text(vm.isPurchasingAnnual ? "Processing…" : "Subscribe Annually")
-                        .font(FitUpFont.body(15, weight: .heavy))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-            }
-            .solidButton(color: FitUpColors.Neon.cyan)
-            .disabled(vm.isPurchasingAnnual || vm.isPurchasingMonthly)
-            .padding(.top, 6)
-        }
-        .padding(16)
-        .glassCard(.gold)
-    }
-
-    private var monthlyCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(vm.monthlyPriceString)
-                .font(FitUpFont.display(20, weight: .black))
-                .foregroundStyle(FitUpColors.Text.primary)
-
-            Text("per month · billed monthly")
+            Text("Free: one 3-day battle, then wait until the day after it ends. Pro removes limits.")
                 .font(FitUpFont.body(12, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.secondary)
+                .foregroundStyle(FitUpColors.Text.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
 
             Button {
                 Task {
@@ -152,24 +124,42 @@ struct PaywallView: View {
                 HStack(spacing: 8) {
                     if vm.isPurchasingMonthly {
                         ProgressView()
-                            .tint(FitUpColors.Neon.cyan)
+                            .tint(Color.black)
                             .scaleEffect(0.85)
                     }
-                    Text(vm.isPurchasingMonthly ? "Processing…" : "Subscribe Monthly")
+                    Text(vm.isPurchasingMonthly ? "Processing…" : vm.ctaTitle)
                         .font(FitUpFont.body(15, weight: .heavy))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
             }
-            .ghostButton(color: FitUpColors.Neon.cyan)
-            .disabled(vm.isPurchasingAnnual || vm.isPurchasingMonthly)
+            .solidButton(color: FitUpColors.Neon.cyan)
+            .disabled(vm.isPurchasingMonthly)
             .padding(.top, 6)
         }
         .padding(16)
-        .glassCard(.base)
+        .glassCard(.gold)
     }
 
     // MARK: - Footer actions
+
+    private var legalLinks: some View {
+        HStack(spacing: 16) {
+            Button("Privacy Policy") {
+                if let url = URL(string: FitUpAppLinks.privacyPolicyURL) {
+                    openURL(url)
+                }
+            }
+            Button("Terms of Use") {
+                if let url = URL(string: FitUpAppLinks.termsOfUseURL) {
+                    openURL(url)
+                }
+            }
+        }
+        .font(FitUpFont.body(12, weight: .semibold))
+        .foregroundStyle(FitUpColors.Neon.cyan)
+        .frame(maxWidth: .infinity)
+    }
 
     private var restoreButton: some View {
         Button {
@@ -191,7 +181,7 @@ struct PaywallView: View {
             .foregroundStyle(FitUpColors.Neon.cyan)
             .frame(maxWidth: .infinity)
         }
-        .disabled(vm.isRestoring || vm.isPurchasingAnnual || vm.isPurchasingMonthly)
+        .disabled(vm.isRestoring || vm.isPurchasingMonthly)
     }
 
     private var dismissButton: some View {
@@ -226,72 +216,42 @@ private struct FeatureBullet: View {
 
 @MainActor
 private final class PaywallViewModel: ObservableObject {
-    @Published var annualPriceString = "$29.99/year"
-    @Published var monthlyPriceString = "$4.99/month"
-
-    @Published var isPurchasingAnnual = false
+    @Published var monthlyPriceString = "$2.99/month"
+    @Published var hasFreeTrial = true
     @Published var isPurchasingMonthly = false
     @Published var isRestoring = false
     @Published var didPurchase = false
     @Published var showError = false
     @Published var errorMessage: String?
 
-    private var annualPackage: RevenueCat.Package?
     private var monthlyPackage: RevenueCat.Package?
+
+    var billingSubtitle: String {
+        if hasFreeTrial {
+            return "7 days free, then \(monthlyPriceString) · billed monthly · cancel anytime"
+        }
+        return "per month · billed monthly · cancel anytime"
+    }
+
+    var ctaTitle: String {
+        hasFreeTrial ? "Start Free Trial" : "Subscribe Monthly"
+    }
 
     func load() async {
         let packages = await SubscriptionService.shared.fetchOffering()
         for pkg in packages {
             switch pkg.packageType {
-            case .annual:
-                annualPackage = pkg
-                annualPriceString = pkg.storeProduct.localizedPriceString
             case .monthly:
                 monthlyPackage = pkg
                 monthlyPriceString = pkg.storeProduct.localizedPriceString
+                if let intro = pkg.storeProduct.introductoryDiscount {
+                    hasFreeTrial = intro.paymentMode == .freeTrial
+                } else {
+                    // Keep trial CTA until ASC intro offer is attached and packages load.
+                    hasFreeTrial = true
+                }
             default:
                 break
-            }
-        }
-    }
-
-    func purchaseAnnual(profileId: UUID?) async {
-        guard let pkg = annualPackage else {
-            showError = true
-            errorMessage = "Annual plan not available right now."
-            return
-        }
-        isPurchasingAnnual = true
-        defer { isPurchasingAnnual = false }
-        if let profileId {
-            ProductAnalytics.track(
-                ProductAnalytics.Event.subscriptionPurchaseStarted,
-                userId: profileId,
-                properties: ["package": "annual"]
-            )
-        }
-        do {
-            try await SubscriptionService.shared.purchase(package: pkg)
-            didPurchase = SubscriptionService.shared.isPremium
-            if let profileId, didPurchase {
-                ProductAnalytics.track(
-                    ProductAnalytics.Event.subscriptionPurchaseSucceeded,
-                    userId: profileId,
-                    properties: ["package": "annual"]
-                )
-            }
-        } catch {
-            let ns = error as NSError
-            if let profileId, ns.code != -128 {
-                ProductAnalytics.track(
-                    ProductAnalytics.Event.subscriptionPurchaseFailed,
-                    userId: profileId,
-                    properties: ["package": "annual", "code": "\(ns.code)"]
-                )
-            }
-            if ns.code != -128 {
-                showError = true
-                errorMessage = error.localizedDescription
             }
         }
     }
@@ -299,7 +259,7 @@ private final class PaywallViewModel: ObservableObject {
     func purchaseMonthly(profileId: UUID?) async {
         guard let pkg = monthlyPackage else {
             showError = true
-            errorMessage = "Monthly plan not available right now."
+            errorMessage = "Monthly plan not available right now. Check your App Store / RevenueCat setup."
             return
         }
         isPurchasingMonthly = true

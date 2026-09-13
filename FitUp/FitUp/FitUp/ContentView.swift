@@ -337,6 +337,7 @@ private struct RootShellView: View {
             selectedTab = .profile
             sessionStore.requestOpenFriendsListSheet()
         case .messages(let peerId):
+            guard AppLaunchFlags.messagingEnabled else { break }
             sessionStore.requestOpenMessages(peerId: peerId)
         }
     }

@@ -94,9 +94,19 @@ struct ChallengeFlowView: View {
 
     @State private var scoringModePreference: MatchScoringModePreference = .raw
     @State private var difficultyPreference: MatchDifficultyPreference = .fair
+    @State private var showingInviteShare = false
 
     private var isDirectedOpponent: Bool {
         !isQuickMatch && selectedOpponent != nil
+    }
+
+    private var isFreeTier: Bool {
+        !(entryGate?.isPremium ?? SubscriptionService.shared.isPremium)
+    }
+
+    private var allowedFormats: [ChallengeFormatType] {
+        if isFreeTier { return [FreeTierRules.allowedFormat] }
+        return ChallengeFormatType.allCases
     }
 
     init(
@@ -127,6 +137,9 @@ struct ChallengeFlowView: View {
                 showingPaywallSheet = false
             }
             .environmentObject(sessionStore)
+        }
+        .sheet(isPresented: $showingInviteShare) {
+            ActivityShareSheet(activityItems: [FitUpAppLinks.inviteFriendShareText])
         }
         .task {
             await prepareFlow()
@@ -193,10 +206,10 @@ struct ChallengeFlowView: View {
 
     private var blockedState: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Battle slot full")
+            Text(blockedTitle)
                 .font(FitUpFont.display(20, weight: .black))
                 .foregroundStyle(FitUpColors.Text.primary)
-            Text("Free tier supports one open slot across searching, pending, and active battles.")
+            Text(blockedMessage)
                 .font(FitUpFont.body(13, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
             Button("View Plans") {
@@ -207,6 +220,32 @@ struct ChallengeFlowView: View {
         }
         .padding(20)
         .glassCard(.base)
+    }
+
+    private var blockedTitle: String {
+        switch entryGate?.blockReason {
+        case .cooldown:
+            return "Free cooldown"
+        case .slotLimit, .noProfile:
+            return "Battle slot full"
+        default:
+            return "Upgrade to continue"
+        }
+    }
+
+    private var blockedMessage: String {
+        switch entryGate?.blockReason {
+        case .cooldown:
+            if let day = entryGate?.cooldownEarliestStart {
+                let formatted = day.formatted(date: .abbreviated, time: .omitted)
+                return "Free includes one 3-day battle. You can start another on \(formatted) (the day after your last battle ends), or upgrade to Pro for unlimited battles."
+            }
+            return "Free includes one 3-day battle. Wait until the day after your last battle ends, or upgrade to Pro."
+        case .slotLimit, .noProfile:
+            return "Free supports one open battle (searching, pending, or active). Finish it—or upgrade to Pro for unlimited battles."
+        default:
+            return "Upgrade to FitUp Pro for unlimited battles and every duration."
+        }
     }
 
     @ViewBuilder
@@ -247,22 +286,42 @@ struct ChallengeFlowView: View {
                 query: $query,
                 opponents: opponents,
                 isLoading: isLoadingOpponents,
+                freeTierLimited: isFreeTier,
                 onQuickMatch: {
                     isQuickMatch = true
                     selectedOpponent = nil
+                    if isFreeTier {
+                        selectedFormat = FreeTierRules.allowedFormat
+                    }
                     stepIndex = FlowStep.duration
                 },
                 onSelectOpponent: { opponent in
+                    guard !isFreeTier else {
+                        showingPaywallSheet = true
+                        return
+                    }
                     selectedOpponent = opponent
                     isQuickMatch = false
                     stepIndex = FlowStep.duration
+                },
+                onInviteFriend: {
+                    showingInviteShare = true
+                },
+                onUpgradeForDirectChallenge: {
+                    showingPaywallSheet = true
                 }
             )
         case FlowStep.duration:
-            DurationStepView { format in
-                selectedFormat = format
-                stepIndex = FlowStep.difficulty
-            }
+            DurationStepView(
+                allowedFormats: allowedFormats,
+                onSelect: { format in
+                    selectedFormat = format
+                    stepIndex = FlowStep.difficulty
+                },
+                onLockedSelect: {
+                    showingPaywallSheet = true
+                }
+            )
         case FlowStep.difficulty:
             if let metric = selectedMetric, let format = selectedFormat {
                 ReviewStepView(
@@ -341,7 +400,14 @@ struct ChallengeFlowView: View {
     private func prepareFlow() async {
         guard let profile else {
             isCheckingGate = false
-            entryGate = ChallengeEntryGate(isBlocked: true, isPremium: false, usedSlots: 1, slotLimit: 1)
+            entryGate = ChallengeEntryGate(
+                isBlocked: true,
+                isPremium: false,
+                usedSlots: 1,
+                slotLimit: FreeTierRules.slotLimit,
+                blockReason: .noProfile,
+                cooldownEarliestStart: nil
+            )
             showingPaywallSheet = true
             return
         }
@@ -354,17 +420,37 @@ struct ChallengeFlowView: View {
             showingPaywallSheet = true
             PaywallLogger.log(
                 level: .info,
-                message: "challenge entry blocked at slot limit",
+                message: "challenge entry blocked",
                 userId: profile.id,
                 metadata: [
                     "used_slots": String(gate.usedSlots),
                     "slot_limit": String(gate.slotLimit),
+                    "reason": String(describing: gate.blockReason),
                 ]
             )
             return
         }
 
         selectedMetric = .steps
+
+        // Free users cannot start in-app directed challenges (Discover / rematch prefill).
+        if !gate.isPremium, launchContext.prefilledOpponent != nil {
+            showingPaywallSheet = true
+            entryGate = ChallengeEntryGate(
+                isBlocked: true,
+                isPremium: false,
+                usedSlots: gate.usedSlots,
+                slotLimit: gate.slotLimit,
+                blockReason: .slotLimit,
+                cooldownEarliestStart: nil
+            )
+            PaywallLogger.log(
+                level: .info,
+                message: "free directed challenge blocked",
+                userId: profile.id
+            )
+            return
+        }
 
         if let prefill = launchContext.prefilledOpponent {
             selectedOpponent = ChallengeOpponent(
@@ -381,15 +467,31 @@ struct ChallengeFlowView: View {
             )
         }
 
-        await loadOpponents(query: "")
-        hydratePrefillFromFetchedOpponents()
+        if !gate.isPremium {
+            selectedFormat = FreeTierRules.allowedFormat
+        }
+
+        if gate.isPremium {
+            await loadOpponents(query: "")
+            hydratePrefillFromFetchedOpponents()
+        }
         applyLaunchStepIfNeeded()
     }
 
     @MainActor
     private func submitChallenge() async {
         guard let profileId = profile?.id else { return }
-        guard let selectedMetric, let selectedFormat else {
+        var format = selectedFormat
+        if isFreeTier {
+            format = FreeTierRules.allowedFormat
+            selectedFormat = format
+            guard isQuickMatch else {
+                errorMessage = "Free battles are Quick Battle only. Upgrade to challenge a specific player."
+                showingPaywallSheet = true
+                return
+            }
+        }
+        guard let selectedMetric, let format else {
             errorMessage = "Select a battle duration before sending."
             return
         }
@@ -405,7 +507,7 @@ struct ChallengeFlowView: View {
                 _ = try await matchmakingService.submitQuickMatch(
                     currentUserId: profileId,
                     metricType: selectedMetric,
-                    format: selectedFormat,
+                    format: format,
                     startMode: .today,
                     scoringMode: scoring,
                     difficulty: difficulty
@@ -422,7 +524,7 @@ struct ChallengeFlowView: View {
                     challengerId: profileId,
                     opponentId: selectedOpponent.id,
                     metricType: selectedMetric,
-                    format: selectedFormat,
+                    format: format,
                     startMode: .today,
                     scoringMode: scoring,
                     difficulty: difficulty

@@ -56,7 +56,9 @@ struct PeerProfileView: View {
 
                             friendshipPrimaryButton
 
-                            messageButton
+                            if AppLaunchFlags.messagingEnabled {
+                                messageButton
+                            }
                         }
                     }
                     .padding(.horizontal, 16)

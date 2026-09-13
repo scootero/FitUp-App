@@ -46,6 +46,7 @@ struct FitUpAppTopBar: View {
     var firstName: String
     var showsGreeting: Bool = true
     var unreadMessageCount: Int = 0
+    var showsMessagesButton: Bool = AppLaunchFlags.messagingEnabled
     var onNotifications: () -> Void
     var onMessages: () -> Void
     var onNewBattle: () -> Void
@@ -57,7 +58,9 @@ struct FitUpAppTopBar: View {
                 Spacer(minLength: 0)
                 HStack(spacing: 10) {
                     notificationsButton
-                    messagesButton
+                    if showsMessagesButton {
+                        messagesButton
+                    }
                     newBattleButton
                 }
             }
@@ -268,6 +271,7 @@ struct FitUpAppChromeContainer<Content: View>: View {
     }
 
     private func openMessages() {
+        guard AppLaunchFlags.messagingEnabled else { return }
         if let uid = profile?.id {
             ProductAnalytics.track(
                 ProductAnalytics.Event.messagesOpened,
@@ -279,6 +283,10 @@ struct FitUpAppChromeContainer<Content: View>: View {
     }
 
     private func refreshUnreadMessageCount() async {
+        guard AppLaunchFlags.messagingEnabled else {
+            unreadMessageCount = 0
+            return
+        }
         guard let profile else {
             unreadMessageCount = 0
             return

@@ -35,7 +35,7 @@ struct MatchSearchRepository {
         let row = MatchSearchRequestInsert(
             creatorId: creatorId,
             metricType: "steps",
-            durationDays: 1,
+            durationDays: 3,
             startMode: "today",
             creatorBaseline: creatorBaseline,
             scoringMode: "balanced",

@@ -136,11 +136,32 @@ struct ChallengeOpponent: Identifiable, Equatable {
     let rollingCaloriesBaseline: Double?
 }
 
+enum ChallengeEntryBlockReason: Equatable {
+    case none
+    case noProfile
+    case slotLimit
+    case cooldown
+}
+
 struct ChallengeEntryGate {
     let isBlocked: Bool
     let isPremium: Bool
     let usedSlots: Int
     let slotLimit: Int
+    let blockReason: ChallengeEntryBlockReason
+    /// Local calendar day when a free user may start again (start-of-day), if blocked for cooldown.
+    let cooldownEarliestStart: Date?
+
+    static func open(isPremium: Bool, usedSlots: Int = 0) -> ChallengeEntryGate {
+        ChallengeEntryGate(
+            isBlocked: false,
+            isPremium: isPremium,
+            usedSlots: usedSlots,
+            slotLimit: FreeTierRules.slotLimit,
+            blockReason: .none,
+            cooldownEarliestStart: nil
+        )
+    }
 }
 
 final class MatchmakingService {
@@ -178,36 +199,60 @@ final class MatchmakingService {
     }
 
     func evaluateEntryGate(profile: Profile?) async -> ChallengeEntryGate {
-        let isPremium = await MainActor.run { SubscriptionService.shared.isPremium }
+        let subscription = SubscriptionService.shared
+        let isPremium = await MainActor.run { subscription.isPremium }
         if isPremium {
-            return ChallengeEntryGate(
-                isBlocked: false,
-                isPremium: true,
-                usedSlots: 0,
-                slotLimit: 1
-            )
+            return .open(isPremium: true)
         }
 
         // Per spec: the paywall is never shown before the user has completed their first match.
-        let canShowPaywall = await MainActor.run { SubscriptionService.shared.canShowPaywall }
+        let canShowPaywall = await MainActor.run { subscription.canShowPaywall }
         guard let profileId = profile?.id else {
             return ChallengeEntryGate(
                 isBlocked: canShowPaywall,
                 isPremium: false,
                 usedSlots: 1,
-                slotLimit: 1
+                slotLimit: FreeTierRules.slotLimit,
+                blockReason: canShowPaywall ? .noProfile : .none,
+                cooldownEarliestStart: nil
             )
         }
 
         do {
             let usedSlots = try await repository.countOpenSlots(currentUserId: profileId)
-            let isBlocked = canShowPaywall && !(SubscriptionService.shared.canCreateMatch(usedSlots: usedSlots))
-            return ChallengeEntryGate(
-                isBlocked: isBlocked,
-                isPremium: false,
-                usedSlots: usedSlots,
-                slotLimit: 1
-            )
+            let lastCompletedEnd = try await repository.fetchLatestCompletedMatchEndDate(currentUserId: profileId)
+
+            let slotOK = await MainActor.run { subscription.canCreateMatch(usedSlots: usedSlots) }
+            let cooldownOK = await MainActor.run {
+                subscription.canStartFreeBattleAfterCooldown(lastCompletedEndDate: lastCompletedEnd)
+            }
+
+            if canShowPaywall, !slotOK {
+                return ChallengeEntryGate(
+                    isBlocked: true,
+                    isPremium: false,
+                    usedSlots: usedSlots,
+                    slotLimit: FreeTierRules.slotLimit,
+                    blockReason: .slotLimit,
+                    cooldownEarliestStart: nil
+                )
+            }
+
+            if canShowPaywall, !cooldownOK, let lastCompletedEnd {
+                let earliest = await MainActor.run {
+                    subscription.freeCooldownEarliestStartDate(after: lastCompletedEnd)
+                }
+                return ChallengeEntryGate(
+                    isBlocked: true,
+                    isPremium: false,
+                    usedSlots: usedSlots,
+                    slotLimit: FreeTierRules.slotLimit,
+                    blockReason: .cooldown,
+                    cooldownEarliestStart: earliest
+                )
+            }
+
+            return .open(isPremium: false, usedSlots: usedSlots)
         } catch {
             PaywallLogger.log(
                 level: .warning,
@@ -215,12 +260,18 @@ final class MatchmakingService {
                 userId: profile?.id,
                 metadata: ["error": error.localizedDescription]
             )
-            return ChallengeEntryGate(
-                isBlocked: false,
-                isPremium: false,
-                usedSlots: 0,
-                slotLimit: 1
-            )
+            // Fail closed for free users once paywall is eligible so cooldown/slot cannot be bypassed.
+            if canShowPaywall {
+                return ChallengeEntryGate(
+                    isBlocked: true,
+                    isPremium: false,
+                    usedSlots: 1,
+                    slotLimit: FreeTierRules.slotLimit,
+                    blockReason: .slotLimit,
+                    cooldownEarliestStart: nil
+                )
+            }
+            return .open(isPremium: false)
         }
     }
 

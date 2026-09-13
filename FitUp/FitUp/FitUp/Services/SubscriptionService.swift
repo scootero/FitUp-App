@@ -10,6 +10,12 @@ import Combine
 import Foundation
 import RevenueCat
 
+/// Launch free-tier product rules (non-actor; safe from matchmaking gate).
+enum FreeTierRules {
+    static let slotLimit = 1
+    static let allowedFormat: ChallengeFormatType = .firstTo3
+}
+
 @MainActor
 final class SubscriptionService: ObservableObject {
 
@@ -36,11 +42,46 @@ final class SubscriptionService: ObservableObject {
         UserDefaults.standard.bool(forKey: "hasCompletedFirstMatch")
     }
 
+    /// Free-tier open-slot cap (searching + pending + active combined).
+    static let freeSlotLimit = FreeTierRules.slotLimit
+
+    /// Free users may only run 3-day battles.
+    static let freeAllowedFormat: ChallengeFormatType = FreeTierRules.allowedFormat
+
     /// Whether the user can open a new challenge / matchmaking request.
     /// Free tier: limited to 1 open slot (searching + pending + active combined).
     func canCreateMatch(usedSlots: Int) -> Bool {
         if isPremium { return true }
-        return usedSlots < 1
+        return usedSlots < FreeTierRules.slotLimit
+    }
+
+    /// Free users must wait until the local calendar day *after* their last completed battle ends.
+    /// - Returns `true` when there is no prior completion (first battle) or the cooldown has elapsed.
+    func canStartFreeBattleAfterCooldown(lastCompletedEndDate: Date?, now: Date = Date()) -> Bool {
+        if isPremium { return true }
+        guard let lastCompletedEndDate else { return true }
+        let calendar = Calendar.current
+        let endDay = calendar.startOfDay(for: lastCompletedEndDate)
+        let today = calendar.startOfDay(for: now)
+        return today > endDay
+    }
+
+    /// Earliest local day a free user may start another battle after `lastCompletedEndDate`.
+    func freeCooldownEarliestStartDate(after lastCompletedEndDate: Date) -> Date {
+        let calendar = Calendar.current
+        let endDay = calendar.startOfDay(for: lastCompletedEndDate)
+        return calendar.date(byAdding: .day, value: 1, to: endDay) ?? endDay
+    }
+
+    /// Free format lock — premium may use any duration.
+    func allowedFormats() -> [ChallengeFormatType] {
+        if isPremium { return ChallengeFormatType.allCases }
+        return [FreeTierRules.allowedFormat]
+    }
+
+    func isFormatAllowed(_ format: ChallengeFormatType) -> Bool {
+        if isPremium { return true }
+        return format == FreeTierRules.allowedFormat
     }
 
     // MARK: - First match tracking

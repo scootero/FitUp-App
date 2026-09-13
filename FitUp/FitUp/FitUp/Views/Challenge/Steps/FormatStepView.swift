@@ -8,12 +8,20 @@
 import SwiftUI
 
 struct DurationStepView: View {
+    /// Formats the user may pick. Free users typically receive only `.firstTo3`.
+    var allowedFormats: [ChallengeFormatType] = ChallengeFormatType.allCases
     var onSelect: (ChallengeFormatType) -> Void
+    var onLockedSelect: (() -> Void)? = nil
 
     private let columns: [GridItem] = [
         GridItem(.flexible(), spacing: 10),
         GridItem(.flexible(), spacing: 10),
     ]
+
+    private var shownFormats: [ChallengeFormatType] {
+        let allowed = Set(allowedFormats)
+        return ChallengeFormatType.allCases.filter { allowed.contains($0) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -21,15 +29,31 @@ struct DurationStepView: View {
                 .font(FitUpFont.body(14, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
 
-            LazyVGrid(columns: columns, spacing: 8) {
-                durationCard(.daily, color: FitUpColors.Neon.yellow)
-                durationCard(.firstTo3, color: FitUpColors.Neon.purple)
-                durationCard(.bestOf5, color: FitUpColors.Neon.cyan)
-                durationCard(.bestOf7, color: FitUpColors.Neon.blue)
+            if shownFormats.count == 1, let only = shownFormats.first {
+                freeTierNotice
+                durationCard(only, color: accentColor(for: only), locked: false)
+            } else {
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(ChallengeFormatType.allCases, id: \.self) { format in
+                        let allowed = allowedFormats.contains(format)
+                        durationCard(
+                            format,
+                            color: accentColor(for: format),
+                            locked: !allowed
+                        )
+                    }
+                }
             }
 
             howItWorksSection
         }
+    }
+
+    private var freeTierNotice: some View {
+        Text("Free includes one 3-day battle. Upgrade for 1-, 5-, and 7-day battles.")
+            .font(FitUpFont.body(12, weight: .medium))
+            .foregroundStyle(FitUpColors.Text.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var howItWorksSection: some View {
@@ -39,7 +63,7 @@ struct DurationStepView: View {
                 .foregroundStyle(FitUpColors.Text.primary)
 
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(ChallengeFormatType.allCases, id: \.self) { format in
+                ForEach(shownFormats.isEmpty ? ChallengeFormatType.allCases : shownFormats, id: \.self) { format in
                     HStack(alignment: .top, spacing: 8) {
                         Text(format.displayName)
                             .font(FitUpFont.mono(11, weight: .bold))
@@ -58,9 +82,13 @@ struct DurationStepView: View {
         .glassCard(.base)
     }
 
-    private func durationCard(_ format: ChallengeFormatType, color: Color) -> some View {
+    private func durationCard(_ format: ChallengeFormatType, color: Color, locked: Bool) -> some View {
         Button {
-            onSelect(format)
+            if locked {
+                onLockedSelect?()
+            } else {
+                onSelect(format)
+            }
         } label: {
             VStack(spacing: 6) {
                 Text(format.displayName)
@@ -73,10 +101,16 @@ struct DurationStepView: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
+                if locked {
+                    Text("PRO")
+                        .font(FitUpFont.mono(10, weight: .black))
+                        .foregroundStyle(FitUpColors.Neon.yellow)
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 80)
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
+            .opacity(locked ? 0.55 : 1)
             .background {
                 RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
                     .fill(color.opacity(0.08))
@@ -95,6 +129,15 @@ struct DurationStepView: View {
         }
         .buttonStyle(DurationCardButtonStyle(accent: color))
     }
+
+    private func accentColor(for format: ChallengeFormatType) -> Color {
+        switch format {
+        case .daily: return FitUpColors.Neon.yellow
+        case .firstTo3: return FitUpColors.Neon.purple
+        case .bestOf5: return FitUpColors.Neon.cyan
+        case .bestOf7: return FitUpColors.Neon.blue
+        }
+    }
 }
 
 /// Backward-compatible alias while the file retains its legacy name.
@@ -105,14 +148,7 @@ private struct DurationCardButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .offset(y: configuration.isPressed ? 3 : 0)
-            .shadow(
-                color: accent.opacity(configuration.isPressed ? 0.06 : 0.14),
-                radius: configuration.isPressed ? 4 : 14,
-                x: 0,
-                y: configuration.isPressed ? 1 : 6
-            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

@@ -268,6 +268,7 @@ struct MatchDetailsView: View {
 
             if profile != nil, viewModel.snapshot != nil {
                 HStack(spacing: 8) {
+                    if AppLaunchFlags.messagingEnabled {
                     Button {
                         messageCompetitorTapped()
                     } label: {
@@ -279,6 +280,7 @@ struct MatchDetailsView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Message competitor")
+                    }
 
                     Button {
                         friendIconTapped()

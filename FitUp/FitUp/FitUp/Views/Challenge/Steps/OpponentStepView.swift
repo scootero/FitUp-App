@@ -11,65 +11,141 @@ struct OpponentStepView: View {
     @Binding var query: String
     let opponents: [ChallengeOpponent]
     let isLoading: Bool
+    /// Free users: Quick Battle + Invite Friend only (no Discover search list).
+    var freeTierLimited: Bool = false
     var onQuickMatch: () -> Void
     var onSelectOpponent: (ChallengeOpponent) -> Void
+    var onInviteFriend: (() -> Void)? = nil
+    var onUpgradeForDirectChallenge: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             quickMatchCard
 
-            Text("Who do you want to battle?")
-                .font(FitUpFont.body(14, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.secondary)
-
-            searchField
-
-            if isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 8)
-                    .tint(FitUpColors.Neon.cyan)
-            } else if opponents.isEmpty {
-                Text("No players found.")
-                    .font(FitUpFont.body(12, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.tertiary)
-                    .padding(.top, 2)
+            if freeTierLimited {
+                inviteFriendCard
+                freeTierFootnote
             } else {
-                VStack(spacing: 8) {
-                    ForEach(opponents) { opponent in
-                        Button {
-                            onSelectOpponent(opponent)
-                        } label: {
-                            HStack(spacing: 12) {
-                                AvatarView(
-                                    initials: opponent.initials,
-                                    color: color(from: opponent.colorHex),
-                                    size: 38
-                                )
+                Text("Who do you want to battle?")
+                    .font(FitUpFont.body(14, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.secondary)
 
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(opponent.displayName)
-                                        .font(FitUpFont.display(13, weight: .bold))
-                                        .foregroundStyle(FitUpColors.Text.primary)
-                                    Text(statLine(for: opponent))
-                                        .font(FitUpFont.body(11, weight: .medium))
-                                        .foregroundStyle(FitUpColors.Text.secondary)
+                searchField
+
+                if isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 8)
+                        .tint(FitUpColors.Neon.cyan)
+                } else if opponents.isEmpty {
+                    Text("No players found.")
+                        .font(FitUpFont.body(12, weight: .medium))
+                        .foregroundStyle(FitUpColors.Text.tertiary)
+                        .padding(.top, 2)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(opponents) { opponent in
+                            Button {
+                                onSelectOpponent(opponent)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    AvatarView(
+                                        initials: opponent.initials,
+                                        color: color(from: opponent.colorHex),
+                                        size: 38
+                                    )
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(opponent.displayName)
+                                            .font(FitUpFont.display(13, weight: .bold))
+                                            .foregroundStyle(FitUpColors.Text.primary)
+                                        Text(statLine(for: opponent))
+                                            .font(FitUpFont.body(11, weight: .medium))
+                                            .foregroundStyle(FitUpColors.Text.secondary)
+                                    }
+
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(FitUpColors.Text.tertiary)
                                 }
-
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(FitUpColors.Text.tertiary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .opponentPickerRowCard()
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .opponentPickerRowCard()
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
         }
+    }
+
+    private var freeTierFootnote: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Free: one 3-day Quick Battle or invite a friend via text. Challenge anyone in FitUp with Pro.")
+                .font(FitUpFont.body(12, weight: .medium))
+                .foregroundStyle(FitUpColors.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let onUpgradeForDirectChallenge {
+                Button("Upgrade to challenge players in FitUp") {
+                    onUpgradeForDirectChallenge()
+                }
+                .font(FitUpFont.body(13, weight: .semibold))
+                .foregroundStyle(FitUpColors.Neon.cyan)
+            }
+        }
+    }
+
+    private var inviteFriendCard: some View {
+        Button {
+            onInviteFriend?()
+        } label: {
+            HStack(spacing: 14) {
+                Circle()
+                    .fill(FitUpColors.Neon.cyan.opacity(0.18))
+                    .frame(width: 52, height: 52)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(FitUpColors.Neon.cyan.opacity(0.45), lineWidth: 1.5)
+                    }
+                    .overlay {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Neon.cyan)
+                    }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Invite a Friend")
+                        .font(FitUpFont.display(16, weight: .black))
+                        .foregroundStyle(FitUpColors.Text.primary)
+                    Text("Send a text with a download link")
+                        .font(FitUpFont.body(12, weight: .medium))
+                        .foregroundStyle(FitUpColors.Text.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                    .fill(FitUpColors.Neon.cyan.opacity(0.08))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.3)
+                    }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                    .strokeBorder(FitUpColors.Neon.cyan.opacity(0.35), lineWidth: 1.5)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var searchField: some View {

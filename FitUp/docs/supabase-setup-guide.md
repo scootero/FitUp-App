@@ -258,6 +258,7 @@ supabase functions deploy update-leaderboard
 supabase functions deploy dispatch-notification
 supabase functions deploy send-pending-reminders
 supabase functions deploy send-morning-checkins
+supabase functions deploy delete-account
 ```
 
 **Edge Function secrets (Dashboard → Edge Functions → Secrets)**

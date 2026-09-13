@@ -54,6 +54,40 @@ final class MatchRepository {
         return searchingCount + activePendingCount
     }
 
+    /// Latest end timestamp for a completed match the user participated in.
+    /// Prefers `completed_at`, then `ends_at`, then `updated_at`.
+    func fetchLatestCompletedMatchEndDate(currentUserId: UUID) async throws -> Date? {
+        let participantResponse = try await client
+            .from("match_participants")
+            .select("match_id")
+            .eq("user_id", value: currentUserId.uuidString)
+            .execute()
+        let matchIds = Set(jsonRows(from: participantResponse.data).compactMap { uuid(from: $0["match_id"]) })
+        guard !matchIds.isEmpty else { return nil }
+
+        let matchesResponse = try await client
+            .from("matches")
+            .select("completed_at, ends_at, updated_at")
+            .in("id", values: matchIds.map(\.uuidString))
+            .eq("state", value: "completed")
+            .execute()
+
+        var latest: Date?
+        for row in jsonRows(from: matchesResponse.data) {
+            let candidate =
+                date(from: row["completed_at"])
+                ?? date(from: row["ends_at"])
+                ?? date(from: row["updated_at"])
+            guard let candidate else { continue }
+            if let current = latest {
+                if candidate > current { latest = candidate }
+            } else {
+                latest = candidate
+            }
+        }
+        return latest
+    }
+
     // MARK: - Opponent discovery
 
     func fetchOpponentCandidates(
@@ -569,6 +603,17 @@ final class MatchRepository {
 
     private func string(from value: Any?) -> String? {
         value as? String
+    }
+
+    private func date(from value: Any?) -> Date? {
+        if let dateValue = value as? Date { return dateValue }
+        if let text = value as? String {
+            if let parsed = Self.isoFormatter.date(from: text) {
+                return parsed
+            }
+            return ISO8601DateFormatter().date(from: text)
+        }
+        return nil
     }
 
     private func int(from value: Any?) -> Int? {

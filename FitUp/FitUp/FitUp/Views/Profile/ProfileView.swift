@@ -8,10 +8,6 @@
 
 import SwiftUI
 
-private enum ProfileSupportLinks {
-    static let privacyPolicyURL = "https://scootero.github.io/FitUp-App/privacy/"
-}
-
 struct ProfileView: View {
     let profile: Profile?
     var onSignOut: () -> Void
@@ -221,6 +217,7 @@ struct ProfileView: View {
                 }
             }
             .buttonStyle(.plain)
+            if AppLaunchFlags.messagingEnabled {
             NavigationLink {
                 MessagesInboxView(profile: profile)
             } label: {
@@ -252,6 +249,7 @@ struct ProfileView: View {
                 }
             }
             .buttonStyle(.plain)
+            }
             SettingsRowView(
                 sfSymbol: "bubble.left.and.bubble.right",
                 label: "Send feedback",
@@ -294,7 +292,27 @@ struct ProfileView: View {
                 label: "Privacy",
                 showSeparator: true,
                 action: .chevron {
-                    if let url = URL(string: ProfileSupportLinks.privacyPolicyURL) {
+                    if let url = URL(string: FitUpAppLinks.privacyPolicyURL) {
+                        openURL(url)
+                    }
+                }
+            )
+            SettingsRowView(
+                sfSymbol: "doc.text",
+                label: "Terms of Use",
+                showSeparator: true,
+                action: .chevron {
+                    if let url = URL(string: FitUpAppLinks.termsOfUseURL) {
+                        openURL(url)
+                    }
+                }
+            )
+            SettingsRowView(
+                sfSymbol: "envelope",
+                label: "Support",
+                showSeparator: true,
+                action: .chevron {
+                    if let url = URL(string: FitUpAppLinks.supportMailtoURL) {
                         openURL(url)
                     }
                 }

@@ -9,5 +9,5 @@
 //
 // Change this file, then create a new Archive for TestFlight or the App Store.
 // =============================================================================
-FITUP_TESTFLIGHT_BYPASS = YES
+FITUP_TESTFLIGHT_BYPASS = NO
 FITUP_REVENUECAT_LOGGING = NO
