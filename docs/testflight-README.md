@@ -95,3 +95,5 @@ Do these in sequence. Check off in the linked doc, not here.
 ## Before App Store (not this TestFlight pass)
 
 See the table at the bottom of [testflight-external-compliance-checklist.md](testflight-external-compliance-checklist.md) (automated deletion, bypass off, RevenueCat, hide dev tools, etc.).
+
+**Full App Store launch checklist (free tier + Pro monthly):** [app-store-launch-checklist.md](app-store-launch-checklist.md) · smoke: [app-store-launch-smoke.md](app-store-launch-smoke.md) · playbook (You vs Agent): [fitup-app-store-release-playbook.md](fitup-app-store-release-playbook.md)
