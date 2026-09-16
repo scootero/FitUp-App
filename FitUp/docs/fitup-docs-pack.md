@@ -34,7 +34,7 @@ FitUp is a challenge-first iOS fitness app. Users compete in 1v1 matches using r
 | Platform | iOS only, SwiftUI, minimum **iOS 18.6** (as deployed; original spec was iOS 18) |
 | Backend | Supabase (Postgres, Edge Functions, Realtime) |
 | Health data | Apple HealthKit — on-device authorized reads only |
-| Subscriptions | RevenueCat — configured day one |
+| Subscriptions | Native StoreKit 2 |
 | Notifications | APNs + ActivityKit (Live Activities) |
 | UI reference | `FitUp/docs/mockups/FitUp_Final_Mockup.jsx` (repo root → `FitUp/` folder) |
 
@@ -60,7 +60,7 @@ FitUp is a challenge-first iOS fitness app. Users compete in 1v1 matches using r
 - Profile / Settings: log viewer, log export, Dev Mode toggle
 - Push notifications for all key events
 - Live Activities during active matches
-- Paywall via RevenueCat (free tier: 1 match slot total)
+- Paywall via native StoreKit 2 (free tier: 1 match slot total)
 - Dev Mode: bypasses all limits, absent from production builds
 - No manual metric entry — ever, under any circumstance
 - Anomaly detection: flag extreme values in metric_snapshots
@@ -1218,7 +1218,7 @@ git commit -m "Add Supabase migrations"
 
 **Paywall timing:** Never shown before user has completed at least one match. After winning first match = soft upsell (not hard block).
 
-**Pricing:** $4.99/month · $29.99/year. RevenueCat from day one.
+**Pricing:** $4.99/month · $29.99/year. Native StoreKit 2.
 
 **Dev Mode:** Toggle in Profile / Settings. Only compiled into `#if DEBUG` builds. When on, `SubscriptionService` returns `premium` regardless of actual entitlement. Stored in `UserDefaults`.
 
@@ -1235,9 +1235,9 @@ git commit -m "Add Supabase migrations"
 | Services | Business logic — **`MetricSyncCoordinator`** (HealthKit→Supabase orchestration), **`HealthKitService`**, **`NotificationService`**, **`SubscriptionService`**, **`MatchmakingService`**, **`DirectChallengeService`**, **`ReadinessCalculator`**, etc. |
 | Repositories | All Supabase read/write — one repo per domain area |
 | Backend | Postgres (RLS, triggers, RPCs) + **Edge Functions** — pairing, activation, finalization, notifications, leaderboard |
-| External | HealthKit, APNs, ActivityKit, RevenueCat |
+| External | HealthKit, APNs, ActivityKit, StoreKit 2 |
 
-**Third-party wiring:** `AppThirdPartyConfig` in `SupabaseProvider.swift` configures **Supabase** and **RevenueCat** from Info.plist / xcconfig keys. **`AppDelegate`** forwards APNs device token registration to **`NotificationService`**.
+**Third-party wiring:** `AppThirdPartyConfig` in `SupabaseProvider.swift` configures **Supabase** from Info.plist / xcconfig keys. Subscriptions use native **StoreKit 2** via `SubscriptionService`. **`AppDelegate`** forwards APNs device token registration to **`NotificationService`**.
 
 ### Architecture rules (non-negotiable)
 
@@ -1303,7 +1303,7 @@ git commit -m "Add Supabase migrations"
 ## V1 scope
 - 1v1 only; metrics: steps and active_calories; durations: 1/3/5/7 days
 - No manual entry, no team matches, no social feed
-- Paywall via RevenueCat — never hardcode tier logic
+- Paywall via native StoreKit 2 — never hardcode tier logic outside `SubscriptionService`
 
 ## Naming
 Tables (snake_case plural): matches, match_days, match_day_participants,
@@ -1368,7 +1368,7 @@ or the design system — stop and ask. Do not guess.
 | Paywall timing | Never before first match completed |
 | Monthly price | $4.99 |
 | Annual price | $29.99 |
-| RevenueCat | Configured day one |
+| StoreKit 2 | Native IAP; products `fitup_pro_monthly` / `fitup_pro_annual` |
 | Dev Mode | Debug builds only — absent from production |
 | Onboarding first match | 1 day, steps, today — single tap to start |
 | Sleep (Health tab) | Last night = **local 18:00 prior day → 12:00 today**; overlap-resolved samples; totals/% from `SleepRatioBreakdown` — **Slice 15** |
@@ -1385,9 +1385,9 @@ or the design system — stop and ask. Do not guess.
 | # Topic | What shipped |
 |---|---|
 | # iOS deployment | Minimum **iOS 18.6**; Swift 5; Xcode current stable per `.cursor/rules` |
-| # Secrets | `FitUp/FitUp/Config/Secrets.example.xcconfig` → copy to **`Secrets.xcconfig`**; supplies `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `REVENUECAT_API_KEY` |
+| # Secrets | `FitUp/FitUp/Config/Secrets.example.xcconfig` → copy to **`Secrets.xcconfig`**; supplies `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
 | # Auth | Supabase Auth: **Sign in with Apple** + **email/password**; `SessionStore` restores session on launch; `ProfileRepository` creates `profiles` row on sign-up; extended session state for onboarding (e.g. HealthKit prompt per profile) — see `SessionStore.swift` |
-| # Subscriptions | RevenueCat; entitlement identifier **`pro`** (not only abstract “premium”); products **`fitup_pro_annual`**, **`fitup_pro_monthly`**; paywall gated until after first match completed (`UserDefaults` / `SubscriptionService`) |
+| # Subscriptions | Native StoreKit 2; products **`fitup_pro_annual`**, **`fitup_pro_monthly`**; entitlement via `Transaction.currentEntitlements`; paywall gated until after first match completed (`UserDefaults` / `SubscriptionService`) |
 | # Push + Live Activities | `AppDelegate` adaptor for APNs; `profiles.apns_token`, `profiles.live_activity_push_token`, `profiles.notifications_enabled`; widget extension target **`FitUpWidgetExtension`**; live activity updates exempt from daily notification cap in `dispatch-notification` |
 | # Supabase backend | **Authoritative:** `supabase/migrations/*.sql` + `supabase/functions/` + `supabase/cron.sql`. Runbook: **`FitUp/docs/supabase-setup-guide.md`** (Part 1 overview + Path A manual + Path B CLI). Edge Functions: nine folders as in that guide. |
 | # “Portal” | **No in-repo admin web UI.** Configure **Apple Developer Portal** (identifiers, Push, Sign in with Apple, widget App ID) and **Supabase Dashboard** (Auth, SQL, Edge Functions, secrets, Vault for service role / `pg_net` triggers). |
@@ -1404,7 +1404,7 @@ Use this order to approximate the current production-ready system:
 2. **# Supabase project:** Create or link project → apply **`supabase/migrations`** in order (`supabase db push` / linked remote) → apply **`supabase/cron.sql`** where pg_cron is enabled → deploy **`supabase/functions/*`**. Store secrets (APNs, service role for `pg_net`, etc.) per Supabase docs. Use **Section 16** of this file for local/backup workflow.
 3. **# Edge Functions:** `supabase functions deploy` for each function (or deploy all); verify JWT and service-role env vars match function code.
 4. **# iOS project:** Open `FitUp/FitUp/FitUp.xcodeproj`; configure signing; copy **`Config/Secrets.example.xcconfig`** → **`Secrets.xcconfig`**; enable capabilities matching **`Config/FitUp.entitlements`**.
-5. **# RevenueCat & App Store Connect:** Products / entitlement **`pro`** aligned with **`SubscriptionService`** (`fitup_pro_annual`, `fitup_pro_monthly` per tracker).
+5. **# StoreKit & App Store Connect:** Products **`fitup_pro_annual`**, **`fitup_pro_monthly`** aligned with **`SubscriptionConfig`** / **`SubscriptionService`**.
 6. **# Verification:** **`FitUp/docs/slice-tracker.md`** for file-level notes; smoke-test auth, one match flow, sync, notification.
 
 ---

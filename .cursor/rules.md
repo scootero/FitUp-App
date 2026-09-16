@@ -44,7 +44,7 @@ Searching → Active → Pending → Discover Players
 ## V1 scope
 - 1v1 only; metrics: steps and active_calories; durations: 1/3/5/7 days
 - No manual entry, no team matches, no social feed
-- Paywall via RevenueCat — never hardcode tier logic
+- Paywall via native StoreKit 2 — never hardcode tier logic outside SubscriptionService
 
 ## Naming
 Tables (snake_case plural): matches, match_days, match_day_participants,  

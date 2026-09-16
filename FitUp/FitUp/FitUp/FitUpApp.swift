@@ -13,11 +13,13 @@ struct FitUpApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var sessionStore = SessionStore()
 
+    @Environment(\.scenePhase) private var scenePhase
+
     init() {
         DevMode.bootstrapOnLaunch()
         AppThirdPartyConfig.configureIfPossible()
-        if PaywallLogger.shouldUseRevenueCat {
-            Task { await SubscriptionService.shared.refreshEntitlement() }
+        if PaywallLogger.shouldUseStoreKit {
+            Task { await SubscriptionService.shared.refresh() }
         }
     }
 
@@ -28,6 +30,10 @@ struct FitUpApp: App {
                 .environmentObject(NotificationService.shared)
                 .onAppear {
                     NotificationService.shared.attachSessionStore(sessionStore)
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    guard newPhase == .active, PaywallLogger.shouldUseStoreKit else { return }
+                    Task { await SubscriptionService.shared.refreshEntitlement() }
                 }
         }
     }

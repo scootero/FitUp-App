@@ -86,7 +86,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
   - `SectionHeader.swift`
   - `FloatingTabBar.swift`
 - **Supabase Swift SDK** — installed via SPM, configured with env-based keys (not hardcoded)
-- **RevenueCat SDK** — installed; `Purchases.configure(withAPIKey:)` called from **`AppThirdPartyConfig`** in `SupabaseProvider.swift` (invoked by `FitUpApp.init`)
+- **StoreKit 2** — `SubscriptionService` + `SubscriptionStoreClient`; products `fitup_pro_monthly` / `fitup_pro_annual` (`SubscriptionConfig`); configured from `FitUpApp.init` via `refresh()`
 - **`HealthKitService.swift`** stub in `Services/` — authorization method wired, no reads yet
 - **`AppLogger.swift`** in `Utilities/` — writes structured entries to `app_logs` Supabase table
 - **`.cursor/rules.md`** at repository root (e.g. `FitUp-App/.cursor/rules.md` if the repo folder is named `FitUp-App`) — copy from Section 19 of docs pack
@@ -158,7 +158,7 @@ The JSX mockup uses inline styles built from a `T` token object. In SwiftUI, the
 
 ### # As-built update (Slice 1)
 
-- **`AppThirdPartyConfig`** (not `FitUpApp` directly) configures Supabase + RevenueCat keys from the bundle.
+- **`AppThirdPartyConfig`** (not `FitUpApp` directly) configures Supabase keys from the bundle. Subscriptions use native StoreKit 2.
 
 ---
 
@@ -744,8 +744,8 @@ Original Slice 4 shipped a **4-step** flow (`Sport → Format → Opponent → R
 - `Views/Paywall/PaywallView.swift`
 
 **Deliverables:**
-- RevenueCat entitlements: `free` and `premium`
-- `SubscriptionService.currentTier` — reads RevenueCat entitlement
+- StoreKit 2 entitlements: Free vs Pro via `Transaction.currentEntitlements` for `fitup_pro_monthly` / `fitup_pro_annual`
+- `SubscriptionService.tier` — reads StoreKit entitlement
 - `SubscriptionService.canCreateMatch()` — returns false if free tier at 1-slot limit
 - Paywall sheet: annual plan prominent at top, monthly below, styled with design tokens
 - Paywall triggered at Challenge flow entry when at limit — sheet instead of Step 0
@@ -977,7 +977,7 @@ Use this with **`FitUp/docs/slice-tracker.md`** (detailed file lists). **Backend
 | 10 | Activity | Complete |
 | 11 | Leaderboard | Complete — Friends = past opponents |
 | 12 | Health | Complete — `ReadinessCalculator`, extra HK types (workouts, heart rate) |
-| 13 | Paywall + Dev Mode | Complete — RevenueCat entitlement id **`pro`**, products `fitup_pro_annual` / `fitup_pro_monthly` |
+| 13 | Paywall + Dev Mode | Complete — StoreKit 2 products `fitup_pro_annual` / `fitup_pro_monthly` |
 | 14 | Profile + Dev Tools | Complete |
 | 15 | Sleep aggregation + % (HealthKit, final) | Complete — depends on Slice 12; see **`fitup-docs-pack.md` Section 11 (Sleep data)** |
 | 16 | Supabase migrations + deploy + cron | Complete — **`/supabase`**; see docs pack **§15–16** |

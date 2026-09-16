@@ -209,7 +209,7 @@ Beta note: This build may show Developer tools and bypass the paywall (TestFligh
 |------|----------------------------|
 | In-app automated account deletion | New feature + policy update |
 | `FITUP_TESTFLIGHT_BYPASS = NO` | `FitUp/FitUp/Config/BetaFlags.xcconfig` → re-archive |
-| RevenueCat / IAP | `Secrets.xcconfig` + App Store Connect → In-App Purchases |
+| StoreKit 2 / IAP | App Store Connect → In-App Purchases (`fitup_pro_monthly`, `fitup_pro_annual`); scheme StoreKit config `FitUp/Products.storekit` |
 | Hide dev tools | Bypass off + no `DevMode` UI in Release |
 | Push entitlements | Only if [push doc](testflight-push-verification.md) failed—approve first |
 | Screenshots, description | Connect → **App Store** version page |

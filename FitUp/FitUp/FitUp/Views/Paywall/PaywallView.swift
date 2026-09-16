@@ -2,13 +2,12 @@
 //  PaywallView.swift
 //  FitUp
 //
-//  Slice 13 — Full paywall sheet backed by RevenueCat.
+//  Slice 13 — Full paywall sheet backed by native StoreKit 2.
 //  Annual plan is shown first (prominent, gold glass).
 //  Monthly plan below (base glass).
 //
 
 import Combine
-import RevenueCat
 import SwiftUI
 
 struct PaywallView: View {
@@ -125,7 +124,7 @@ struct PaywallView: View {
                 .padding(.vertical, 14)
             }
             .solidButton(color: FitUpColors.Neon.cyan)
-            .disabled(vm.isPurchasingAnnual || vm.isPurchasingMonthly)
+            .disabled(vm.isPurchasingAnnual || vm.isPurchasingMonthly || vm.isRestoring)
             .padding(.top, 6)
         }
         .padding(16)
@@ -162,7 +161,7 @@ struct PaywallView: View {
                 .padding(.vertical, 14)
             }
             .ghostButton(color: FitUpColors.Neon.cyan)
-            .disabled(vm.isPurchasingAnnual || vm.isPurchasingMonthly)
+            .disabled(vm.isPurchasingAnnual || vm.isPurchasingMonthly || vm.isRestoring)
             .padding(.top, 6)
         }
         .padding(16)
@@ -226,8 +225,8 @@ private struct FeatureBullet: View {
 
 @MainActor
 private final class PaywallViewModel: ObservableObject {
-    @Published var annualPriceString = "$29.99/year"
-    @Published var monthlyPriceString = "$4.99/month"
+    @Published var annualPriceString = SubscriptionConfig.annualPriceFallback
+    @Published var monthlyPriceString = SubscriptionConfig.monthlyPriceFallback
 
     @Published var isPurchasingAnnual = false
     @Published var isPurchasingMonthly = false
@@ -236,31 +235,38 @@ private final class PaywallViewModel: ObservableObject {
     @Published var showError = false
     @Published var errorMessage: String?
 
-    private var annualPackage: RevenueCat.Package?
-    private var monthlyPackage: RevenueCat.Package?
+    private var hasAnnualProduct = false
+    private var hasMonthlyProduct = false
 
     func load() async {
-        let packages = await SubscriptionService.shared.fetchOffering()
-        for pkg in packages {
-            switch pkg.packageType {
-            case .annual:
-                annualPackage = pkg
-                annualPriceString = pkg.storeProduct.localizedPriceString
-            case .monthly:
-                monthlyPackage = pkg
-                monthlyPriceString = pkg.storeProduct.localizedPriceString
-            default:
-                break
-            }
+        let details = await SubscriptionService.shared.loadProducts()
+        if let monthly = details?.monthlyDisplayPrice {
+            monthlyPriceString = monthly
+            hasMonthlyProduct = true
+        } else {
+            monthlyPriceString = SubscriptionService.shared.monthlyPriceString
+            hasMonthlyProduct = false
+        }
+        if let annual = details?.annualDisplayPrice {
+            annualPriceString = annual
+            hasAnnualProduct = true
+        } else {
+            annualPriceString = SubscriptionService.shared.annualPriceString
+            hasAnnualProduct = false
         }
     }
 
     func purchaseAnnual(profileId: UUID?) async {
-        guard let pkg = annualPackage else {
-            showError = true
-            errorMessage = "Annual plan not available right now."
-            return
+        if !hasAnnualProduct {
+            await load()
+            guard SubscriptionService.shared.productDetails?.annualDisplayPrice != nil else {
+                showError = true
+                errorMessage = "Annual plan not available right now."
+                return
+            }
+            hasAnnualProduct = true
         }
+
         isPurchasingAnnual = true
         defer { isPurchasingAnnual = false }
         if let profileId {
@@ -270,38 +276,22 @@ private final class PaywallViewModel: ObservableObject {
                 properties: ["package": "annual"]
             )
         }
-        do {
-            try await SubscriptionService.shared.purchase(package: pkg)
-            didPurchase = SubscriptionService.shared.isPremium
-            if let profileId, didPurchase {
-                ProductAnalytics.track(
-                    ProductAnalytics.Event.subscriptionPurchaseSucceeded,
-                    userId: profileId,
-                    properties: ["package": "annual"]
-                )
-            }
-        } catch {
-            let ns = error as NSError
-            if let profileId, ns.code != -128 {
-                ProductAnalytics.track(
-                    ProductAnalytics.Event.subscriptionPurchaseFailed,
-                    userId: profileId,
-                    properties: ["package": "annual", "code": "\(ns.code)"]
-                )
-            }
-            if ns.code != -128 {
-                showError = true
-                errorMessage = error.localizedDescription
-            }
-        }
+
+        let state = await SubscriptionService.shared.purchase(plan: .annual)
+        handlePurchaseState(state, package: "annual", profileId: profileId)
     }
 
     func purchaseMonthly(profileId: UUID?) async {
-        guard let pkg = monthlyPackage else {
-            showError = true
-            errorMessage = "Monthly plan not available right now."
-            return
+        if !hasMonthlyProduct {
+            await load()
+            guard SubscriptionService.shared.productDetails?.monthlyDisplayPrice != nil else {
+                showError = true
+                errorMessage = "Monthly plan not available right now."
+                return
+            }
+            hasMonthlyProduct = true
         }
+
         isPurchasingMonthly = true
         defer { isPurchasingMonthly = false }
         if let profileId {
@@ -311,48 +301,69 @@ private final class PaywallViewModel: ObservableObject {
                 properties: ["package": "monthly"]
             )
         }
-        do {
-            try await SubscriptionService.shared.purchase(package: pkg)
-            didPurchase = SubscriptionService.shared.isPremium
-            if let profileId, didPurchase {
-                ProductAnalytics.track(
-                    ProductAnalytics.Event.subscriptionPurchaseSucceeded,
-                    userId: profileId,
-                    properties: ["package": "monthly"]
-                )
-            }
-        } catch {
-            let ns = error as NSError
-            if let profileId, ns.code != -128 {
-                ProductAnalytics.track(
-                    ProductAnalytics.Event.subscriptionPurchaseFailed,
-                    userId: profileId,
-                    properties: ["package": "monthly", "code": "\(ns.code)"]
-                )
-            }
-            if ns.code != -128 {
-                showError = true
-                errorMessage = error.localizedDescription
-            }
-        }
+
+        let state = await SubscriptionService.shared.purchase(plan: .monthly)
+        handlePurchaseState(state, package: "monthly", profileId: profileId)
     }
 
     func restore(profileId: UUID?) async {
         isRestoring = true
         defer { isRestoring = false }
-        do {
-            try await SubscriptionService.shared.restorePurchases()
-            didPurchase = SubscriptionService.shared.isPremium
-            if let profileId, didPurchase {
+
+        let state = await SubscriptionService.shared.restorePurchases()
+        switch state {
+        case .restored:
+            didPurchase = true
+            if let profileId {
                 ProductAnalytics.track(
                     ProductAnalytics.Event.subscriptionRestoreSucceeded,
                     userId: profileId,
-                    properties: ["tier": SubscriptionService.shared.isPremium ? "premium" : "free"]
+                    properties: ["tier": "premium"]
                 )
             }
-        } catch {
+        case .noActiveSubscription:
             showError = true
-            errorMessage = error.localizedDescription
+            errorMessage = state.message
+        case .failed(let message):
+            showError = true
+            errorMessage = message
+        default:
+            break
+        }
+    }
+
+    private func handlePurchaseState(
+        _ state: SubscriptionActionState,
+        package: String,
+        profileId: UUID?
+    ) {
+        switch state {
+        case .purchased:
+            didPurchase = SubscriptionService.shared.isPremium
+            if let profileId, didPurchase {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.subscriptionPurchaseSucceeded,
+                    userId: profileId,
+                    properties: ["package": package]
+                )
+            }
+        case .cancelled:
+            break
+        case .pending:
+            showError = true
+            errorMessage = state.message
+        case .failed(let message):
+            if let profileId {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.subscriptionPurchaseFailed,
+                    userId: profileId,
+                    properties: ["package": package, "code": "failed"]
+                )
+            }
+            showError = true
+            errorMessage = message
+        default:
+            break
         }
     }
 }

@@ -277,7 +277,7 @@ Also set standard Supabase function secrets if your shared code expects them (co
 ### A.8 Wire keys into the iOS app
 
 1. Copy `FitUp/FitUp/Config/Secrets.example.xcconfig` → **`Secrets.xcconfig`** (gitignored).
-2. Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `REVENUECAT_API_KEY`.
+2. Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`.
 3. Ensure **HealthKit**, **Push Notifications**, **Sign in with Apple**, and **Widget / Live Activity** capabilities match your Apple IDs (widget bundle e.g. `com.ScottOliver.FitUp.FitUpWidgetExtension`).
 
 Minimum iOS version for the current app target: **18.6** (see project settings and [fitup-docs-pack.md](fitup-docs-pack.md)).

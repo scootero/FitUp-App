@@ -94,4 +94,4 @@ Do these in sequence. Check off in the linked doc, not here.
 
 ## Before App Store (not this TestFlight pass)
 
-See the table at the bottom of [testflight-external-compliance-checklist.md](testflight-external-compliance-checklist.md) (automated deletion, bypass off, RevenueCat, hide dev tools, etc.).
+See the table at the bottom of [testflight-external-compliance-checklist.md](testflight-external-compliance-checklist.md) (automated deletion, bypass off, StoreKit IAP, hide dev tools, etc.).

@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		A1B1C1D12E72E372000CB585 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D12E72E372000CB583 /* Supabase */; };
-		A1B1C1D12E72E372000CB586 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D12E72E372000CB584 /* RevenueCat */; };
 		E3C4B5A62F72E372000CB599 /* FitUpWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E3C4B5A62F72E372000CB5A2 /* FitUpActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C4B5A62F72E372000CB5A1 /* FitUpActivityAttributes.swift */; };
 /* End PBXBuildFile section */
@@ -68,7 +67,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1B1C1D12E72E372000CB585 /* Supabase in Frameworks */,
-				A1B1C1D12E72E372000CB586 /* RevenueCat in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -138,7 +136,6 @@
 			name = FitUp;
 			packageProductDependencies = (
 				A1B1C1D12E72E372000CB583 /* Supabase */,
-				A1B1C1D12E72E372000CB584 /* RevenueCat */,
 			);
 			productName = FitUp;
 			productReference = D2B71D9A2F72E372000CB580 /* FitUp.app */;
@@ -193,7 +190,6 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A1B1C1D12E72E372000CB581 /* XCRemoteSwiftPackageReference "supabase-swift" */,
-				A1B1C1D12E72E372000CB582 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D2B71D9B2F72E372000CB580 /* Products */;
@@ -408,12 +404,16 @@
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPABASE_URL = "https://uushejbizmlxzxonkuki.supabase.co";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -454,12 +454,16 @@
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPABASE_URL = "https://uushejbizmlxzxonkuki.supabase.co";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -484,10 +488,14 @@
 				PRODUCT_NAME = FitUpWidgetExtension;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -512,10 +520,14 @@
 				PRODUCT_NAME = FitUpWidgetExtension;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -560,14 +572,6 @@
 				minimumVersion = 2.0.0;
 			};
 		};
-		A1B1C1D12E72E372000CB582 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/RevenueCat/purchases-ios-spm";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 5.0.0;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -575,11 +579,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A1B1C1D12E72E372000CB581 /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
-		};
-		A1B1C1D12E72E372000CB584 /* RevenueCat */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A1B1C1D12E72E372000CB582 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
-			productName = RevenueCat;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

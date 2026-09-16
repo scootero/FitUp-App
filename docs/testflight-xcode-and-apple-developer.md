@@ -116,7 +116,7 @@ No separate `.entitlements` file in repo; extension uses `Config/FitUpWidgetExte
 
 | Flag | Current | Effect if `YES` |
 |------|---------|-----------------|
-| `FITUP_TESTFLIGHT_BYPASS` | `YES` | Paywall bypass, Developer section in Profile, RevenueCat not configured |
+| `FITUP_TESTFLIGHT_BYPASS` | `YES` | Paywall bypass, Developer section in Profile, StoreKit entitlement sync skipped |
 
 Change → **clean archive** (new build number). See [README stop points](testflight-README.md#stop-points-get-approval-before-changing).
 

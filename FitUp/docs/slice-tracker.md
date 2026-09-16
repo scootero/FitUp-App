@@ -12,7 +12,7 @@ Files created:
 - `FitUp/docs/supabase-slice0-schema.sql`
 - `.cursor/rules.md` (repo root)
 Files modified:
-- `FitUp/FitUp/FitUp.xcodeproj/project.pbxproj` (SPM: Supabase, RevenueCat; xcconfig base; Info/entitlements paths; project IPHONEOS_DEPLOYMENT_TARGET 18.6)
+- `FitUp/FitUp/FitUp.xcodeproj/project.pbxproj` (SPM: Supabase; xcconfig base; Info/entitlements paths; project IPHONEOS_DEPLOYMENT_TARGET 18.6)
 - `FitUp/FitUp/FitUp/FitUpApp.swift`, `ContentView.swift`
 - `.gitignore` (Secrets.xcconfig)
 Supabase changes:
@@ -281,8 +281,10 @@ Notes:
 Date: 2026-04-03
 Status: Complete
 Files created:
-- `FitUp/FitUp/FitUp/Services/SubscriptionService.swift` (RevenueCat entitlement wrapper; `isPremium`, `canCreateMatch`, `canShowPaywall`, `markFirstMatchWon`, `refreshEntitlement`, `purchase`, `restorePurchases`; Dev Mode bypass in `#if DEBUG`)
-- `FitUp/FitUp/FitUp/Views/Paywall/PaywallView.swift` (annual plan gold-glass prominent + monthly plan base-glass, RevenueCat package fetch, purchase + restore flows, "Not now" dismiss)
+- `FitUp/FitUp/FitUp/Services/SubscriptionService.swift` (StoreKit 2 entitlement wrapper; `isPremium`, `canCreateMatch`, `canShowPaywall`, `markFirstMatchWon`, `refreshEntitlement`, `purchase`, `restorePurchases`; Dev Mode bypass)
+- `FitUp/FitUp/FitUp/Services/SubscriptionConfig.swift` / `SubscriptionStoreClient.swift` (exact Product IDs + StoreKit boundary)
+- `FitUp/FitUp/FitUp/Views/Paywall/PaywallView.swift` (annual plan gold-glass prominent + monthly plan base-glass, StoreKit product fetch, purchase + restore flows, "Not now" dismiss)
+- `FitUp/FitUp/FitUp/Products.storekit` (local StoreKit Configuration for `fitup_pro_monthly` / `fitup_pro_annual`)
 Files modified:
 - `FitUp/FitUp/FitUp/Services/MatchmakingService.swift` (removed `isPremiumUser`; `evaluateEntryGate` now delegates to `SubscriptionService.shared.isPremium` and `canShowPaywall` — paywall never blocks before first match is completed)
 - `FitUp/FitUp/FitUp/Views/Challenge/ChallengeFlowView.swift` (replaced inline `ChallengeEntryPaywallSheet` with `PaywallView`)
@@ -295,9 +297,9 @@ Supabase changes:
 Notes:
 - Paywall timing per spec: `canShowPaywall` returns false until `UserDefaults.bool("hasCompletedFirstMatch")` is true. This means free-tier users can complete their first match without ever hitting the paywall.
 - Soft upsell (upgrade banner) shows in Profile after `firstMatchWon` is set — not a hard block.
-- Dev Mode toggle is `#if DEBUG` only; toggling it ON makes `SubscriptionService.shared.isPremium` return `true` immediately without a RevenueCat call.
-- RevenueCat entitlement ID used: `"pro"`. Create products `fitup_pro_annual` and `fitup_pro_monthly` in App Store Connect + matching offering in RevenueCat dashboard before testing purchases on device.
-- `PaywallView` gracefully falls back to hardcoded price strings (`$29.99/year`, `$4.99/month`) when RevenueCat packages are unavailable.
+- Dev Mode / TestFlight bypass makes `SubscriptionService.shared.isPremium` return `true` immediately without a StoreKit call.
+- Product IDs: `fitup_pro_annual`, `fitup_pro_monthly`. Create them in App Store Connect (subscription group FitUp Pro) before testing purchases on device. Local testing: scheme StoreKit config `Products.storekit`.
+- `PaywallView` gracefully falls back to hardcoded price strings (`$29.99/year`, `$4.99/month`) when StoreKit products are unavailable.
 - Build verified: no linter errors. Run `xcodebuild -project "FitUp/FitUp/FitUp.xcodeproj" -scheme "FitUp" -destination "generic/platform=iOS Simulator" build` to verify.
 
 ## Slice 14 — Profile screen and Dev Tools

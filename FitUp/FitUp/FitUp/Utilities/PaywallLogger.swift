@@ -2,29 +2,26 @@
 //  PaywallLogger.swift
 //  FitUp
 //
-//  RevenueCat / paywall logging gated by FITUP_REVENUECAT_LOGGING in BetaFlags.xcconfig.
+//  Paywall / StoreKit logging gated by FITUP_PAYWALL_LOGGING in BetaFlags.xcconfig.
 //
 
 import Foundation
-import RevenueCat
 
 enum PaywallLogger {
-    private static let infoPlistKey = "FITUP_REVENUECAT_LOGGING"
+    private static let infoPlistKey = "FITUP_PAYWALL_LOGGING"
+    /// Legacy key kept so older archives still honor the flag until rebuild.
+    private static let legacyInfoPlistKey = "FITUP_REVENUECAT_LOGGING"
     private static let logCategory = "paywall"
 
     /// FitUp `AppLogger` + console paywall lines (see BetaFlags.xcconfig).
     static var isEnabled: Bool {
         parseBool(Bundle.main.object(forInfoDictionaryKey: infoPlistKey))
+            || parseBool(Bundle.main.object(forInfoDictionaryKey: legacyInfoPlistKey))
     }
 
-    /// RevenueCat SDK should configure and sync entitlements (off during TestFlight bypass).
-    static var shouldUseRevenueCat: Bool {
+    /// StoreKit should sync entitlements (off during TestFlight bypass).
+    static var shouldUseStoreKit: Bool {
         !DevMode.isTestFlightBypassBuild
-    }
-
-    /// Call before `Purchases.configure`.
-    static func applySDKLogLevel() {
-        Purchases.logLevel = isEnabled ? .debug : .error
     }
 
     static func log(

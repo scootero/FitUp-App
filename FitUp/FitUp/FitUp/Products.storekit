@@ -1,0 +1,81 @@
+{
+  "identifier" : "FitUpProductsStoreKit",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_applicationInternalID" : "0",
+    "_developerTeamID" : "BLAUCQ8H26",
+    "_failTransactionsEnabled" : false,
+    "_lastStorefrontUpdateDate" : 0,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21500001",
+      "localizations" : [
+
+      ],
+      "name" : "FitUp Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "4.99",
+          "familyShareable" : true,
+          "groupNumber" : 1,
+          "internalID" : "21500002",
+          "localizations" : [
+            {
+              "description" : "Unlimited simultaneous matches, live leaderboard access, and priority matchmaking.",
+              "displayName" : "FitUp Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "fitup_pro_monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "FitUp Pro Monthly",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "29.99",
+          "familyShareable" : true,
+          "groupNumber" : 2,
+          "internalID" : "21500003",
+          "localizations" : [
+            {
+              "description" : "Unlimited simultaneous matches, live leaderboard access, and priority matchmaking. Billed annually.",
+              "displayName" : "FitUp Pro Annual",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "fitup_pro_annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "FitUp Pro Annual",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}
