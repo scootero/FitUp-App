@@ -14,7 +14,7 @@ struct OnboardingHeroView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Text("Welcome to FitUp")
+            Text("Welcome to FitOff")
                 .font(FitUpFont.display(28, weight: .black))
                 .foregroundStyle(FitUpColors.Text.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)

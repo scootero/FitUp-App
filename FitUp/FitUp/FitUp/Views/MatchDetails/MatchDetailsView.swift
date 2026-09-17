@@ -72,6 +72,7 @@ struct MatchDetailsView: View {
     @State private var chatThreadPresentation: MatchChatPresentation?
     @State private var paceChartScrubbing = false
     private let profile: Profile?
+    private let heroProfileSize: CGFloat = 78
 
     private var activeBreakdownDayNumber: Int? {
         hoveredDayBreakdownDayNumber ?? tappedDayBreakdownDayNumber
@@ -748,114 +749,60 @@ struct MatchDetailsView: View {
             Rectangle()
                 .fill(
                     LinearGradient(
-                        colors: [accent.opacity(0.55), .clear],
+                        colors: [
+                            FitUpColors.Neon.cyan.opacity(0.85),
+                            FitUpColors.Neon.blue.opacity(0.35),
+                            FitUpColors.Neon.orange.opacity(0.85),
+                        ],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
                 )
                 .frame(height: 3)
 
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(dm.statusLabel)
-                            .font(FitUpFont.body(10, weight: .heavy))
-                            .tracking(2)
-                            .foregroundStyle(accent)
-                    }
+                    Text(dm.statusLabel)
+                        .font(FitUpFont.body(13, weight: .heavy))
+                        .tracking(1.4)
+                        .foregroundStyle(accent)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
 
-                    Spacer()
+                    Spacer(minLength: 8)
 
                     if !dm.battleDateRangeLabel.isEmpty {
                         Text(dm.battleDateRangeLabel)
-                            .font(FitUpFont.mono(9, weight: .medium))
-                            .foregroundStyle(FitUpColors.Text.tertiary)
+                            .font(FitUpFont.mono(12, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.secondary)
                             .multilineTextAlignment(.trailing)
                             .lineLimit(2)
                             .minimumScaleFactor(0.8)
                     } else if !dm.isEffectivelyOver, dm.snapshot.state == .active {
                         Text(dm.dayBadgeLabel)
-                            .font(FitUpFont.mono(10, weight: .medium))
+                            .font(FitUpFont.mono(12, weight: .semibold))
                             .foregroundStyle(FitUpColors.Text.secondary)
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, 5)
                             .background(
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     .fill(Color.white.opacity(0.06))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                                            .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
                                     )
                             )
                     }
                 }
+                .padding(.horizontal, 16)
 
-                matchScoreBanner(dm: dm)
-
-                HStack(alignment: .top, spacing: 6) {
-                    let myBattle = dm.snapshot.isBalancedStepsBattle
-                        ? HomeActiveMatch.battleScore(
-                            actualSteps: dm.myTodayDisplay,
-                            myBaseline: dm.snapshot.myBaselineSteps,
-                            theirBaseline: dm.snapshot.theirBaselineSteps
-                        )
-                        : nil
-                    let theirBattle = dm.snapshot.isBalancedStepsBattle
-                        ? HomeActiveMatch.battleScore(
-                            actualSteps: dm.theirToday,
-                            myBaseline: dm.snapshot.theirBaselineSteps,
-                            theirBaseline: dm.snapshot.myBaselineSteps
-                        )
-                        : nil
-                    let myPill = heroTodayPillStyle(dm: dm, forOpponent: false, myBattle: myBattle, theirBattle: theirBattle)
-                    let theirPill = heroTodayPillStyle(dm: dm, forOpponent: true, myBattle: myBattle, theirBattle: theirBattle)
-                    playerHeroColumn(
-                        name: "You",
-                        initials: dm.snapshot.me.initials,
-                        border: FitUpColors.Neon.cyan,
-                        seriesScore: dm.snapshot.myScore,
-                        todaySteps: dm.myTodayDisplay,
-                        stepsPeriodLabel: dm.stepsPeriodLabel,
-                        todayPillStyle: myPill,
-                        pulse: dm.snapshot.state == .active && !dm.isEffectivelyOver,
-                        staleHint: dm.healthKitStale ? "May be stale" : nil,
-                        syncRelativeLabel: dm.mySyncRelativeLabel,
-                        primaryBattleScore: myBattle
-                    )
-
-                    VStack(spacing: 4) {
-                        Spacer().frame(height: 28)
-                        Text("VS")
-                            .font(FitUpFont.display(15, weight: .heavy))
-                            .foregroundStyle(FitUpColors.Text.tertiary)
-                            .tracking(2)
-                        Rectangle()
-                            .fill(Color.white.opacity(0.08))
-                            .frame(width: 1, height: 24)
-                    }
-                    .frame(width: 28)
-
-                    playerHeroColumn(
-                        name: dm.snapshot.opponent.displayName,
-                        initials: dm.snapshot.opponent.initials,
-                        border: color(from: dm.snapshot.opponent.colorHex),
-                        seriesScore: dm.snapshot.theirScore,
-                        todaySteps: dm.theirToday,
-                        stepsPeriodLabel: dm.stepsPeriodLabel,
-                        todayPillStyle: theirPill,
-                        pulse: false,
-                        staleHint: nil,
-                        syncRelativeLabel: dm.opponentSyncRelativeLabel,
-                        primaryBattleScore: theirBattle,
-                        onTap: profile == nil
-                            ? nil
-                            : {
-                                peerProfileSheet = PeerProfileSheetItem(peerId: dm.snapshot.opponent.id)
-                            }
-                    )
-                }
+                heroScoreAndPlayers(dm: dm)
+                    .padding(.top, 2)
+                    .padding(.bottom, 4)
 
                 recordDotsRow(dm: dm)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
 
                 if dm.snapshot.state == .active, !dm.isEffectivelyOver {
                     VStack(alignment: .leading, spacing: 6) {
@@ -878,48 +825,124 @@ struct MatchDetailsView: View {
 
                         HStack {
                             Text(dm.daysRemainingLabel)
-                                .font(FitUpFont.mono(9, weight: .medium))
-                                .foregroundStyle(FitUpColors.Text.tertiary)
+                                .font(FitUpFont.mono(12, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Text.secondary)
                             Spacer()
                             Text(dm.percentCompleteLabel)
-                                .font(FitUpFont.mono(9, weight: .medium))
-                                .foregroundStyle(FitUpColors.Text.tertiary)
+                                .font(FitUpFont.mono(12, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Text.secondary)
                         }
                     }
+                    .padding(.horizontal, 16)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 18)
         }
         .matchDetailsHeroCardChrome(accent: accent, variant: variant)
     }
 
-    @ViewBuilder
-    private func matchScoreBanner(dm: MatchDetailDisplayModel) -> some View {
-        VStack(spacing: 6) {
-            if dm.isEffectivelyOver {
-                Text(BattlePhaseCopy.pendingSubtitle)
-                    .font(FitUpFont.body(11, weight: .semibold))
-                    .foregroundStyle(FitUpColors.Neon.yellow.opacity(0.92))
-            } else {
-                Text(dm.matchStatusLabel)
-                    .font(FitUpFont.body(11, weight: .heavy))
-                    .foregroundStyle(dm.matchStatusColor)
-            }
+    /// Profiles sit on either side of the match score, centered on the digits and spaced evenly from the card edge.
+    private func heroScoreAndPlayers(dm: MatchDetailDisplayModel) -> some View {
+        let myBattle = dm.snapshot.isBalancedStepsBattle
+            ? HomeActiveMatch.battleScore(
+                actualSteps: dm.myTodayDisplay,
+                myBaseline: dm.snapshot.myBaselineSteps,
+                theirBaseline: dm.snapshot.theirBaselineSteps
+            )
+            : nil
+        let theirBattle = dm.snapshot.isBalancedStepsBattle
+            ? HomeActiveMatch.battleScore(
+                actualSteps: dm.theirToday,
+                myBaseline: dm.snapshot.theirBaselineSteps,
+                theirBaseline: dm.snapshot.myBaselineSteps
+            )
+            : nil
+        let myPill = heroTodayPillStyle(dm: dm, forOpponent: false, myBattle: myBattle, theirBattle: theirBattle)
+        let theirPill = heroTodayPillStyle(dm: dm, forOpponent: true, myBattle: myBattle, theirBattle: theirBattle)
+        let userLive = dm.snapshot.state == .active && !dm.isEffectivelyOver
+
+        return HStack(alignment: .top, spacing: 0) {
+            playerHeroColumn(
+                name: "You",
+                initials: dm.snapshot.me.initials,
+                theme: .user,
+                seriesScore: dm.snapshot.myScore,
+                todaySteps: dm.myTodayDisplay,
+                stepsPeriodLabel: dm.stepsPeriodLabel,
+                todayPillStyle: myPill,
+                pulse: userLive,
+                staleHint: dm.healthKitStale ? "May be stale" : nil,
+                syncRelativeLabel: dm.mySyncRelativeLabel,
+                primaryBattleScore: myBattle
+            )
+            .frame(maxWidth: .infinity, alignment: .top)
+
+            matchScoreCenter(dm: dm)
+                .frame(width: 124)
+                .offset(y: heroScoreCenterOffset)
+                .layoutPriority(1)
+
+            playerHeroColumn(
+                name: dm.snapshot.opponent.displayName,
+                initials: dm.snapshot.opponent.initials,
+                theme: .opponent,
+                seriesScore: dm.snapshot.theirScore,
+                todaySteps: dm.theirToday,
+                stepsPeriodLabel: dm.stepsPeriodLabel,
+                todayPillStyle: theirPill,
+                pulse: false,
+                staleHint: nil,
+                syncRelativeLabel: dm.opponentSyncRelativeLabel,
+                primaryBattleScore: theirBattle,
+                onTap: profile == nil
+                    ? nil
+                    : {
+                        peerProfileSheet = PeerProfileSheetItem(peerId: dm.snapshot.opponent.id)
+                    }
+            )
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+        .padding(.horizontal, 6)
+    }
+
+    /// Shifts the score stack so the digits’ center lines up with the profile circle.
+    private var heroScoreCenterOffset: CGFloat {
+        let statusLine: CGFloat = 18
+        let gap: CGFloat = 3
+        let scoreLine: CGFloat = 48
+        let scoreCenter = statusLine + gap + scoreLine / 2
+        return heroProfileSize / 2 - scoreCenter
+    }
+
+    private func matchScoreCenter(dm: MatchDetailDisplayModel) -> some View {
+        VStack(spacing: 3) {
+            Text(dm.isEffectivelyOver ? BattlePhaseCopy.pendingSubtitle : dm.matchStatusLabel)
+                .font(FitUpFont.body(13, weight: .heavy))
+                .foregroundStyle(dm.isEffectivelyOver ? FitUpColors.Neon.yellow : dm.matchStatusColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .multilineTextAlignment(.center)
 
             Text(dm.matchScoreText)
-                .font(FitUpFont.display(40, weight: .black))
-                .foregroundStyle(FitUpColors.Text.primary)
-                .minimumScaleFactor(0.7)
+                .font(FitUpFont.display(44, weight: .black))
+                .foregroundStyle(Color.white)
+                .shadow(color: FitUpColors.Neon.cyan.opacity(0.45), radius: 8, x: -1, y: 0)
+                .shadow(color: FitUpColors.Neon.orange.opacity(0.40), radius: 8, x: 1, y: 0)
+                .minimumScaleFactor(0.55)
                 .lineLimit(1)
 
             Text(BattlePhaseCopy.matchScoreCaption.uppercased())
-                .font(FitUpFont.mono(9, weight: .bold))
-                .tracking(1.2)
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .font(FitUpFont.mono(12, weight: .heavy))
+                .tracking(1.1)
+                .foregroundStyle(Color.white.opacity(0.78))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
+        .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(dm.matchStatusLabel). Match score \(dm.matchScoreText)")
     }
 
     private func heroTodayPillStyle(dm: MatchDetailDisplayModel, forOpponent: Bool, myBattle: Int?, theirBattle: Int?) -> HeroTodayPillStyle {
@@ -956,7 +979,7 @@ struct MatchDetailsView: View {
     private func playerHeroColumn(
         name: String,
         initials: String,
-        border: Color,
+        theme: MatchHeroPlayerTheme,
         seriesScore: Int,
         todaySteps: Int,
         stepsPeriodLabel: String,
@@ -967,92 +990,106 @@ struct MatchDetailsView: View {
         primaryBattleScore: Int? = nil,
         onTap: (() -> Void)? = nil
     ) -> some View {
-        let inner = VStack(spacing: 6) {
-            ZStack {
-                if pulse {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(FitUpColors.Neon.cyan.opacity(0.28), lineWidth: 2)
-                        .frame(width: 64, height: 64)
-                }
-                AvatarView(initials: initials, color: border, size: 54, glow: pulse)
-            }
+        let pillForeground = todayPillStyle == .leading ? theme.primary : todayPillStyle.foreground
+        let pillFill = todayPillStyle == .leading ? theme.primary.opacity(0.14) : todayPillStyle.fill
+        let pillStroke = todayPillStyle == .leading ? theme.primary.opacity(0.45) : todayPillStyle.stroke
+        let inner = VStack(spacing: 7) {
+            MatchHeroNeonAvatar(
+                initials: initials,
+                theme: theme,
+                size: heroProfileSize,
+                livePulse: pulse
+            )
+
             Text(name)
-                .font(FitUpFont.body(12, weight: .bold))
-                .foregroundStyle(FitUpColors.Text.primary)
+                .font(FitUpFont.display(17, weight: .black))
+                .foregroundStyle(theme.primary)
+                .shadow(color: theme.primary.opacity(0.45), radius: 6, x: 0, y: 0)
                 .lineLimit(1)
+                .minimumScaleFactor(0.6)
 
             Text("\(seriesScore) days won")
-                .font(FitUpFont.mono(9, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.tertiary)
+                .font(FitUpFont.mono(12, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.78))
 
             if let battle = primaryBattleScore {
                 Text("\(battle)")
-                    .font(FitUpFont.display(30, weight: .black))
-                    .foregroundStyle(FitUpColors.Neon.cyan)
+                    .font(FitUpFont.display(32, weight: .black))
+                    .foregroundStyle(theme.primary)
+                    .shadow(color: theme.primary.opacity(0.35), radius: 8, x: 0, y: 0)
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
 
                 Text(BattlePhaseCopy.stepScoreCaption)
-                    .font(FitUpFont.mono(9, weight: .bold))
-                    .foregroundStyle(FitUpColors.Neon.cyan.opacity(0.85))
+                    .font(FitUpFont.mono(12, weight: .bold))
+                    .foregroundStyle(theme.secondary)
 
-                VStack(spacing: 2) {
+                VStack(spacing: 3) {
                     Text(stepsPeriodLabel)
-                        .font(FitUpFont.mono(9, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.tertiary)
-                    Text("\(todaySteps)")
                         .font(FitUpFont.mono(12, weight: .bold))
-                        .foregroundStyle(todayPillStyle.foreground)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
+                        .foregroundStyle(Color.white.opacity(0.72))
+                    Text("\(todaySteps)")
+                        .font(FitUpFont.mono(16, weight: .bold))
+                        .foregroundStyle(pillForeground)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
                         .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(todayPillStyle.fill)
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(pillFill)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .strokeBorder(todayPillStyle.stroke, lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(pillStroke, lineWidth: 1)
                                 )
                         )
                 }
                 .padding(.top, 2)
             } else {
                 Text("\(todaySteps)")
-                    .font(FitUpFont.display(30, weight: .black))
-                    .foregroundStyle(FitUpColors.Text.primary)
-                    .minimumScaleFactor(0.6)
+                    .font(FitUpFont.display(32, weight: .black))
+                    .foregroundStyle(theme.primary)
+                    .shadow(color: theme.primary.opacity(0.3), radius: 8, x: 0, y: 0)
+                    .minimumScaleFactor(0.55)
                     .lineLimit(1)
 
                 Text(stepsPeriodLabel)
-                    .font(FitUpFont.mono(10, weight: .bold))
-                    .foregroundStyle(todayPillStyle.foreground)
+                    .font(FitUpFont.mono(13, weight: .bold))
+                    .foregroundStyle(pillForeground)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
+                    .minimumScaleFactor(0.75)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
                     .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(todayPillStyle.fill)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(pillFill)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(todayPillStyle.stroke, lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .strokeBorder(pillStroke, lineWidth: 1)
                             )
                     )
             }
 
             if let syncRelativeLabel {
                 Text(syncRelativeLabel)
-                    .font(FitUpFont.mono(9, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .font(FitUpFont.mono(11, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.62))
             }
 
             if let staleHint {
                 Text(staleHint)
-                    .font(FitUpFont.mono(8, weight: .medium))
-                    .foregroundStyle(FitUpColors.Text.tertiary)
+                    .font(FitUpFont.mono(11, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.62))
             }
         }
         .frame(maxWidth: .infinity)
+        .background(alignment: .top) {
+            Circle()
+                .fill(theme.primary.opacity(0.16))
+                .frame(width: heroProfileSize + 36, height: heroProfileSize + 36)
+                .blur(radius: 16)
+                .offset(y: -8)
+                .allowsHitTesting(false)
+        }
 
         return Group {
             if let onTap {
@@ -1106,9 +1143,9 @@ struct MatchDetailsView: View {
         }
 
         return Text(label)
-            .font(FitUpFont.body(9, weight: .heavy))
+            .font(FitUpFont.body(11, weight: .heavy))
             .foregroundStyle(fg)
-            .frame(minWidth: 22, minHeight: 22)
+            .frame(minWidth: 26, minHeight: 26)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(bg))
     }
 

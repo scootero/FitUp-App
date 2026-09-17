@@ -2,8 +2,9 @@
 //  SubscriptionService.swift
 //  FitUp
 //
-//  Central StoreKit 2 entitlement + FitUp free/pro access policy.
-//  Dev Mode short-circuits premium checks when active (Debug toggle or TestFlight bypass).
+//  Central StoreKit 2 entitlement + FitOff free/pro access policy.
+//  Debug builds may force Free/Pro/System access without disabling StoreKit.
+//  Release builds always follow the real StoreKit entitlement.
 //
 
 import Combine
@@ -46,6 +47,24 @@ enum SubscriptionActionState: Equatable {
     }
 }
 
+#if DEBUG
+enum DebugSubscriptionMode: String, CaseIterable, Identifiable {
+    case pro
+    case free
+    case system
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .pro: return "Pro"
+        case .free: return "Free"
+        case .system: return "System"
+        }
+    }
+}
+#endif
+
 @MainActor
 final class SubscriptionService: ObservableObject {
 
@@ -63,10 +82,35 @@ final class SubscriptionService: ObservableObject {
     @Published private(set) var actionState: SubscriptionActionState = .idle
     @Published private(set) var isLoadingProducts = false
 
-    /// True if the user has a premium entitlement, OR if Dev Mode is active.
+    #if DEBUG
+    @Published var debugMode: DebugSubscriptionMode {
+        didSet {
+            if persistsDebugModeChanges {
+                UserDefaults.standard.set(debugMode.rawValue, forKey: Self.debugModeKey)
+            }
+        }
+    }
+
+    private let persistsDebugModeChanges: Bool
+    private static let debugModeKey = "fitup.debug.subscriptionMode"
+    #endif
+
+    /// Feature access gate. Release always mirrors StoreKit entitlement.
     var isPremium: Bool {
-        if DevMode.isActive { return true }
+        #if DEBUG
+        switch debugMode {
+        case .pro: return true
+        case .free: return false
+        case .system: return tier == .premium
+        }
+        #else
         return tier == .premium
+        #endif
+    }
+
+    /// Raw StoreKit entitlement, ignoring Debug Free/Pro overrides.
+    var isSubscribed: Bool {
+        tier == .premium
     }
 
     /// Whether the current user is eligible to have the paywall shown.
@@ -82,18 +126,9 @@ final class SubscriptionService: ObservableObject {
         return usedSlots < SubscriptionConfig.freeOpenMatchSlots
     }
 
-    var monthlyPriceString: String {
-        if let price = productDetails?.monthlyDisplayPrice {
-            return price
-        }
-        return SubscriptionConfig.monthlyPriceFallback
-    }
-
-    var annualPriceString: String {
-        if let price = productDetails?.annualDisplayPrice {
-            return price
-        }
-        return SubscriptionConfig.annualPriceFallback
+    /// Localized StoreKit price when loaded; nil if the product failed to load.
+    var monthlyDisplayPrice: String? {
+        productDetails?.monthlyDisplayPrice
     }
 
     var isBusy: Bool {
@@ -121,11 +156,21 @@ final class SubscriptionService: ObservableObject {
     init(
         storeClient: SubscriptionStoreClient? = nil,
         listenForTransactions: Bool = true,
-        automaticallyRefresh: Bool = false
+        automaticallyRefresh: Bool = false,
+        persistsDebugModeChanges: Bool = true
     ) {
         self.storeClient = storeClient ?? LiveSubscriptionStoreClient()
 
-        if listenForTransactions, PaywallLogger.shouldUseStoreKit {
+        #if DEBUG
+        self.persistsDebugModeChanges = persistsDebugModeChanges
+        let savedMode = UserDefaults.standard.string(forKey: Self.debugModeKey)
+            .flatMap(DebugSubscriptionMode.init(rawValue:))
+        debugMode = savedMode ?? .pro
+        #else
+        _ = persistsDebugModeChanges
+        #endif
+
+        if listenForTransactions {
             transactionListener = Task { [weak self] in
                 for await update in Transaction.updates {
                     guard let self else { return }
@@ -148,15 +193,12 @@ final class SubscriptionService: ObservableObject {
 
     /// Loads products and refreshes entitlement from StoreKit.
     func refresh() async {
-        guard PaywallLogger.shouldUseStoreKit else { return }
         await loadProducts()
         await refreshEntitlement()
     }
 
     /// Refreshes the cached entitlement from `Transaction.currentEntitlements`.
     func refreshEntitlement() async {
-        guard PaywallLogger.shouldUseStoreKit else { return }
-
         let entitled = await storeClient.hasActiveProEntitlement()
         tier = entitled ? .premium : .free
     }
@@ -164,7 +206,6 @@ final class SubscriptionService: ObservableObject {
     /// Fetches StoreKit products by exact Product ID.
     @discardableResult
     func loadProducts() async -> SubscriptionProductDetails? {
-        guard PaywallLogger.shouldUseStoreKit else { return nil }
         guard !isLoadingProducts else { return productDetails }
 
         isLoadingProducts = true
@@ -173,7 +214,7 @@ final class SubscriptionService: ObservableObject {
         do {
             let details = try await storeClient.loadProducts()
             productDetails = details
-            if details.monthlyDisplayPrice == nil && details.annualDisplayPrice == nil {
+            if details.monthlyDisplayPrice == nil {
                 PaywallLogger.log(
                     level: .warning,
                     message: "StoreKit product load returned no matching products"
@@ -194,10 +235,6 @@ final class SubscriptionService: ObservableObject {
     /// Purchases the given plan and refreshes entitlement.
     @discardableResult
     func purchase(plan: SubscriptionPlan) async -> SubscriptionActionState {
-        guard PaywallLogger.shouldUseStoreKit else {
-            actionState = .failed("Subscriptions are disabled in this build.")
-            return actionState
-        }
         guard !isBusy else { return actionState }
 
         if productDetails == nil {
@@ -231,10 +268,6 @@ final class SubscriptionService: ObservableObject {
     /// Restores previous purchases via `AppStore.sync()` and refreshes entitlement.
     @discardableResult
     func restorePurchases() async -> SubscriptionActionState {
-        guard PaywallLogger.shouldUseStoreKit else {
-            actionState = .failed("Subscriptions are disabled in this build.")
-            return actionState
-        }
         guard !isBusy else { return actionState }
 
         actionState = .restoring

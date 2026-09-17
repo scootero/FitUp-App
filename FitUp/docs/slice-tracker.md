@@ -281,7 +281,7 @@ Notes:
 Date: 2026-04-03
 Status: Complete
 Files created:
-- `FitUp/FitUp/FitUp/Services/SubscriptionService.swift` (StoreKit 2 entitlement wrapper; `isPremium`, `canCreateMatch`, `canShowPaywall`, `markFirstMatchWon`, `refreshEntitlement`, `purchase`, `restorePurchases`; Dev Mode bypass)
+- `FitUp/FitUp/FitUp/Services/SubscriptionService.swift` (StoreKit 2 entitlement wrapper; `isPremium` / Debug Free-Pro-System; `canCreateMatch`, `canShowPaywall`, `markFirstMatchWon`, `refreshEntitlement`, `purchase`, `restorePurchases`)
 - `FitUp/FitUp/FitUp/Services/SubscriptionConfig.swift` / `SubscriptionStoreClient.swift` (exact Product IDs + StoreKit boundary)
 - `FitUp/FitUp/FitUp/Views/Paywall/PaywallView.swift` (annual plan gold-glass prominent + monthly plan base-glass, StoreKit product fetch, purchase + restore flows, "Not now" dismiss)
 - `FitUp/FitUp/FitUp/Products.storekit` (local StoreKit Configuration for `fitup_pro_monthly` / `fitup_pro_annual`)

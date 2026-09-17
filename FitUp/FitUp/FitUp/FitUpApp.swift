@@ -16,11 +16,8 @@ struct FitUpApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        DevMode.bootstrapOnLaunch()
         AppThirdPartyConfig.configureIfPossible()
-        if PaywallLogger.shouldUseStoreKit {
-            Task { await SubscriptionService.shared.refresh() }
-        }
+        Task { await SubscriptionService.shared.refresh() }
     }
 
     var body: some Scene {
@@ -32,7 +29,7 @@ struct FitUpApp: App {
                     NotificationService.shared.attachSessionStore(sessionStore)
                 }
                 .onChange(of: scenePhase) { _, newPhase in
-                    guard newPhase == .active, PaywallLogger.shouldUseStoreKit else { return }
+                    guard newPhase == .active else { return }
                     Task { await SubscriptionService.shared.refreshEntitlement() }
                 }
         }

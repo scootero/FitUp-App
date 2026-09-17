@@ -24,18 +24,20 @@ struct LiveActivitiesNotificationsSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 SettingsGroupView(title: "PREFERENCES") {
-                    SettingsRowView(
-                        sfSymbol: "lock.rectangle.on.rectangle",
-                        label: "Live Activities",
-                        helperText: liveActivitiesHelperText,
-                        isDisabled: !notificationsEnabled,
-                        showSeparator: true,
-                        action: .toggle($liveActivitiesEnabled)
-                    )
+                    if NotificationPreferences.isLiveActivitiesFeatureAvailable {
+                        SettingsRowView(
+                            sfSymbol: "lock.rectangle.on.rectangle",
+                            label: "Live Activities",
+                            helperText: liveActivitiesHelperText,
+                            isDisabled: !notificationsEnabled,
+                            showSeparator: true,
+                            action: .toggle($liveActivitiesEnabled)
+                        )
+                    }
                     SettingsRowView(
                         sfSymbol: "bell",
                         label: "All Notifications",
-                        helperText: "Allow FitUp to send battle updates and reminders.",
+                        helperText: "Allow FitOff to send battle updates and reminders.",
                         showSeparator: false,
                         action: .toggle($notificationsEnabled)
                     )
@@ -46,9 +48,10 @@ struct LiveActivitiesNotificationsSettingsView: View {
             .padding(.bottom, 40)
         }
         .background(BackgroundGradientView())
-        .navigationTitle("Live Activities & Notifications")
+        .navigationTitle(NotificationPreferences.isLiveActivitiesFeatureAvailable ? "Live Activities & Notifications" : "Notifications")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
+            LiveActivityCoordinator.shared.disableFeatureIfNeeded()
             syncFromProfile()
             enforceNotificationsCouplingIfNeeded()
         }

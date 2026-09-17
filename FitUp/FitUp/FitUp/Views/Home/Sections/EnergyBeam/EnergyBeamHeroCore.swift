@@ -933,26 +933,15 @@ private struct EnergyBeamCollisionAlignedMarginHeadline: View {
 
 // MARK: - Mini logo
 
-/// Tiny FitUp wordmark row for the hero header (purely decorative).
+/// Three neon dots at the top of the hero card (purely decorative).
 private struct FitUpMiniLogoPreview: View {
     var body: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 5) {
-                Circle().fill(FitUpColors.Neon.cyan.opacity(0.95)).frame(width: 9, height: 9)
-                Circle().fill(FitUpColors.Neon.blue.opacity(0.95)).frame(width: 7, height: 7)
-                    .offset(y: -1)
-                Circle().fill(FitUpColors.Neon.orange.opacity(0.95)).frame(width: 10, height: 10)
-                    .offset(x: -2)
-            }
-            Text("FitUp")
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
-                .foregroundStyle(.white.opacity(0.96))
-                .tracking(0.35)
-                .minimumScaleFactor(0.85)
-                .allowsTightening(true)
+        HStack(spacing: 6) {
+            Circle().fill(FitUpColors.Neon.cyan.opacity(0.95)).frame(width: 9, height: 9)
+            Circle().fill(FitUpColors.Neon.blue.opacity(0.95)).frame(width: 7, height: 7)
+            Circle().fill(FitUpColors.Neon.orange.opacity(0.95)).frame(width: 10, height: 10)
         }
-        .allowsTightening(true)
-        .minimumScaleFactor(0.92)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 

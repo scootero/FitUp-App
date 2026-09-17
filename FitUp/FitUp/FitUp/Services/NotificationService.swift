@@ -322,7 +322,7 @@ final class NotificationService: NSObject, ObservableObject {
         case "message_received":
             return "New Message"
         default:
-            return "FitUp Alert"
+            return "FitOff Alert"
         }
     }
 
@@ -343,7 +343,7 @@ final class NotificationService: NSObject, ObservableObject {
         case "message_received":
             return "Tap to read and reply."
         default:
-            return "Open FitUp to view details."
+            return "Open FitOff to view details."
         }
     }
 

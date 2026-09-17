@@ -2,35 +2,35 @@
 //  SubscriptionConfig.swift
 //  FitUp
 //
-//  Fixed Product IDs and free-tier constants for FitUp Pro (native StoreKit 2).
+//  Fixed Product ID and free-tier constants for FitOff Pro (native StoreKit 2).
 //
 
 import Foundation
 
 enum SubscriptionConfig {
-    /// Must match App Store Connect Product IDs exactly.
-    static let monthlyProductID = "fitup_pro_monthly"
-    static let annualProductID = "fitup_pro_annual"
+    /// Must match the App Store Connect Product ID exactly.
+    static let monthlyProductID = "com.ScottOliver.FitUp.Monthly"
 
-    static let allProductIDs: Set<String> = [monthlyProductID, annualProductID]
+    static let allProductIDs: Set<String> = [monthlyProductID]
 
     /// Free users may have this many open match slots (searching + pending + active).
     static let freeOpenMatchSlots = 1
 
-    static let displayName = "FitUp Pro"
+    static let displayName = "FitOff Pro"
 
-    static let monthlyPriceFallback = "$4.99/month"
-    static let annualPriceFallback = "$29.99/year"
+    /// Customer-facing benefit. Must stay aligned with the App Store subscription description.
+    static let benefitDescription = "Unlimited simultaneous matches."
+
+    /// Debug / docs only — never present this as a live App Store price.
+    static let monthlyPriceFallback = "$2.99/month"
+
+    static let unavailablePriceLabel = "Unavailable"
 }
 
 enum SubscriptionPlan: String, Sendable {
     case monthly
-    case annual
 
     var productID: String {
-        switch self {
-        case .monthly: return SubscriptionConfig.monthlyProductID
-        case .annual: return SubscriptionConfig.annualProductID
-        }
+        SubscriptionConfig.monthlyProductID
     }
 }

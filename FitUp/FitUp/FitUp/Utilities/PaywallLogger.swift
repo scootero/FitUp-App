@@ -19,11 +19,6 @@ enum PaywallLogger {
             || parseBool(Bundle.main.object(forInfoDictionaryKey: legacyInfoPlistKey))
     }
 
-    /// StoreKit should sync entitlements (off during TestFlight bypass).
-    static var shouldUseStoreKit: Bool {
-        !DevMode.isTestFlightBypassBuild
-    }
-
     static func log(
         level: LogLevel = .info,
         message: String,

@@ -42,6 +42,7 @@ struct FloatingTabBar: View {
     var onBattle: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var selectedTabCard
 
     private let barHeight: CGFloat = 68
     private let battleCorner: CGFloat = 16
@@ -64,6 +65,8 @@ struct FloatingTabBar: View {
         .shadow(color: .black.opacity(0.55), radius: 20, x: 0, y: 10)
         .padding(.horizontal, FitUpLayout.floatingBottomBarHorizontalPadding)
         .padding(.bottom, FitUpLayout.floatingBottomBarBottomPadding)
+        .offset(y: 6)
+        .sensoryFeedback(.selection, trigger: selected)
     }
 
     private var barBackground: some View {
@@ -225,7 +228,14 @@ struct FloatingTabBar: View {
     private func tabButton(_ tab: MainTab) -> some View {
         let isSelected = selected == tab
         return Button {
-            selected = tab
+            guard selected != tab else { return }
+            withAnimation(
+                reduceMotion
+                    ? .easeOut(duration: 0.12)
+                    : .spring(response: 0.42, dampingFraction: 0.68)
+            ) {
+                selected = tab
+            }
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: tab.systemImage)
@@ -241,7 +251,20 @@ struct FloatingTabBar: View {
                     .foregroundStyle(isSelected ? FitUpColors.Neon.cyan : Color(red: 0.78, green: 0.88, blue: 1.0).opacity(0.90))
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 2)
+            .padding(.vertical, 7)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.white.opacity(0.09))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(FitUpColors.Neon.cyan.opacity(0.34), lineWidth: 1)
+                        }
+                        .shadow(color: FitUpColors.Neon.cyan.opacity(0.22), radius: 9, x: 0, y: 4)
+                        .matchedGeometryEffect(id: "selected-tab-card", in: selectedTabCard)
+                }
+            }
+            .padding(.horizontal, 3)
         }
         .buttonStyle(.plain)
     }

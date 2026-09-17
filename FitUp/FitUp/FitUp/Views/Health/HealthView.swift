@@ -194,7 +194,7 @@ struct HealthView: View {
 
     private var healthAccessBanner: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Apple Health access is off for FitUp. Enable read access for Steps, Active Energy, and related data in Settings.")
+            Text("Apple Health access is off for FitOff. Enable read access for Steps, Active Energy, and related data in Settings.")
                 .font(FitUpFont.body(12))
                 .foregroundStyle(FitUpColors.Text.secondary)
             Button {

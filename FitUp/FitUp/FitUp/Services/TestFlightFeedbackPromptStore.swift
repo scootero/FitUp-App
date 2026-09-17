@@ -42,8 +42,9 @@ enum TestFlightFeedbackPromptStore {
     }
 
     /// Recurring every 36h period at the next local noon after each threshold.
+    /// Shown in TestFlight / Sandbox installs (sandbox receipt), not App Store production.
     static func shouldPresent(now: Date = .now, calendar: Calendar = .current) -> Bool {
-        guard DevMode.isAvailable else { return false }
+        guard isTestFlightOrSandboxInstall else { return false }
         guard !hasSubmittedFeedback else { return false }
         guard defaults.integer(forKey: launchCountKey) >= minimumLaunchCount else { return false }
         guard let firstOpen = firstOpenDate else { return false }
@@ -56,6 +57,12 @@ enum TestFlightFeedbackPromptStore {
 
         let eligibleAt = eligiblePresentationDate(firstOpen: firstOpen, period: period, calendar: calendar)
         return now >= eligibleAt
+    }
+
+    /// TestFlight and Sandbox use `sandboxReceipt`; App Store production uses `receipt`.
+    static var isTestFlightOrSandboxInstall: Bool {
+        guard let receiptURL = Bundle.main.appStoreReceiptURL else { return false }
+        return receiptURL.lastPathComponent == "sandboxReceipt"
     }
 
     static func markPromptPresentedForCurrentPeriod(now: Date = .now) {

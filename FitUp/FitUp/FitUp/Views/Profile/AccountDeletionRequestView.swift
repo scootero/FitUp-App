@@ -9,8 +9,8 @@ import SwiftUI
 import UIKit
 
 private enum AccountDeletionSupport {
-    static let supportEmail = "oliverscott14@gmail.com"
-    static let appName = "FitUp"
+    static let supportEmail = "catsuit_corkers_1c@icloud.com"
+    static let appName = "FitOff"
 }
 
 struct AccountDeletionRequestView: View {
@@ -33,13 +33,13 @@ struct AccountDeletionRequestView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     bodyText(
-                        "Automated in-app account deletion is not available yet. To request deletion of your FitUp account and associated personal data, please email us using the information below."
+                        "Automated in-app account deletion is not available yet. To request deletion of your FitOff account and associated personal data, please email us using the information below."
                     )
 
                     infoCard
 
                     bodyText(
-                        "Please include your FitUp display name or user ID in the email so we can locate your account."
+                        "Please include your FitOff display name or user ID in the email so we can locate your account."
                     )
 
                     bodyText(

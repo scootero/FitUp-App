@@ -139,7 +139,7 @@ struct PeerProfileView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
 
-            Text("FitUp competitor")
+            Text("FitOff competitor")
                 .font(FitUpFont.body(12))
                 .foregroundStyle(FitUpColors.Text.secondary)
         }

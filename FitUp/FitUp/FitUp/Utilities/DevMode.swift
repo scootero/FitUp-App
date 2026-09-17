@@ -2,60 +2,27 @@
 //  DevMode.swift
 //  FitUp
 //
-//  Central switch for internal beta (TestFlight) vs production.
-//  Controlled by FITUP_TESTFLIGHT_BYPASS in Config/BetaFlags.xcconfig → Info.plist.
+//  Developer tools availability. Compile-time Debug only — never ships in Release.
 //
 
 import Foundation
 
 enum DevMode {
-    static let userDefaultsKey = "devMode"
-    private static let infoPlistKey = "FITUP_TESTFLIGHT_BYPASS"
-
-    /// Build was archived with `FITUP_TESTFLIGHT_BYPASS = YES` in BetaFlags.xcconfig.
-    static var isTestFlightBypassBuild: Bool {
-        parseBool(Bundle.main.object(forInfoDictionaryKey: infoPlistKey))
-    }
-
-    /// Dev tools UI may appear (Xcode Debug, or TestFlight bypass build).
+    /// Developer tools UI may appear (Xcode Debug builds only).
     static var isAvailable: Bool {
         #if DEBUG
         return true
         #else
-        return isTestFlightBypassBuild
+        return false
         #endif
     }
 
-    /// Paywall bypass and dev-tool content are active.
+    /// Developer tool content (analytics buffer, log viewer) is active in Debug.
     static var isActive: Bool {
-        guard isAvailable else { return false }
-        if isTestFlightBypassBuild {
-            return true
-        }
-        return UserDefaults.standard.bool(forKey: userDefaultsKey)
-    }
-
-    /// Persists Dev Mode on for TestFlight bypass builds (idempotent).
-    static func bootstrapOnLaunch() {
-        guard isTestFlightBypassBuild else { return }
-        UserDefaults.standard.set(true, forKey: userDefaultsKey)
-    }
-
-    private static func parseBool(_ value: Any?) -> Bool {
-        switch value {
-        case let flag as Bool:
-            return flag
-        case let number as NSNumber:
-            return number.boolValue
-        case let string as String:
-            switch string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-            case "1", "yes", "true":
-                return true
-            default:
-                return false
-            }
-        default:
-            return false
-        }
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
     }
 }

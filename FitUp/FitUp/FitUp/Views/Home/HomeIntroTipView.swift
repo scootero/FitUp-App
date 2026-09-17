@@ -16,7 +16,7 @@ struct HomeIntroTipView: View {
     var layout: HomeIntroTipLayout = .loadingScreen
 
     private static let lines = [
-        "FitUp is a 1v1 steps competition app.",
+        "FitOff is a 1v1 steps competition app.",
         "Whoever has the most steps at the end of each day wins that day.",
         "Whoever wins the most days by the end wins the battle.",
     ]
@@ -78,7 +78,7 @@ struct HomeIntroTipView: View {
 /// Tap trigger → `HomeIntroTipView` below → auto-fades after a few seconds (hero card FitUp logo).
 struct HomeIntroTipAutoReveal<Trigger: View>: View {
     @ViewBuilder var trigger: () -> Trigger
-    var accessibilityLabel: String = "FitUp"
+    var accessibilityLabel: String = "FitOff"
     var accessibilityHint: String = "Shows a short description of the app."
 
     private let autoDismissSeconds: Double = 3
@@ -185,7 +185,7 @@ private struct WhatIsFitUpExplodedPromptButton: View {
 
     @State private var isPushingOut = false
 
-    private static let words = ["What", "is", "FitUp?"]
+    private static let words = ["What", "is", "FitOff?"]
 
     private static let wordGradient = LinearGradient(
         colors: [
@@ -215,7 +215,7 @@ private struct WhatIsFitUpExplodedPromptButton: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("What is FitUp?")
+        .accessibilityLabel("What is FitOff?")
         .accessibilityHint("Shows a short description of the app.")
         .onAppear {
             withAnimation(.easeInOut(duration: 1.35).repeatForever(autoreverses: true)) {

@@ -6,11 +6,13 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @EnvironmentObject private var notificationService: NotificationService
     @Environment(\.scenePhase) private var scenePhase
+    @State private var showLaunchIntro = true
 
     var body: some View {
         ZStack {
@@ -28,6 +30,13 @@ struct ContentView: View {
                     profile: sessionStore.currentProfile,
                     showOnboardingSearching: sessionStore.showSearchingCardOnHome
                 )
+            }
+
+            if showLaunchIntro {
+                FitOffLaunchIntroView {
+                    showLaunchIntro = false
+                }
+                .zIndex(10)
             }
         }
         .screenTransition()
@@ -82,9 +91,105 @@ struct ContentView: View {
     }
 }
 
+private struct FitOffLaunchIntroView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let onFinished: () -> Void
+
+    @State private var introTask: Task<Void, Never>?
+    @State private var isVisible = false
+    @State private var hasFinished = false
+
+    var body: some View {
+        ZStack {
+            BackgroundGradientView()
+
+            VStack(spacing: 18) {
+                appIcon
+                    .frame(width: 76, height: 76)
+                    .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+                    .shadow(color: FitUpColors.Neon.cyan.opacity(0.34), radius: 18, x: 0, y: 8)
+
+                FitUpBrandMark(fontSize: 34)
+            }
+            .opacity(isVisible ? 1 : 0)
+            .scaleEffect(isVisible ? 1 : 0.96)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onAppear(perform: startIntro)
+        .onDisappear {
+            introTask?.cancel()
+        }
+    }
+
+    @ViewBuilder
+    private var appIcon: some View {
+        if let image = bundledAppIcon {
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .fill(Color(rgb: 0x0A1020))
+                Image(systemName: "figure.run")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(FitUpColors.Neon.cyan)
+            }
+        }
+    }
+
+    private var bundledAppIcon: UIImage? {
+        let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any]
+        let primary = icons?["CFBundlePrimaryIcon"] as? [String: Any]
+        let fileNames = primary?["CFBundleIconFiles"] as? [String]
+        return fileNames?.last.flatMap(UIImage.init(named:)) ?? UIImage(named: "AppIcon")
+    }
+
+    private func startIntro() {
+        guard introTask == nil else { return }
+
+        if reduceMotion {
+            isVisible = true
+            introTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(450))
+                guard !Task.isCancelled else { return }
+                finish()
+            }
+            return
+        }
+
+        withAnimation(.easeOut(duration: 0.35)) {
+            isVisible = true
+        }
+
+        introTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.05))
+            guard !Task.isCancelled else { return }
+
+            withAnimation(.easeInOut(duration: 0.25)) {
+                isVisible = false
+            }
+
+            try? await Task.sleep(for: .milliseconds(280))
+            guard !Task.isCancelled else { return }
+            finish()
+        }
+    }
+
+    private func finish() {
+        guard !hasFinished else { return }
+        hasFinished = true
+        introTask?.cancel()
+        onFinished()
+    }
+}
+
 private enum TestFlightFeedbackPromptHints {
     static let bullets = [
-        "What feels interesting or useful about FitUp?",
+        "What feels interesting or useful about FitOff?",
         "What feels confusing or missing?",
         "What would make this app worth supporting monthly?",
     ]
@@ -418,7 +523,7 @@ private struct SessionRestoreLoadingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("FitUp. Restoring session.")
+        .accessibilityLabel("FitOff. Restoring session.")
     }
 }
 

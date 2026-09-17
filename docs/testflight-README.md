@@ -22,7 +22,7 @@ This folder has **one workflow** and **specialized sub-docs**. Follow the order 
 | Widget extension bundle ID | `com.ScottOliver.FitUp.FitUpWidgetExtension` |
 | Xcode team ID | `BLAUCQ8H26` |
 | Privacy policy URL | https://scootero.github.io/FitUp-App/privacy/ |
-| Support / deletion email | oliverscott14@gmail.com |
+| Support / deletion email | catsuit_corkers_1c@icloud.com |
 | Min iOS (project) | 18.6 |
 
 In-app links: **Profile → Privacy** (policy URL), **Profile → Account Deletion** (manual delete instructions).
@@ -31,7 +31,8 @@ Repo config (change only with intent):
 
 | What | Where in repo |
 |------|----------------|
-| TestFlight dev bypass (paywall, dev UI) | `FitUp/FitUp/Config/BetaFlags.xcconfig` → `FITUP_TESTFLIGHT_BYPASS` (currently `YES`) |
+| Paywall logging (optional) | `FitUp/FitUp/Config/BetaFlags.xcconfig` → `FITUP_PAYWALL_LOGGING` |
+| Debug Free/Pro/System access | Profile → Developer (Debug builds only; stripped from Release) |
 | Entitlements (Push, HealthKit, Sign in with Apple) | `FitUp/FitUp/Config/FitUp.entitlements` |
 | Health permission string | `FitUp/FitUp/FitUp.xcodeproj` → FitUp target → `INFOPLIST_KEY_NSHealthShareUsageDescription` |
 | Privacy URL in app | `FitUp/FitUp/FitUp/Views/Profile/ProfileView.swift` → `ProfileSupportLinks.privacyPolicyURL` |
@@ -84,7 +85,6 @@ Do these in sequence. Check off in the linked doc, not here.
 
 | Change | Where |
 |--------|--------|
-| `FITUP_TESTFLIGHT_BYPASS` YES → NO | `FitUp/FitUp/Config/BetaFlags.xcconfig` then re-archive |
 | `aps-environment` in entitlements | `FitUp/FitUp/Config/FitUp.entitlements` |
 | Supabase `APNS_USE_SANDBOX` or APNs secrets | Supabase Dashboard → Edge Functions → Secrets |
 | Bundle IDs or team | Xcode + Apple Developer Identifiers |
@@ -94,4 +94,4 @@ Do these in sequence. Check off in the linked doc, not here.
 
 ## Before App Store (not this TestFlight pass)
 
-See the table at the bottom of [testflight-external-compliance-checklist.md](testflight-external-compliance-checklist.md) (automated deletion, bypass off, StoreKit IAP, hide dev tools, etc.).
+See the table at the bottom of [testflight-external-compliance-checklist.md](testflight-external-compliance-checklist.md) (automated deletion, StoreKit IAP, Release archive Info.plist check, etc.).

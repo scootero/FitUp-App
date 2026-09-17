@@ -66,7 +66,7 @@ struct PostAuthDisplayNameView: View {
                         endPoint: .trailing
                     )
                 )
-            Text("This is how other players see you on FitUp. You can change it later in your profile.")
+            Text("This is how other players see you on FitOff. You can change it later in your profile.")
                 .font(FitUpFont.body(15, weight: .medium))
                 .foregroundStyle(FitUpColors.Text.secondary)
         }
