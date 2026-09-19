@@ -54,7 +54,8 @@ enum HealthKitService {
         ]
     }
 
-    /// Raw authorization status for diagnostics (read access is approximate on iOS).
+    /// HealthKit does not disclose an app's per-type read decisions. Keep diagnostics
+    /// explicit about that rather than reporting sharing/write status for read-only types.
     static func authorizationSnapshot() -> [String: String] {
         guard isHealthDataAvailable else {
             return [
@@ -63,37 +64,28 @@ enum HealthKitService {
             ]
         }
         return [
-            "steps_auth_status": authStatusLabel(for: .stepCount),
-            "active_energy_auth_status": authStatusLabel(for: .activeEnergyBurned),
+            "steps_auth_status": "read_access_not_observable",
+            "active_energy_auth_status": "read_access_not_observable",
         ]
     }
 
-    private static func authStatusLabel(for identifier: HKQuantityTypeIdentifier) -> String {
-        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else {
-            return "type_unavailable"
-        }
-        switch store.authorizationStatus(for: type) {
-        case .notDetermined: return "notDetermined"
-        case .sharingDenied: return "sharingDenied"
-        case .sharingAuthorized: return "sharingAuthorized"
-        @unknown default: return "unknown"
-        }
-    }
-
-    /// True if any requested read type is still `notDetermined` (user has not been through the system prompt).
-    private static func anyReadTypeIsNotDetermined() -> Bool {
-        for objectType in readAuthorizationTypes {
-            if store.authorizationStatus(for: objectType) == .notDetermined {
-                return true
-            }
-        }
-        return false
-    }
-
-    /// Calls `requestAuthorization()` only when at least one read type is `notDetermined`, to avoid redundant prompts after denial.
+    /// Uses HealthKit's request-status API, not sharing authorization, to avoid redundant
+    /// read-access prompts. It does not reveal whether an individual read type was granted.
     static func requestAuthorizationIfNeeded(analyticsUserId: UUID? = nil) async {
         guard isHealthDataAvailable else { return }
-        guard anyReadTypeIsNotDetermined() else { return }
+        let requestStatus: HKAuthorizationRequestStatus
+        do {
+            requestStatus = try await authorizationRequestStatus()
+        } catch {
+            AppLogger.log(
+                category: "healthkit_authorization",
+                level: .warning,
+                message: "could not determine HealthKit authorization request status",
+                metadata: ["error": error.localizedDescription]
+            )
+            return
+        }
+        guard requestStatus == .shouldRequest else { return }
         if let uid = analyticsUserId {
             ProductAnalytics.track(
                 ProductAnalytics.Event.healthPermissionRequested,
@@ -105,27 +97,35 @@ enum HealthKitService {
             try await requestAuthorization()
             if let uid = analyticsUserId {
                 ProductAnalytics.track(
-                    ProductAnalytics.Event.healthPermissionGranted,
+                    ProductAnalytics.Event.healthAuthorizationRequestCompleted,
                     userId: uid,
                     properties: ["source": "health_tab"]
                 )
             }
         } catch {
             if let uid = analyticsUserId {
-                let denied = (error as? HealthKitError).map {
-                    if case .authorizationDenied = $0 { return true }
-                    return false
-                } ?? false
                 ProductAnalytics.track(
-                    ProductAnalytics.Event.healthPermissionDenied,
+                    ProductAnalytics.Event.healthAuthorizationRequestFailed,
                     userId: uid,
                     properties: [
                         "source": "health_tab",
-                        "reason": denied ? "authorization_denied" : "error",
+                        "reason": "error",
                     ]
                 )
             }
-            // Denied, unavailable, or other; Health screen / banner handle recovery.
+            // The Health screen remains usable and explains how to review access.
+        }
+    }
+
+    private static func authorizationRequestStatus() async throws -> HKAuthorizationRequestStatus {
+        try await withCheckedThrowingContinuation { continuation in
+            store.getRequestStatusForAuthorization(toShare: [], read: readAuthorizationTypes) { status, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: status)
+                }
+            }
         }
     }
 
@@ -1058,7 +1058,7 @@ enum HealthKitService {
         }
         guard let healthError = error as? HKError else { return error }
         if healthError.code == .errorAuthorizationDenied {
-            return HealthKitError.authorizationDenied
+            return HealthKitError.dataUnavailable
         }
         return healthError
     }
@@ -1081,7 +1081,7 @@ enum HealthKitError: LocalizedError {
     case activeEnergyTypeUnavailable
     case invalidDateRange
     case noStatisticsData
-    case authorizationDenied
+    case dataUnavailable
     case backgroundDeliveryFailed
 
     var errorDescription: String? {
@@ -1096,8 +1096,8 @@ enum HealthKitError: LocalizedError {
             return "Unable to construct a date range."
         case .noStatisticsData:
             return "No HealthKit statistics were returned."
-        case .authorizationDenied:
-            return "Health access is disabled. Re-enable Health permissions in Settings."
+        case .dataUnavailable:
+            return "Apple Health data is unavailable for this feature right now."
         case .backgroundDeliveryFailed:
             return "HealthKit background delivery could not be enabled."
         }

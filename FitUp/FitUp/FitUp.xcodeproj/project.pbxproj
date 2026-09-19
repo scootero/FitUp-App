@@ -8,18 +8,10 @@
 
 /* Begin PBXBuildFile section */
 		A1B1C1D12E72E372000CB585 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D12E72E372000CB583 /* Supabase */; };
-		E3C4B5A62F72E372000CB599 /* FitUpWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E3C4B5A62F72E372000CB5A2 /* FitUpActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C4B5A62F72E372000CB5A1 /* FitUpActivityAttributes.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		E3C4B5A62F72E372000CB59B /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = D2B71D922F72E372000CB580 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = E3C4B5A62F72E372000CB595;
-			remoteInfo = FitUpWidgetExtension;
-		};
 		T1E5T0012F900002000CB580 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = D2B71D922F72E372000CB580 /* Project object */;
@@ -28,20 +20,6 @@
 			remoteInfo = FitUp;
 		};
 /* End PBXContainerItemProxy section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		E3C4B5A62F72E372000CB59A /* Embed Foundation Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				E3C4B5A62F72E372000CB599 /* FitUpWidgetExtension.appex in Embed Foundation Extensions */,
-			);
-			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		D2B71D9A2F72E372000CB580 /* FitUp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FitUp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -160,12 +138,10 @@
 				D2B71D962F72E372000CB580 /* Sources */,
 				D2B71D972F72E372000CB580 /* Frameworks */,
 				D2B71D982F72E372000CB580 /* Resources */,
-				E3C4B5A62F72E372000CB59A /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				E3C4B5A62F72E372000CB59C /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				D2B71D9C2F72E372000CB580 /* FitUp */,
@@ -315,11 +291,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		E3C4B5A62F72E372000CB59C /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = E3C4B5A62F72E372000CB595 /* FitUpWidgetExtension */;
-			targetProxy = E3C4B5A62F72E372000CB59B /* PBXContainerItemProxy */;
-		};
 		T1E5T0012F900002000CB587 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = D2B71D992F72E372000CB580 /* FitUp */;
@@ -458,7 +429,7 @@
 				CODE_SIGN_ENTITLEMENTS = Config/FitUp.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -466,10 +437,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = FitOff;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitOff reads your steps, active calories, and resting heart rate from Apple Health to score 1v1 battles and show your stats. This data is not used for advertising and is never entered manually.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitOff uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitOff does not use this data for advertising.";
-				INFOPLIST_KEY_NSHomeKitUsageDescription = "FitOff uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitOff does not use this data for advertising.";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitOff uses Apple Health access to support your activity battles and statistics. FitOff does not write or modify data in Apple Health.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -508,7 +476,7 @@
 				CODE_SIGN_ENTITLEMENTS = Config/FitUp.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -516,10 +484,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = FitOff;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitOff reads your steps, active calories, and resting heart rate from Apple Health to score 1v1 battles and show your stats. This data is not used for advertising and is never entered manually.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitOff uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitOff does not use this data for advertising.";
-				INFOPLIST_KEY_NSHomeKitUsageDescription = "FitOff uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitOff does not use this data for advertising.";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitOff uses Apple Health access to support your activity battles and statistics. FitOff does not write or modify data in Apple Health.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -554,7 +519,7 @@
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/FitUpWidgetExtension-Info.plist";
@@ -586,7 +551,7 @@
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/FitUpWidgetExtension-Info.plist";

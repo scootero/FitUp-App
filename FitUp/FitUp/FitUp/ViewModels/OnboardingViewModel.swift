@@ -122,7 +122,7 @@ final class OnboardingViewModel: ObservableObject {
         do {
             try await HealthKitService.requestAuthorization()
             ProductAnalytics.track(
-                ProductAnalytics.Event.healthPermissionGranted,
+                ProductAnalytics.Event.healthAuthorizationRequestCompleted,
                 userId: analyticsUserId,
                 properties: ["source": "onboarding"]
             )
@@ -131,16 +131,12 @@ final class OnboardingViewModel: ObservableObject {
                 userId: analyticsUserId
             )
         } catch {
-            let denied = (error as? HealthKitError).map {
-                if case .authorizationDenied = $0 { return true }
-                return false
-            } ?? false
             ProductAnalytics.track(
-                ProductAnalytics.Event.healthPermissionDenied,
+                ProductAnalytics.Event.healthAuthorizationRequestFailed,
                 userId: analyticsUserId,
                 properties: [
                     "source": "onboarding",
-                    "reason": denied ? "authorization_denied" : "error",
+                    "reason": "error",
                 ]
             )
             AppLogger.log(

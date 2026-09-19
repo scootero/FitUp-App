@@ -53,8 +53,9 @@ enum ProductAnalytics {
         static let postAuthDisplayNameCompleted = "post_auth_display_name_completed"
 
         static let healthPermissionRequested = "health_permission_requested"
-        static let healthPermissionGranted = "health_permission_granted"
-        static let healthPermissionDenied = "health_permission_denied"
+        /// HealthKit intentionally does not reveal individual read decisions.
+        static let healthAuthorizationRequestCompleted = "health_authorization_request_completed"
+        static let healthAuthorizationRequestFailed = "health_authorization_request_failed"
 
         static let healthSyncFailed = "health_sync_failed"
 

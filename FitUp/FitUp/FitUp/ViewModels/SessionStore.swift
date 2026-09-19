@@ -30,6 +30,7 @@ final class SessionStore: ObservableObject {
     /// Per-profile: user finished the onboarding Health authorization step (sheet dismissed).
     @Published private(set) var healthKitPromptCompleted = false
     @Published private(set) var showSearchingCardOnHome = false
+    @Published private(set) var showAccountDeletionCompletion = false
 
     /// Bumped when root UI (e.g. challenge flow) dismisses so Home refetches searching rows without waiting for poll.
     @Published private(set) var homeSnapshotRefreshToken: UInt64 = 0
@@ -381,6 +382,27 @@ final class SessionStore: ObservableObject {
             AppLogger.log(category: "auth", level: .error, message: "sign-out failed", metadata: ["error": error.localizedDescription])
         }
         logSessionRoutingDecision(reason: "sign_out")
+    }
+
+    func completeAccountDeletion() async {
+        if let client = SupabaseProvider.client {
+            try? await client.auth.signOut(scope: .local)
+        }
+        isAuthenticated = false
+        currentProfile = nil
+        showSearchingCardOnHome = false
+        pendingMatchFoundCelebrationMatchId = nil
+        pendingMatchActiveCelebrationMatchId = nil
+        clearFriendNotificationUI()
+        healthKitPromptCompleted = false
+        postAuthNameFieldPrefill = nil
+        postAuthDisplayNameStepComplete = true
+        isOnboardingComplete = false
+        showAccountDeletionCompletion = true
+    }
+
+    func dismissAccountDeletionCompletion() {
+        showAccountDeletionCompletion = false
     }
 
     func markOnboardingComplete() {

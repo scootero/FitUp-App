@@ -641,7 +641,7 @@ actor MetricSyncCoordinator {
         metricType: HealthMetricType
     ) {
         let level: LogLevel
-        if let healthError = error as? HealthKitError, case .authorizationDenied = healthError {
+        if let healthError = error as? HealthKitError, case .dataUnavailable = healthError {
             level = .info
         } else {
             level = .warning

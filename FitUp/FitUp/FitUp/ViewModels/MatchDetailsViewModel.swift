@@ -739,7 +739,7 @@ final class MatchDetailsViewModel: ObservableObject {
     }
 
     func makeRematchLaunchContext() -> ChallengeLaunchContext? {
-        guard let snapshot else { return nil }
+        guard let snapshot, !DeletedPlayer.matches(snapshot.opponent.id) else { return nil }
 
         let opponent = ChallengePrefillOpponent(
             id: snapshot.opponent.id,

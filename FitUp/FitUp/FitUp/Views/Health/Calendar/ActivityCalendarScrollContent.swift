@@ -67,26 +67,12 @@ struct ActivityCalendarScrollContent: View {
                 onSelectDay: { viewModel.selectDay($0) }
             )
             .opacity(viewModel.isLoading ? 0.65 : 1)
-
-            calendarFooterRow
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private var calendarFooterRow: some View {
-        if let paceInputs = viewModel.paceChipInputs {
-            HStack {
-                Spacer(minLength: 0)
-                CalendarPaceChipView(inputs: paceInputs, layout: layout)
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity)
-        }
-    }
-
     private var healthAccessBanner: some View {
-        Text("Apple Health access is off. Enable Steps read access in Settings to see daily step rings.")
+        Text("FitOff can’t currently display Apple Health steps for daily rings. Review FitOff’s access in the Health app or Settings.")
             .font(FitUpFont.body(12))
             .foregroundStyle(FitUpColors.Text.secondary)
             .padding(12)

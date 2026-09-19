@@ -8,10 +8,6 @@
 
 import SwiftUI
 
-private enum ProfileSupportLinks {
-    static let privacyPolicyURL = "https://fitoff.attune-ai.workers.dev/privacy/"
-}
-
 struct ProfileView: View {
     let profile: Profile?
     var onSignOut: () -> Void
@@ -37,24 +33,31 @@ struct ProfileView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    titleHeader
-                    heroCard
-                    fitOffProCard
-                    accountGroup
-                    subscriptionGroup
-                    healthDataInfoGroup
-                    // App Store delivery: developer tools stay commented out so Profile looks production-ready.
-                    // Uncomment `devSection` (and the block inside it) to restore local Debug tools.
-                    // devSection
-                    signOutRow
+            ZStack {
+                // Profile owns an opaque dark canvas so it remains legible when iOS is in Light Mode.
+                FitUpColors.Bg.base
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        titleHeader
+                        heroCard
+                        fitOffProCard
+                        accountGroup
+                        subscriptionGroup
+                        healthDataInfoGroup
+                        // App Store delivery: developer tools stay commented out so Profile looks production-ready.
+                        // Uncomment `devSection` (and the block inside it) to restore local Debug tools.
+                        // devSection
+                        signOutRow
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    // Extra clearance so Sign Out rests above the floating tab bar.
+                    .padding(.bottom, 80)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                // Extra clearance so Sign Out rests above the floating tab bar.
-                .padding(.bottom, 80)
             }
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .task {
                 await viewModel.load(profile: profile)
                 await subscriptionService.refresh()
@@ -317,6 +320,33 @@ struct ProfileView: View {
                 }
             }
             .buttonStyle(.plain)
+            NavigationLink {
+                BlockedUsersView()
+            } label: {
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.07))
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "hand.raised")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Text.secondary)
+                        }
+                        Text("Blocked Users")
+                            .font(FitUpFont.body(14))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 13)
+                    Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1).padding(.leading, 54)
+                }
+            }
+            .buttonStyle(.plain)
             SettingsRowView(
                 sfSymbol: "bubble.left.and.bubble.right",
                 label: "Send feedback",
@@ -359,9 +389,7 @@ struct ProfileView: View {
                 label: "Privacy",
                 showSeparator: true,
                 action: .chevron {
-                    if let url = URL(string: ProfileSupportLinks.privacyPolicyURL) {
-                        openURL(url)
-                    }
+                    openURL(LegalLinks.privacy)
                 }
             )
             NavigationLink {
@@ -377,9 +405,15 @@ struct ProfileView: View {
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(FitUpColors.Text.secondary)
                         }
-                        Text("Account Deletion")
-                            .font(FitUpFont.body(14))
-                            .foregroundStyle(FitUpColors.Text.primary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Delete Account")
+                                .font(FitUpFont.body(14))
+                                .foregroundStyle(FitUpColors.Neon.pink)
+                            Text("Permanently delete your FitOff account and associated data.")
+                                .font(FitUpFont.body(11))
+                                .foregroundStyle(FitUpColors.Text.secondary)
+                                .lineLimit(2)
+                        }
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))

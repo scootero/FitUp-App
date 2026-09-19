@@ -57,6 +57,8 @@ enum MessageRepositoryError: LocalizedError {
     case supabaseNotConfigured
     case notReady
     case unexpectedResponse
+    case blocked
+    case rejectedByFilter
 
     var errorDescription: String? {
         switch self {
@@ -66,6 +68,10 @@ enum MessageRepositoryError: LocalizedError {
             return "Messaging is not ready yet. Please try again later."
         case .unexpectedResponse:
             return "Could not load messages right now."
+        case .blocked:
+            return "Messaging is unavailable for this conversation."
+        case .rejectedByFilter:
+            return "That message can’t be sent. Please revise it and try again."
         }
     }
 }
@@ -298,7 +304,6 @@ final class MessageRepository {
     }
 
     private func logDecodeFailure(context: String, data: Data, underlying: Error) {
-        let preview = String(data: data.prefix(500), encoding: .utf8) ?? "(non-utf8)"
         AppLogger.log(
             category: "messaging",
             level: .error,
@@ -306,7 +311,7 @@ final class MessageRepository {
             metadata: [
                 "context": context,
                 "underlying": underlying.localizedDescription,
-                "payload_preview": preview,
+                "payload_size": String(data.count),
             ]
         )
     }
@@ -314,6 +319,8 @@ final class MessageRepository {
     private func mapError(_ error: Error) -> Error {
         if error is MessageRepositoryError { return error }
         let description = error.localizedDescription.lowercased()
+        if description.contains("message_rejected") { return MessageRepositoryError.rejectedByFilter }
+        if description.contains("interaction_blocked") { return MessageRepositoryError.blocked }
         if description.contains("does not exist")
             || description.contains("schema cache")
             || description.contains("\"message_threads\"")

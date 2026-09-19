@@ -221,8 +221,8 @@ struct PaywallView: View {
     private var legalFooter: some View {
         VStack(spacing: 7) {
             HStack(spacing: 16) {
-                Link("Privacy", destination: URL(string: "https://fitoff.attune-ai.workers.dev/privacy/")!)
-                Link("Apple EULA", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
+                Link("Privacy", destination: LegalLinks.privacy)
+                Link("Apple EULA", destination: LegalLinks.standardEULA)
             }
             Text("Payment is charged to your Apple ID after confirmation. Manage or cancel in your Apple account settings.")
                 .multilineTextAlignment(.center)

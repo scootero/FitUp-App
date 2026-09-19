@@ -16,7 +16,9 @@ struct OnboardingView: View {
             BackgroundGradientView()
             VStack(spacing: 0) {
                 OnboardingTopChrome(
-                    showsBack: viewModel.showsBack,
+                    // Apple Health's immediate pre-permission explanation must lead only to
+                    // the system sheet; do not offer a postponement control on that step.
+                    showsBack: viewModel.showsBack && viewModel.step != .permissions,
                     onBack: { viewModel.goBack() }
                 )
                 stepContent

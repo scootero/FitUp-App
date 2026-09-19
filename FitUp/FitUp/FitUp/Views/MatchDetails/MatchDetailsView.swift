@@ -111,7 +111,9 @@ struct MatchDetailsView: View {
                             .padding(.horizontal, 4)
                     }
 
-                    if let snapshot = viewModel.snapshot, snapshot.state == .pending {
+                    if let snapshot = viewModel.snapshot, DeletedPlayer.matches(snapshot.opponent.id) {
+                        deletedPlayerOutcome(snapshot: snapshot)
+                    } else if let snapshot = viewModel.snapshot, snapshot.state == .pending {
                         legacyPendingHero(snapshot: snapshot)
                     } else if let dm = viewModel.displayModel, dm.snapshot.state != .pending {
                         activeCompletedContent(dm: dm)
@@ -250,6 +252,23 @@ struct MatchDetailsView: View {
             }
         }
         .screenTransition()
+    }
+
+    private func deletedPlayerOutcome(snapshot: MatchDetailsSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(snapshot.isWinning ? "Win" : "Loss")
+                .font(FitUpFont.display(30, weight: .black))
+                .foregroundStyle(snapshot.isWinning ? FitUpColors.Neon.green : FitUpColors.Neon.pink)
+            Text("Deleted Player")
+                .font(FitUpFont.display(20, weight: .bold))
+                .foregroundStyle(FitUpColors.Text.primary)
+            Text("Only the anonymous outcome is retained. Activity totals, charts, messages, profile controls, and rematch controls are unavailable.")
+                .font(FitUpFont.body(14, weight: .medium))
+                .foregroundStyle(FitUpColors.Text.secondary)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(.base)
     }
 
     // MARK: - Top bar
@@ -506,7 +525,7 @@ struct MatchDetailsView: View {
                     }
 
                     Button {
-                        guard profile != nil else { return }
+                        guard profile != nil, !DeletedPlayer.matches(snapshot.opponent.id) else { return }
                         peerProfileSheet = PeerProfileSheetItem(peerId: snapshot.opponent.id)
                     } label: {
                         VStack(spacing: 6) {
@@ -524,6 +543,7 @@ struct MatchDetailsView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.plain)
+                    .disabled(DeletedPlayer.matches(snapshot.opponent.id))
                     .accessibilityLabel("View \(snapshot.opponent.displayName) profile")
                 }
 
@@ -1873,7 +1893,7 @@ struct MatchDetailsView: View {
 
     private func actionButtons(dm: MatchDetailDisplayModel) -> some View {
         HStack(spacing: 10) {
-            if dm.snapshot.state == .completed {
+            if !DeletedPlayer.matches(dm.snapshot.opponent.id), dm.snapshot.state == .completed {
                 Button {
                     if let context = viewModel.makeRematchLaunchContext() {
                         onRematch(context)
@@ -1887,7 +1907,7 @@ struct MatchDetailsView: View {
                 }
                 .buttonStyle(.plain)
                 .ghostButton(color: FitUpColors.Neon.cyan)
-            } else if dm.snapshot.state == .active {
+            } else if !DeletedPlayer.matches(dm.snapshot.opponent.id), dm.snapshot.state == .active {
                 Button {
                     if let context = viewModel.makeRematchLaunchContext() {
                         onRematch(context)

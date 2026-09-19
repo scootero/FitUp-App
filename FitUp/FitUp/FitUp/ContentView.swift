@@ -17,7 +17,9 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             BackgroundGradientView()
-            if sessionStore.isLoadingSession {
+            if sessionStore.showAccountDeletionCompletion {
+                AccountDeletionCompletionView()
+            } else if sessionStore.isLoadingSession {
                 SessionRestoreLoadingView()
             } else if !sessionStore.isAuthenticated {
                 AuthView()
@@ -88,6 +90,28 @@ struct ContentView: View {
     private var metricSyncLifecycleIdentity: String {
         let pid = sessionStore.currentProfile?.id.uuidString ?? "nil"
         return "\(pid)-name:\(sessionStore.postAuthDisplayNameStepComplete)-hk:\(sessionStore.healthKitPromptCompleted)-ob:\(sessionStore.isOnboardingComplete)"
+    }
+}
+
+private struct AccountDeletionCompletionView: View {
+    @EnvironmentObject private var sessionStore: SessionStore
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 56, weight: .bold))
+                .foregroundStyle(FitUpColors.Neon.green)
+            Text("Account Deleted")
+                .font(FitUpFont.display(30, weight: .black))
+                .foregroundStyle(FitUpColors.Text.primary)
+            Text("Your FitOff account and associated personal data were deleted.")
+                .font(FitUpFont.body(15, weight: .medium))
+                .foregroundStyle(FitUpColors.Text.secondary)
+                .multilineTextAlignment(.center)
+            Button("Continue") { sessionStore.dismissAccountDeletionCompletion() }
+                .solidButton(color: FitUpColors.Neon.cyan)
+        }
+        .padding(28)
     }
 }
 
