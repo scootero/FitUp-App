@@ -279,7 +279,7 @@ struct ProfileRepository {
     private static func resolveDisplayName(displayName: String?, authUserId: UUID) -> String {
         let trimmed = (displayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return trimmed }
-        return "FitUp \(authUserId.uuidString.prefix(6))"
+        return "FitOff \(authUserId.uuidString.prefix(6))"
     }
 
     private static func initials(from displayName: String) -> String {

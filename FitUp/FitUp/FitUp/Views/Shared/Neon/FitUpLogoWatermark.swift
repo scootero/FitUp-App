@@ -20,7 +20,7 @@ struct FitUpLogoWatermark: View {
                 Circle().fill(FitUpColors.Neon.orange.opacity(0.95)).frame(width: 10 * scale, height: 10 * scale)
                     .offset(x: -2)
             }
-            Text("FitUp")
+            Text("FitOff")
                 .font(.system(size: 22 * scale, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white.opacity(0.96))
                 .tracking(0.35)

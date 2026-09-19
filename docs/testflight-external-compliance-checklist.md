@@ -13,7 +13,7 @@
 | Item | Value |
 |------|--------|
 | Privacy Policy URL | https://scootero.github.io/FitUp-App/privacy/ |
-| Support / deletion email | oliverscott14@gmail.com |
+| Support / deletion email | catsuit_corkers_1c@icloud.com |
 | Account deletion (this phase) | Manual via **Profile → Account Deletion** (in-app instructions + email) |
 
 ---
@@ -47,7 +47,7 @@
 |-------|---------------|-----------------|
 | **Privacy Policy URL** | `https://scootero.github.io/FitUp-App/privacy/` | Required for App Store / review; must match in-app **Profile → Privacy** (`ProfileView.swift`) |
 | **Category** | **Health & Fitness** | Store listing; matches `LSApplicationCategoryType` in Xcode |
-| **Support URL** or contact | Support page or `mailto:oliverscott14@gmail.com` | Reviewer/tester contact |
+| **Support URL** or contact | Support page or `mailto:catsuit_corkers_1c@icloud.com` | Reviewer/tester contact |
 
 - [ ] Privacy URL opens on **iPhone Safari** (not just desktop)
 - [ ] Policy content matches [`docs/privacy/index.html`](privacy/index.html) (publish via GitHub Pages for repo `scootero/FitUp-App` or your hosting path)
@@ -102,7 +102,7 @@ Suggested alignment with FitUp today:
 | Field | What to put |
 |-------|-------------|
 | **Beta App Description** | Short: 1v1 fitness battles, HealthKit steps/calories, requires two players |
-| **Feedback Email** | `oliverscott14@gmail.com` |
+| **Feedback Email** | `catsuit_corkers_1c@icloud.com` |
 | **Privacy Policy URL** | Same as App Information |
 | **What to Test** | Paste block below (edit if needed) |
 
@@ -118,7 +118,7 @@ FitUp is a 1v1 fitness battle app. You need TWO test accounts (two Apple IDs or 
 5. Account B: same, or use New Battle → pick Account A as opponent (direct challenge).
 6. Accept challenge / wait for match → verify active battle on Home.
 
-Support: oliverscott14@gmail.com
+Support: catsuit_corkers_1c@icloud.com
 Privacy: https://scootero.github.io/FitUp-App/privacy/
 Account deletion: Profile → Account Deletion (email request; automated delete coming later).
 
@@ -176,7 +176,7 @@ Beta note: This build may show Developer tools and bypass the paywall (TestFligh
 | Policy | `docs/privacy/index.html` → Account Deletion | Must match process |
 | Connect | What to Test + App Review notes | Point to Profile path + support email |
 
-- [ ] You can receive and act on deletion emails at `oliverscott14@gmail.com`
+- [ ] You can receive and act on deletion emails at `catsuit_corkers_1c@icloud.com`
 
 **Future App Store:** automated in-app deletion required long-term (see table below).
 
@@ -208,9 +208,8 @@ Beta note: This build may show Developer tools and bypass the paywall (TestFligh
 | Item | Where to change when ready |
 |------|----------------------------|
 | In-app automated account deletion | New feature + policy update |
-| `FITUP_TESTFLIGHT_BYPASS = NO` | `FitUp/FitUp/Config/BetaFlags.xcconfig` → re-archive |
-| StoreKit 2 / IAP | App Store Connect → In-App Purchases (`fitup_pro_monthly`, `fitup_pro_annual`); scheme StoreKit config `FitUp/Products.storekit` |
-| Hide dev tools | Bypass off + no `DevMode` UI in Release |
+| StoreKit 2 / IAP | App Store Connect → In-App Purchases (`fitup_pro_monthly`, `fitup_pro_annual`); scheme StoreKit config is Debug-Run only (`FitUp/Products.storekit`) |
+| Confirm no bypass in Release archive | Built app Info.plist must not contain `FITUP_TESTFLIGHT_BYPASS` |
 | Push entitlements | Only if [push doc](testflight-push-verification.md) failed—approve first |
 | Screenshots, description | Connect → **App Store** version page |
 

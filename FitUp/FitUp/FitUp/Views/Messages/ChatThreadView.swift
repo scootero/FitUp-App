@@ -9,6 +9,16 @@ import Combine
 import SwiftUI
 
 struct ChatThreadView: View {
+    private enum ReportTarget: Identifiable {
+        case user
+        case message(UUID)
+        var id: String {
+            switch self { case .user: "user"; case .message(let id): "message-\(id.uuidString)" }
+        }
+        var title: String {
+            switch self { case .user: "Report User"; case .message: "Report Message" }
+        }
+    }
     let peerProfileId: UUID
     let viewer: Profile
     /// When embedded in a pushed `NavigationLink`, hides the explicit Close button (use the nav back control).
@@ -18,6 +28,8 @@ struct ChatThreadView: View {
     @FocusState private var composerFocused: Bool
 
     @StateObject private var viewModel: ChatThreadViewModel
+    @State private var reportTarget: ReportTarget?
+    @State private var showBlockConfirmation = false
 
     init(peerProfileId: UUID, viewer: Profile, showCloseInToolbar: Bool = true) {
         self.peerProfileId = peerProfileId
@@ -94,6 +106,14 @@ struct ChatThreadView: View {
                         .foregroundStyle(FitUpColors.Neon.cyan)
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button("Report User", systemImage: "exclamationmark.bubble") { reportTarget = .user }
+                    Button("Block User", systemImage: "hand.raised", role: .destructive) { showBlockConfirmation = true }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
         }
         .task {
             await viewModel.loadInitial()
@@ -103,6 +123,24 @@ struct ChatThreadView: View {
         }
         .onDisappear {
             viewModel.markThreadReadIfNeeded()
+        }
+        .alert("Block User?", isPresented: $showBlockConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Block User", role: .destructive) {
+                Task {
+                    if await viewModel.blockPeer() { dismiss() }
+                }
+            }
+        } message: {
+            Text("This removes the friendship, hides this conversation, and prevents future messages, requests, challenges, suggestions, and matchmaking between you.")
+        }
+        .sheet(item: $reportTarget) { target in
+            ModerationReasonSheet(title: target.title) { reason in
+                switch target {
+                case .user: try await viewModel.reportUser(reason: reason)
+                case .message(let id): try await viewModel.reportMessage(id: id, reason: reason)
+                }
+            }
         }
     }
 
@@ -149,6 +187,13 @@ struct ChatThreadView: View {
             }
             .frame(maxWidth: MessagingLayout.bubbleMaxWidth, alignment: mine ? .trailing : .leading)
             if !mine { Spacer(minLength: MessagingLayout.bubbleSideGutter) }
+        }
+        .contextMenu {
+            if !mine {
+                Button("Report Message", systemImage: "exclamationmark.bubble") {
+                    reportTarget = .message(msg.id)
+                }
+            }
         }
     }
 
@@ -268,6 +313,7 @@ private final class ChatThreadViewModel: ObservableObject {
     private let messagesRepo = MessageRepository()
     private let profiles = ProfileRepository()
     private let friendshipRepo = FriendshipRepository()
+    private let moderationRepo = ModerationRepository()
 
     init(peerProfileId: UUID, viewer: Profile) {
         self.peerProfileId = peerProfileId
@@ -368,6 +414,24 @@ private final class ChatThreadViewModel: ObservableObject {
             )
             bannerError = MessageRepository.userFacingMessage(for: error)
         }
+    }
+
+    func blockPeer() async -> Bool {
+        do {
+            try await moderationRepo.block(userId: peerProfileId)
+            return true
+        } catch {
+            bannerError = "This person could not be blocked. Please try again."
+            return false
+        }
+    }
+
+    func reportUser(reason: ModerationReason) async throws {
+        try await moderationRepo.report(userId: peerProfileId, reason: reason)
+    }
+
+    func reportMessage(id: UUID, reason: ModerationReason) async throws {
+        try await moderationRepo.report(messageId: id, reason: reason)
     }
 }
 

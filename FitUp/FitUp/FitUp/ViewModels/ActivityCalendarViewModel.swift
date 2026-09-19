@@ -38,8 +38,6 @@ final class ActivityCalendarViewModel: ObservableObject {
     @Published private(set) var battleDayDetail: CalendarDayBattleDetail?
     @Published private(set) var stepsDayDetail: CalendarDayStepsDetail?
     @Published private(set) var isDayDetailLoading = false
-    @Published private(set) var rollingAvg7Steps: Double?
-    @Published private(set) var rollingAvg30Steps: Double?
 
     var monthTitle: String {
         CalendarMonthLayout.monthTitle(
@@ -84,23 +82,6 @@ final class ActivityCalendarViewModel: ObservableObject {
     private var battleMarginCache: [String: [String: Int]] = [:]
     private var stepsCache: [String: [String: CalendarDayStepsState]] = [:]
     private var loadTask: Task<Void, Never>?
-    private var paceBaselinesTask: Task<Void, Never>?
-
-    var paceChipInputs: CalendarPaceChipInputs? {
-        guard isDisplayingCurrentMonth,
-              !showHealthAccessBanner,
-              let avg7 = rollingAvg7Steps, avg7 > 0,
-              let avg30 = rollingAvg30Steps, avg30 > 0
-        else { return nil }
-
-        let todaySteps = stepsByDate[profileTodayDateKey]?.steps ?? 0
-        return CalendarPaceChipInputs(
-            todaySteps: todaySteps,
-            avg7: avg7,
-            avg30: avg30,
-            profileTimeZoneIdentifier: profileTimeZoneIdentifier
-        )
-    }
 
     init(
         userId: UUID,
@@ -135,7 +116,6 @@ final class ActivityCalendarViewModel: ObservableObject {
 
     func start() {
         loadMonthData(forceRefresh: false)
-        loadPaceBaselinesIfNeeded()
     }
 
     func reload() {
@@ -143,10 +123,7 @@ final class ActivityCalendarViewModel: ObservableObject {
         battleSummaryCache.removeAll()
         battleMarginCache.removeAll()
         stepsCache.removeAll()
-        rollingAvg7Steps = nil
-        rollingAvg30Steps = nil
         loadMonthData(forceRefresh: true)
-        loadPaceBaselinesIfNeeded(forceRefresh: true)
     }
 
     func goToPreviousMonth() {
@@ -359,7 +336,7 @@ final class ActivityCalendarViewModel: ObservableObject {
             }
             return StepsLoadResult(states: states, accessDenied: false, errorMessage: nil)
         } catch {
-            if let hk = error as? HealthKitError, case .authorizationDenied = hk {
+            if let hk = error as? HealthKitError, case .dataUnavailable = hk {
                 return StepsLoadResult(states: [:], accessDenied: true, errorMessage: nil)
             }
             return StepsLoadResult(
@@ -460,39 +437,4 @@ final class ActivityCalendarViewModel: ObservableObject {
         return String(format: "%04d-%02d", year, monthNum)
     }
 
-    private func loadPaceBaselinesIfNeeded(forceRefresh: Bool = false) {
-        if !forceRefresh,
-           rollingAvg7Steps != nil,
-           rollingAvg30Steps != nil {
-            return
-        }
-
-        paceBaselinesTask?.cancel()
-        paceBaselinesTask = Task {
-            async let avg7 = HealthKitService.fetchNDayStepAverage(days: 7)
-            async let avg30 = HealthKitService.fetchNDayStepAverage(days: 30)
-
-            var resolved7: Double?
-            var resolved30: Double?
-
-            do {
-                let value = try await avg7
-                if value > 0 { resolved7 = value }
-            } catch {
-                resolved7 = nil
-            }
-
-            do {
-                let value = try await avg30
-                if value > 0 { resolved30 = value }
-            } catch {
-                resolved30 = nil
-            }
-
-            guard !Task.isCancelled else { return }
-
-            rollingAvg7Steps = resolved7
-            rollingAvg30Steps = resolved30
-        }
-    }
 }

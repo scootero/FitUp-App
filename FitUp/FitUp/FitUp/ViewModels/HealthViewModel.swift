@@ -93,7 +93,7 @@ final class HealthViewModel: ObservableObject {
 
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
-    /// Shown when HealthKit reports read access denied; use Open Settings in the UI.
+    /// Shown when Apple Health data is unavailable; individual read decisions are private.
     @Published private(set) var showHealthAccessBanner = false
     @Published var statsTab: StatsTab = .steps
 
@@ -344,7 +344,7 @@ final class HealthViewModel: ObservableObject {
                 try await HealthKitService.fetchTodayStepCount()
             }
         } catch {
-            if let hk = error as? HealthKitError, case .authorizationDenied = hk {
+            if let hk = error as? HealthKitError, case .dataUnavailable = hk {
                 showHealthAccessBanner = true
             } else {
                 showHealthAccessBanner = false
@@ -374,7 +374,7 @@ final class HealthViewModel: ObservableObject {
             }
         } catch {
             calsToday = 0
-            if let hk = error as? HealthKitError, case .authorizationDenied = hk {
+            if let hk = error as? HealthKitError, case .dataUnavailable = hk {
                 caloriesAuthorizationDenied = true
                 errorMessage = error.localizedDescription
             } else {

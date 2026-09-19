@@ -194,7 +194,7 @@ struct HealthView: View {
 
     private var healthAccessBanner: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Apple Health access is off for FitUp. Enable read access for Steps, Active Energy, and related data in Settings.")
+            Text("FitOff can’t currently display Apple Health data for this feature. Review FitOff’s access in the Health app or Settings.")
                 .font(FitUpFont.body(12))
                 .foregroundStyle(FitUpColors.Text.secondary)
             Button {
@@ -202,7 +202,7 @@ struct HealthView: View {
                     openURL(url)
                 }
             } label: {
-                Text("Open Settings")
+                Text("Open FitOff Settings")
                     .font(FitUpFont.body(12, weight: .semibold))
                     .foregroundStyle(FitUpColors.Neon.cyan)
             }

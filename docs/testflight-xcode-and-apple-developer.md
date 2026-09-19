@@ -110,15 +110,17 @@ No separate `.entitlements` file in repo; extension uses `Config/FitUpWidgetExte
 
 ---
 
-## 8. Optional — Beta flags before archive
+## 8. Optional — Paywall logging before archive
 
 **Where:** `FitUp/FitUp/Config/BetaFlags.xcconfig`
 
-| Flag | Current | Effect if `YES` |
+| Flag | Typical | Effect if `YES` |
 |------|---------|-----------------|
-| `FITUP_TESTFLIGHT_BYPASS` | `YES` | Paywall bypass, Developer section in Profile, StoreKit entitlement sync skipped |
+| `FITUP_PAYWALL_LOGGING` | `NO` | Verbose StoreKit / paywall AppLogger lines |
 
-Change → **clean archive** (new build number). See [README stop points](testflight-README.md#stop-points-get-approval-before-changing).
+Subscription Free/Pro/System overrides and the Profile Developer section exist only in `#if DEBUG` and are absent from Release / TestFlight / App Store archives. StoreKit always runs in Release.
+
+Change logging → **clean archive** (new build number).
 
 ---
 

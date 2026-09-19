@@ -1,13 +1,10 @@
 // =============================================================================
-// TESTFLIGHT / INTERNAL BETA
-//
-// FITUP_TESTFLIGHT_BYPASS = YES  → Dev Mode on by default (paywall bypass, log viewer).
-// FITUP_TESTFLIGHT_BYPASS = NO   → Production behavior before App Store release.
+// BUILD FLAGS
 //
 // FITUP_PAYWALL_LOGGING = NO  → Quiet StoreKit / paywall AppLogger lines.
 // FITUP_PAYWALL_LOGGING = YES → Verbose paywall logs (use when testing purchases).
 //
-// Change this file, then create a new Archive for TestFlight or the App Store.
+// Subscription access overrides exist only in #if DEBUG code paths.
+// Release / TestFlight / App Store builds always follow real StoreKit entitlements.
 // =============================================================================
-FITUP_TESTFLIGHT_BYPASS = YES
 FITUP_PAYWALL_LOGGING = NO

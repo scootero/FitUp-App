@@ -20,14 +20,14 @@ struct TutorialCardsView: View {
         ),
         .init(
             title: "Add friends, compete",
-            body: "Add friends from your profile, send them a challenge, and see how you stack up on the FitUp leaderboard.",
+            body: "Add friends from your profile, send them a challenge, and see how you stack up on the FitOff leaderboard.",
             icon: "person.2.fill"
         ),
     ]
 
     var body: some View {
         VStack(spacing: 18) {
-            Text("Welcome to FitUp")
+            Text("Welcome to FitOff")
                 .font(FitUpFont.display(28, weight: .black))
                 .foregroundStyle(FitUpColors.Text.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)

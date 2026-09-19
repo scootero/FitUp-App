@@ -8,55 +8,60 @@
 
 /* Begin PBXBuildFile section */
 		A1B1C1D12E72E372000CB585 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D12E72E372000CB583 /* Supabase */; };
-		E3C4B5A62F72E372000CB599 /* FitUpWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E3C4B5A62F72E372000CB5A2 /* FitUpActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C4B5A62F72E372000CB5A1 /* FitUpActivityAttributes.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		E3C4B5A62F72E372000CB59B /* PBXContainerItemProxy */ = {
+		T1E5T0012F900002000CB580 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = D2B71D922F72E372000CB580 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = E3C4B5A62F72E372000CB595;
-			remoteInfo = FitUpWidgetExtension;
+			remoteGlobalIDString = D2B71D992F72E372000CB580;
+			remoteInfo = FitUp;
 		};
 /* End PBXContainerItemProxy section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		E3C4B5A62F72E372000CB59A /* Embed Foundation Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				E3C4B5A62F72E372000CB599 /* FitUpWidgetExtension.appex in Embed Foundation Extensions */,
-			);
-			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		D2B71D9A2F72E372000CB580 /* FitUp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FitUp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D2B71DA92F72E373000CB580 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		D2B71DAA2F72E373000CB580 /* Secrets.example.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.example.xcconfig; sourceTree = "<group>"; };
+		D2B71DAB2F72E373000CB580 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		D2B71DAC2F72E373000CB580 /* Info-Additional.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-Additional.plist"; sourceTree = "<group>"; };
 		D2B71DAD2F72E373000CB580 /* FitUp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FitUp.entitlements; sourceTree = "<group>"; };
 		D2B71DAE2F72E373000CB580 /* FitUpWidgetExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "FitUpWidgetExtension-Info.plist"; sourceTree = "<group>"; };
 		E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FitUpWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E3C4B5A62F72E372000CB5A1 /* FitUpActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FitUpActivityAttributes.swift; path = FitUp/Views/LiveActivity/FitUpActivityAttributes.swift; sourceTree = SOURCE_ROOT; };
 		F1T0B3A12F900001000CB580 /* BetaFlags.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = BetaFlags.xcconfig; sourceTree = "<group>"; };
+		T1E5T0012F900002000CB581 /* FitUpTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FitUpTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		F1T0B3A22F900001000CB580 /* Exceptions for "FitUp" folder in "FitUp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Products.storekit,
+			);
+			target = D2B71D992F72E372000CB580 /* FitUp */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D2B71D9C2F72E372000CB580 /* FitUp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F1T0B3A22F900001000CB580 /* Exceptions for "FitUp" folder in "FitUp" target */,
+			);
 			path = FitUp;
 			sourceTree = "<group>";
 		};
 		E3C4B5A62F72E372000CB591 /* FitUpWidgetExtension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = FitUpWidgetExtension;
+			sourceTree = "<group>";
+		};
+		T1E5T0012F900002000CB582 /* FitUpTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FitUpTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -77,6 +82,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		T1E5T0012F900002000CB583 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -85,6 +97,7 @@
 			children = (
 				D2B71D9C2F72E372000CB580 /* FitUp */,
 				E3C4B5A62F72E372000CB591 /* FitUpWidgetExtension */,
+				T1E5T0012F900002000CB582 /* FitUpTests */,
 				D2B71DA82F72E373000CB580 /* Config */,
 				D2B71D9B2F72E372000CB580 /* Products */,
 			);
@@ -95,6 +108,7 @@
 			children = (
 				D2B71D9A2F72E372000CB580 /* FitUp.app */,
 				E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */,
+				T1E5T0012F900002000CB581 /* FitUpTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -103,6 +117,7 @@
 			isa = PBXGroup;
 			children = (
 				D2B71DA92F72E373000CB580 /* Debug.xcconfig */,
+				D2B71DAB2F72E373000CB580 /* Release.xcconfig */,
 				F1T0B3A12F900001000CB580 /* BetaFlags.xcconfig */,
 				D2B71DAA2F72E373000CB580 /* Secrets.example.xcconfig */,
 				D2B71DAC2F72E373000CB580 /* Info-Additional.plist */,
@@ -123,12 +138,10 @@
 				D2B71D962F72E372000CB580 /* Sources */,
 				D2B71D972F72E372000CB580 /* Frameworks */,
 				D2B71D982F72E372000CB580 /* Resources */,
-				E3C4B5A62F72E372000CB59A /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				E3C4B5A62F72E372000CB59C /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				D2B71D9C2F72E372000CB580 /* FitUp */,
@@ -161,6 +174,27 @@
 			productReference = E3C4B5A62F72E372000CB590 /* FitUpWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		T1E5T0012F900002000CB584 /* FitUpTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = T1E5T0012F900002000CB58A /* Build configuration list for PBXNativeTarget "FitUpTests" */;
+			buildPhases = (
+				T1E5T0012F900002000CB585 /* Sources */,
+				T1E5T0012F900002000CB583 /* Frameworks */,
+				T1E5T0012F900002000CB586 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				T1E5T0012F900002000CB587 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				T1E5T0012F900002000CB582 /* FitUpTests */,
+			);
+			name = FitUpTests;
+			productName = FitUpTests;
+			productReference = T1E5T0012F900002000CB581 /* FitUpTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -176,6 +210,10 @@
 					};
 					E3C4B5A62F72E372000CB595 = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					T1E5T0012F900002000CB584 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = D2B71D992F72E372000CB580;
 					};
 				};
 			};
@@ -198,6 +236,7 @@
 			targets = (
 				D2B71D992F72E372000CB580 /* FitUp */,
 				E3C4B5A62F72E372000CB595 /* FitUpWidgetExtension */,
+				T1E5T0012F900002000CB584 /* FitUpTests */,
 			);
 		};
 /* End PBXProject section */
@@ -211,6 +250,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E3C4B5A62F72E372000CB594 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		T1E5T0012F900002000CB586 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -235,13 +281,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		T1E5T0012F900002000CB585 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		E3C4B5A62F72E372000CB59C /* PBXTargetDependency */ = {
+		T1E5T0012F900002000CB587 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = E3C4B5A62F72E372000CB595 /* FitUpWidgetExtension */;
-			targetProxy = E3C4B5A62F72E372000CB59B /* PBXContainerItemProxy */;
+			target = D2B71D992F72E372000CB580 /* FitUp */;
+			targetProxy = T1E5T0012F900002000CB580 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -376,18 +429,15 @@
 				CODE_SIGN_ENTITLEMENTS = Config/FitUp.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/Info-Additional.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = FitUp;
+				INFOPLIST_KEY_CFBundleDisplayName = FitOff;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitUp reads your steps, active calories, and resting heart rate from Apple Health to score 1v1 battles and show your stats. This data is not used for advertising and is never entered manually.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitUp uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitUp does not use this data for advertising.";
-				INFOPLIST_KEY_NSHomeKitUsageDescription = "FitUp uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitUp does not use this data for advertising.";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitOff reads your steps, active calories, and resting heart rate from Apple Health to score 1v1 battles and show your stats. This data is not used for advertising and is never entered manually.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitOff uses Apple Health access to support your activity battles and statistics. FitOff does not write or modify data in Apple Health.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -419,25 +469,22 @@
 		};
 		D2B71DA72F72E373000CB580 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = D2B71DA92F72E373000CB580 /* Debug.xcconfig */;
+			baseConfigurationReference = D2B71DAB2F72E373000CB580 /* Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/FitUp.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/Info-Additional.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = FitUp;
+				INFOPLIST_KEY_CFBundleDisplayName = FitOff;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitUp reads your steps, active calories, and resting heart rate from Apple Health to score 1v1 battles and show your stats. This data is not used for advertising and is never entered manually.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitUp uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitUp does not use this data for advertising.";
-				INFOPLIST_KEY_NSHomeKitUsageDescription = "FitUp uses Apple Health permissions to read steps, active calories, and resting heart rate for 1v1 battles and stats. FitUp does not use this data for advertising.";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitOff reads your steps, active calories, and resting heart rate from Apple Health to score 1v1 battles and show your stats. This data is not used for advertising and is never entered manually.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "FitOff uses Apple Health access to support your activity battles and statistics. FitOff does not write or modify data in Apple Health.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -472,11 +519,11 @@
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/FitUpWidgetExtension-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "FitUp Live Activity";
+				INFOPLIST_KEY_CFBundleDisplayName = "FitOff Live Activity";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -504,11 +551,11 @@
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = BLAUCQ8H26;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/FitUpWidgetExtension-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "FitUp Live Activity";
+				INFOPLIST_KEY_CFBundleDisplayName = "FitOff Live Activity";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -528,6 +575,52 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		T1E5T0012F900002000CB588 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = BLAUCQ8H26;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ScottOliver.FitUpTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FitUp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FitUp";
+			};
+			name = Debug;
+		};
+		T1E5T0012F900002000CB589 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = BLAUCQ8H26;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ScottOliver.FitUpTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FitUp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FitUp";
 			};
 			name = Release;
 		};
@@ -557,6 +650,15 @@
 			buildConfigurations = (
 				E3C4B5A62F72E372000CB596 /* Debug */,
 				E3C4B5A62F72E372000CB597 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		T1E5T0012F900002000CB58A /* Build configuration list for PBXNativeTarget "FitUpTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				T1E5T0012F900002000CB588 /* Debug */,
+				T1E5T0012F900002000CB589 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -53,8 +53,9 @@ enum ProductAnalytics {
         static let postAuthDisplayNameCompleted = "post_auth_display_name_completed"
 
         static let healthPermissionRequested = "health_permission_requested"
-        static let healthPermissionGranted = "health_permission_granted"
-        static let healthPermissionDenied = "health_permission_denied"
+        /// HealthKit intentionally does not reveal individual read decisions.
+        static let healthAuthorizationRequestCompleted = "health_authorization_request_completed"
+        static let healthAuthorizationRequestFailed = "health_authorization_request_failed"
 
         static let healthSyncFailed = "health_sync_failed"
 
@@ -128,7 +129,8 @@ enum ProductAnalytics {
     }
 
     /// End tracked foreground session on sign-out (app may stay active; background may not fire).
-    static func endForegroundSessionForAuthChange(profileId: UUID) {
+    /// Await this before `auth.signOut()` so the insert still has a JWT.
+    static func endForegroundSessionForAuthChange(profileId: UUID) async {
         sessionLock.lock()
         let owner = foregroundSessionOwnerProfileId
         let sid = foregroundSessionId
@@ -146,7 +148,12 @@ enum ProductAnalytics {
         if let startedAt {
             props["duration_ms"] = String(Int(Date().timeIntervalSince(startedAt) * 1000))
         }
-        track(Event.sessionEnded, userId: profileId, properties: props, sessionOverride: sid)
+        await trackAwaitingInsert(
+            Event.sessionEnded,
+            userId: profileId,
+            properties: props,
+            sessionOverride: sid
+        )
     }
 
     private static func emitSessionEndedAndClear() {
@@ -214,12 +221,58 @@ enum ProductAnalytics {
         recordDebugBuffer(name: name, error: nil)
 
         Task {
-            do {
-                try await client.from("analytics_events").insert(row).execute()
-            } catch {
-                osLog.error("analytics_events insert failed: \(error.localizedDescription, privacy: .public)")
-                recordDebugBuffer(name: name, error: error.localizedDescription)
-            }
+            await insert(row, client: client, name: name)
+        }
+    }
+
+    /// Same as `track`, but waits for the insert. Use before sign-out so RLS still sees `auth.uid()`.
+    static func trackAwaitingInsert(
+        _ name: String,
+        userId: UUID?,
+        screenName: String? = nil,
+        properties: [String: String] = [:],
+        sessionOverride: UUID? = nil
+    ) async {
+        if userId == nil, !preAuthAllowlistedEventNames.contains(name) {
+#if DEBUG
+            osLog.warning("analytics: event \(name, privacy: .public) skipped pre-auth (not allowlisted)")
+#endif
+            return
+        }
+
+        guard let client = SupabaseProvider.client else { return }
+
+        sessionLock.lock()
+        let sessionId = sessionOverride ?? foregroundSessionId
+        sessionLock.unlock()
+
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+
+        let row = AnalyticsEventInsert(
+            userId: userId,
+            eventName: name,
+            properties: properties,
+            appVersion: version,
+            buildNumber: build,
+            platform: "ios",
+            source: "ios_client",
+            eventSchemaVersion: 1,
+            clientSessionId: clientSessionId,
+            sessionId: sessionId,
+            screenName: screenName
+        )
+
+        recordDebugBuffer(name: name, error: nil)
+        await insert(row, client: client, name: name)
+    }
+
+    private static func insert(_ row: AnalyticsEventInsert, client: SupabaseClient, name: String) async {
+        do {
+            try await client.from("analytics_events").insert(row).execute()
+        } catch {
+            osLog.error("analytics_events insert failed: \(error.localizedDescription, privacy: .public) event=\(name, privacy: .public)")
+            recordDebugBuffer(name: name, error: error.localizedDescription)
         }
     }
 

@@ -2,7 +2,7 @@
 //  FitUpAppChrome.swift
 //  FitUp
 //
-//  Sticky top bar (FIT UP · alerts · messages · new battle) shared across main tabs and full-screen flows.
+//  Sticky top bar (FIT OFF · alerts · messages · new battle) shared across main tabs and full-screen flows.
 //
 
 import SwiftUI
@@ -23,7 +23,7 @@ struct FitUpBrandMark: View {
                         endPoint: .trailing
                     )
                 )
-            Text("UP")
+            Text("OFF")
                 .font(FitUpFont.display(fontSize, weight: .black))
                 .foregroundStyle(
                     LinearGradient(
@@ -34,7 +34,7 @@ struct FitUpBrandMark: View {
                 )
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("FitUp")
+        .accessibilityLabel("FitOff")
     }
 }
 
@@ -98,11 +98,12 @@ struct FitUpAppTopBar: View {
     private var notificationsButton: some View {
         Button(action: onNotifications) {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: "bell.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(FitUpColors.Text.secondary)
-                    .frame(width: 36, height: 36)
-                    .homeLiquidGlassCard(.base)
+                NeonHeaderIconChip(
+                    systemName: "bell.fill",
+                    iconSize: 16,
+                    accent: FitUpColors.Neon.cyan,
+                    isActive: notificationService.unreadInboxCount > 0
+                )
 
                 if notificationService.unreadInboxCount > 0 {
                     Circle()
@@ -123,11 +124,12 @@ struct FitUpAppTopBar: View {
     private var messagesButton: some View {
         Button(action: onMessages) {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: "bubble.left.and.text.bubble.right")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(unreadMessageCount > 0 ? FitUpColors.Neon.cyan : FitUpColors.Text.secondary)
-                    .frame(width: 36, height: 36)
-                    .homeLiquidGlassCard(.base)
+                NeonHeaderIconChip(
+                    systemName: "bubble.left.and.text.bubble.right",
+                    iconSize: 15,
+                    accent: FitUpColors.Neon.blue,
+                    isActive: unreadMessageCount > 0
+                )
 
                 if unreadMessageCount > 0 {
                     Text(unreadMessageCount > 9 ? "9+" : "\(unreadMessageCount)")
@@ -150,18 +152,80 @@ struct FitUpAppTopBar: View {
 
     private var newBattleButton: some View {
         Button(action: onNewBattle) {
-            Image(systemName: "plus")
-                .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(FitUpColors.Neon.cyan)
-                .frame(width: 36, height: 36)
-                .background(
-                    Circle()
-                        .fill(FitUpColors.Neon.cyan.opacity(0.14))
-                        .overlay(Circle().strokeBorder(FitUpColors.Neon.cyan.opacity(0.28), lineWidth: 1))
-                )
+            NeonHeaderIconChip(
+                systemName: "plus",
+                iconSize: 17,
+                weight: .bold,
+                accent: FitUpColors.Neon.cyan,
+                isActive: true
+            )
         }
         .buttonStyle(.plain)
         .accessibilityLabel("New battle")
+    }
+}
+
+/// Dark neon chip for the sticky header icons — tinted wash and a blended border, not flat gray glass.
+private struct NeonHeaderIconChip: View {
+    var systemName: String
+    var iconSize: CGFloat
+    var weight: Font.Weight = .semibold
+    var accent: Color
+    var isActive: Bool = false
+
+    private var iconColor: Color {
+        isActive ? accent : Color(red: 0.78, green: 0.88, blue: 1.0)
+    }
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: iconSize, weight: weight))
+            .foregroundStyle(iconColor)
+            .shadow(color: accent.opacity(isActive ? 0.55 : 0.28), radius: isActive ? 5 : 3)
+            .frame(width: 36, height: 36)
+            .background { chipBackground }
+    }
+
+    private var chipBackground: some View {
+        Circle()
+            .fill(Color(rgb: 0x0A1020).opacity(0.72))
+            .background { Circle().fill(.ultraThinMaterial) }
+            .overlay {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                accent.opacity(isActive ? 0.28 : 0.16),
+                                FitUpColors.Neon.purple.opacity(0.08),
+                                Color.clear,
+                            ],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 22
+                        )
+                    )
+            }
+            .overlay {
+                Circle()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                accent.opacity(isActive ? 0.78 : 0.52),
+                                FitUpColors.Neon.blue.opacity(0.24),
+                                FitUpColors.Neon.purple.opacity(isActive ? 0.48 : 0.30),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+            .overlay {
+                Circle()
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.6)
+                    .padding(1.2)
+            }
+            .shadow(color: accent.opacity(isActive ? 0.28 : 0.14), radius: 6, y: 1)
     }
 }
 
@@ -238,7 +302,11 @@ struct FitUpAppChromeContainer<Content: View>: View {
             scheduleInboxAutoRead()
         }
         .onDisappear {
-            markReadTask?.cancel()
+            if isNotificationInboxVisible {
+                markInboxSeen()
+            } else {
+                markReadTask?.cancel()
+            }
         }
     }
 
@@ -294,7 +362,7 @@ struct FitUpAppChromeContainer<Content: View>: View {
         if isNotificationInboxVisible {
             scheduleInboxAutoRead()
         } else {
-            markReadTask?.cancel()
+            markInboxSeen()
         }
     }
 
@@ -302,7 +370,16 @@ struct FitUpAppChromeContainer<Content: View>: View {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.87)) {
             isNotificationInboxVisible = false
         }
+        markInboxSeen()
+    }
+
+    /// Closing the panel (bell tap, outside tap, or leaving the screen) treats the inbox as seen.
+    private func markInboxSeen() {
         markReadTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.32)) {
+            notificationService.markAllInboxItemsRead()
+        }
+        recapCardsInInbox = []
     }
 
     private func scheduleInboxAutoRead() {

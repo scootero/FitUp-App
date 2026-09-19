@@ -8,10 +8,6 @@
 
 import SwiftUI
 
-private enum ProfileSupportLinks {
-    static let privacyPolicyURL = "https://scootero.github.io/FitUp-App/privacy/"
-}
-
 struct ProfileView: View {
     let profile: Profile?
     var onSignOut: () -> Void
@@ -22,10 +18,10 @@ struct ProfileView: View {
     @StateObject private var viewModel = ProfileViewModel()
     @ObservedObject private var subscriptionService = SubscriptionService.shared
 
-    @AppStorage("firstMatchWon") private var firstMatchWon = false
-
     // Paywall sheet presented from "Manage Plan" / Upgrade rows.
     @State private var showPaywall = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var proCardIsGlowing = false
 
     @State private var showEditDisplayName = false
     @State private var editDisplayNameDraft = ""
@@ -35,27 +31,36 @@ struct ProfileView: View {
     @State private var showEditDailyStepGoal = false
     @State private var displayedDailyStepGoal: Int = ReadinessGoals.loadFromUserDefaults().stepsGoal
 
-    @AppStorage(DevMode.userDefaultsKey) private var devMode = false
-
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    titleHeader
-                    heroCard
-                    upgradeBannerIfNeeded
-                    accountGroup
-                    subscriptionGroup
-                    healthDataInfoGroup
-                    devSection
-                    signOutRow
+            ZStack {
+                // Profile owns an opaque dark canvas so it remains legible when iOS is in Light Mode.
+                FitUpColors.Bg.base
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        titleHeader
+                        heroCard
+                        fitOffProCard
+                        accountGroup
+                        subscriptionGroup
+                        healthDataInfoGroup
+                        // App Store delivery: developer tools stay commented out so Profile looks production-ready.
+                        // Uncomment `devSection` (and the block inside it) to restore local Debug tools.
+                        // devSection
+                        signOutRow
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    // Extra clearance so Sign Out rests above the floating tab bar.
+                    .padding(.bottom, 80)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 40)
             }
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .task {
                 await viewModel.load(profile: profile)
+                await subscriptionService.refresh()
                 syncDisplayedDailyStepGoal()
             }
             .sheet(isPresented: $showPaywall) {
@@ -153,27 +158,90 @@ struct ProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: FitUpRadius.sm))
     }
 
-    // MARK: - Upgrade banner
+    // MARK: - FitOff Pro card
 
-    @ViewBuilder
-    private var upgradeBannerIfNeeded: some View {
-        if !subscriptionService.isPremium && firstMatchWon {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Ready to go Pro?")
-                        .font(FitUpFont.body(14, weight: .bold))
-                        .foregroundStyle(FitUpColors.Text.primary)
-                    Text("Unlimited matches, streak bonuses & more.")
-                        .font(FitUpFont.body(12))
-                        .foregroundStyle(FitUpColors.Text.secondary)
+    private var fitOffProCard: some View {
+        VStack(spacing: 14) {
+            Button { showPaywall = true } label: {
+                VStack(spacing: 9) {
+                    Image(systemName: subscriptionService.isPremium ? "checkmark.seal.fill" : "crown.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(subscriptionService.isPremium ? FitUpColors.Neon.green : FitUpColors.Neon.yellow)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            (subscriptionService.isPremium ? FitUpColors.Neon.green : FitUpColors.Neon.yellow)
+                                .opacity(0.14),
+                            in: Circle()
+                        )
+                        .scaleEffect(proCardIsGlowing ? 1.06 : 1)
+
+                    Text(SubscriptionConfig.displayName)
+                        .font(FitUpFont.display(27, weight: .black))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.orange],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+
+                    if subscriptionService.isPremium {
+                        NeonBadge(label: "ACTIVE", color: FitUpColors.Neon.green)
+                    }
                 }
-                Spacer()
-                Button("Upgrade") { showPaywall = true }
-                    .solidButton(color: FitUpColors.Neon.cyan)
+                .frame(maxWidth: .infinity)
             }
-            .padding(16)
-            .glassCard(.pending)
+            .buttonStyle(.plain)
+
+            Text("Run as many battles at once as you want.")
+                .font(FitUpFont.body(14, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(FitUpColors.Text.primary)
+
+            Button("See all benefits") { showPaywall = true }
+                .font(FitUpFont.body(12, weight: .semibold))
+                .foregroundStyle(FitUpColors.Neon.cyan)
+                .underline()
+
+            Text("\(profileProPriceText). Cancel anytime.")
+                .font(FitUpFont.body(12, weight: .semibold))
+                .foregroundStyle(FitUpColors.Text.secondary)
+
+            Button(subscriptionService.isPremium ? "View Plan" : "Continue") {
+                showPaywall = true
+            }
+            .solidButton(color: FitUpColors.Neon.cyan)
         }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                .fill(GlassCardVariant.base.fillGradient)
+                .overlay {
+                    RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [FitUpColors.Neon.cyan.opacity(0.9), FitUpColors.Neon.orange.opacity(0.75)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.4
+                        )
+                }
+        )
+        .shadow(color: FitUpColors.Neon.cyan.opacity(0.22), radius: 14, y: 6)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
+                proCardIsGlowing = true
+            }
+        }
+    }
+
+    private var profileProPriceText: String {
+        guard let price = subscriptionService.monthlyDisplayPrice else {
+            return SubscriptionConfig.monthlyPriceFallback
+        }
+        return "\(price)/month"
     }
 
     // MARK: - ACCOUNT group
@@ -252,6 +320,33 @@ struct ProfileView: View {
                 }
             }
             .buttonStyle(.plain)
+            NavigationLink {
+                BlockedUsersView()
+            } label: {
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.07))
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "hand.raised")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(FitUpColors.Text.secondary)
+                        }
+                        Text("Blocked Users")
+                            .font(FitUpFont.body(14))
+                            .foregroundStyle(FitUpColors.Text.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Text.tertiary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 13)
+                    Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1).padding(.leading, 54)
+                }
+            }
+            .buttonStyle(.plain)
             SettingsRowView(
                 sfSymbol: "bubble.left.and.bubble.right",
                 label: "Send feedback",
@@ -271,7 +366,7 @@ struct ProfileView: View {
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(FitUpColors.Text.secondary)
                         }
-                        Text("Live Activities & Notifications")
+                        Text(NotificationPreferences.isLiveActivitiesFeatureAvailable ? "Live Activities & Notifications" : "Notifications")
                             .font(FitUpFont.body(14))
                             .foregroundStyle(FitUpColors.Text.primary)
                         Spacer()
@@ -294,9 +389,7 @@ struct ProfileView: View {
                 label: "Privacy",
                 showSeparator: true,
                 action: .chevron {
-                    if let url = URL(string: ProfileSupportLinks.privacyPolicyURL) {
-                        openURL(url)
-                    }
+                    openURL(LegalLinks.privacy)
                 }
             )
             NavigationLink {
@@ -312,9 +405,15 @@ struct ProfileView: View {
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(FitUpColors.Text.secondary)
                         }
-                        Text("Account Deletion")
-                            .font(FitUpFont.body(14))
-                            .foregroundStyle(FitUpColors.Text.primary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Delete Account")
+                                .font(FitUpFont.body(14))
+                                .foregroundStyle(FitUpColors.Neon.pink)
+                            Text("Permanently delete your FitOff account and associated data.")
+                                .font(FitUpFont.body(11))
+                                .foregroundStyle(FitUpColors.Text.secondary)
+                                .lineLimit(2)
+                        }
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
@@ -336,7 +435,7 @@ struct ProfileView: View {
             if subscriptionService.isPremium {
                 SettingsRowView(
                     sfSymbol: "crown",
-                    label: "FitUp Pro · Active",
+                    label: "FitOff Pro · Active",
                     showSeparator: true,
                     action: .badge("PRO", FitUpColors.Neon.yellow)
                 )
@@ -398,70 +497,76 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - Developer section (Debug builds + TestFlight bypass)
-
-    @ViewBuilder
-    private var devSection: some View {
-        if DevMode.isAvailable {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsGroupView(title: "DEVELOPER") {
-                    if DevMode.isTestFlightBypassBuild {
-                        SettingsRowView(
-                            sfSymbol: "airplane",
-                            label: "TestFlight Dev Mode",
-                            detail: "On",
-                            showSeparator: false,
-                            action: .badge("BETA", FitUpColors.Neon.green)
-                        )
-                    } else {
-                        SettingsRowView(
-                            sfSymbol: "chevron.left.forwardslash.chevron.right",
-                            label: "Dev Mode",
-                            showSeparator: false,
-                            action: .toggle($devMode)
-                        )
-                    }
-                }
-
-                if DevMode.isActive {
-                    Text(devModeStatusLine)
-                        .font(FitUpFont.body(11, weight: .medium))
-                        .foregroundStyle(FitUpColors.Neon.green)
-                        .padding(.top, 6)
-                        .padding(.leading, 4)
-                        .padding(.bottom, 4)
-
-                    NavigationLink {
-                        AnalyticsDebugView()
-                    } label: {
-                        HStack {
-                            Text("Analytics (recent events)")
-                                .font(FitUpFont.body(14, weight: .medium))
-                                .foregroundStyle(FitUpColors.Text.primary)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(FitUpColors.Text.tertiary)
-                        }
-                        .padding(14)
-                        .glassCard(.base)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 8)
-
-                    LogViewerView(viewModel: viewModel, profile: profile)
-                        .padding(.top, 8)
-                }
-            }
-        }
-    }
-
-    private var devModeStatusLine: String {
-        if DevMode.isTestFlightBypassBuild {
-            return "TestFlight beta · Paywall bypassed · Premium active"
-        }
-        return "Paywall bypassed · Premium tier active"
-    }
+    // MARK: - Developer section (Debug builds only)
+    //
+    // Commented out for App Store delivery so Profile does not show local-only tools.
+    // To bring them back on a Debug build, uncomment this whole block and the
+    // `devSection` call in `body`.
+    //
+    // @ViewBuilder
+    // private var devSection: some View {
+    //     #if DEBUG
+    //     VStack(alignment: .leading, spacing: 0) {
+    //         SettingsGroupView(title: "DEVELOPER") {
+    //             VStack(alignment: .leading, spacing: 10) {
+    //                 Text("Subscription Access")
+    //                     .font(FitUpFont.body(13, weight: .semibold))
+    //                     .foregroundStyle(FitUpColors.Text.secondary)
+    //
+    //                 Picker("Subscription Access", selection: $subscriptionService.debugMode) {
+    //                     ForEach(DebugSubscriptionMode.allCases) { mode in
+    //                         Text(mode.title).tag(mode)
+    //                     }
+    //                 }
+    //                 .pickerStyle(.segmented)
+    //
+    //                 Text(debugSubscriptionStatusLine)
+    //                     .font(FitUpFont.body(11, weight: .medium))
+    //                     .foregroundStyle(FitUpColors.Neon.green)
+    //             }
+    //             .padding(.horizontal, 14)
+    //             .padding(.vertical, 12)
+    //         }
+    //
+    //         NavigationLink {
+    //             AnalyticsDebugView()
+    //         } label: {
+    //             HStack {
+    //                 Text("Analytics (recent events)")
+    //                     .font(FitUpFont.body(14, weight: .medium))
+    //                     .foregroundStyle(FitUpColors.Text.primary)
+    //                 Spacer()
+    //                 Image(systemName: "chevron.right")
+    //                     .font(.system(size: 13, weight: .semibold))
+    //                     .foregroundStyle(FitUpColors.Text.tertiary)
+    //             }
+    //             .padding(14)
+    //             .glassCard(.base)
+    //         }
+    //         .buttonStyle(.plain)
+    //         .padding(.top, 8)
+    //         .padding(.bottom, 8)
+    //
+    //         LogViewerView(viewModel: viewModel, profile: profile)
+    //             .padding(.top, 8)
+    //     }
+    //     #endif
+    // }
+    //
+    // #if DEBUG
+    // private var debugSubscriptionStatusLine: String {
+    //     switch subscriptionService.debugMode {
+    //     case .pro:
+    //         return "Debug Pro · feature access forced on · StoreKit still runs"
+    //     case .free:
+    //         return "Debug Free · feature access forced off · StoreKit still runs"
+    //     case .system:
+    //         return subscriptionService.isSubscribed
+    //             ? "Debug System · following StoreKit · Pro active"
+    //             : "Debug System · following StoreKit · Free"
+    //     }
+    // }
+    // #endif
 
     // MARK: - Sign Out row
 
@@ -489,7 +594,7 @@ struct ProfileView: View {
     private var editDisplayNameSheet: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Text("This is how other players see you. Sign in with Apple only shares your name the first time you authorize the app—if you see a placeholder like “FitUp …”, set your name here.")
+                Text("This is how other players see you. Sign in with Apple only shares your name the first time you authorize the app—if you see a placeholder like “FitOff …”, set your name here.")
                     .font(FitUpFont.body(13))
                     .foregroundStyle(FitUpColors.Text.secondary)
 

@@ -19,6 +19,7 @@ final class LiveActivityCoordinator {
 
     private var currentActivity: Activity<FitUpActivityAttributes>?
     private var pushTokenTask: Task<Void, Never>?
+    private var hasAppliedDisabledFeatureCleanup = false
 
     private init() {}
 
@@ -37,6 +38,10 @@ final class LiveActivityCoordinator {
         theirScore: Int,
         dayNumber: Int
     ) {
+        guard NotificationPreferences.isLiveActivitiesFeatureAvailable else {
+            disableFeatureIfNeeded()
+            return
+        }
         guard NotificationPreferences.isLiveActivitiesEnabled else {
             AppLogger.log(
                 category: "notifications",
@@ -101,6 +106,7 @@ final class LiveActivityCoordinator {
                 pushType: .token
             )
             currentActivity = activity
+            hasAppliedDisabledFeatureCleanup = false
             AppLogger.log(
                 category: "notifications",
                 level: .debug,
@@ -174,15 +180,44 @@ final class LiveActivityCoordinator {
 
     /// Ends the Live Activity and clears the stored push token.
     func endActivity() {
-        guard let activity = currentActivity else { return }
+        let systemActivities = Activity<FitUpActivityAttributes>.activities
+        var activities = systemActivities
+        if let currentActivity,
+           !activities.contains(where: { $0.id == currentActivity.id }) {
+            activities.append(currentActivity)
+        }
+        guard !activities.isEmpty else { return }
         pushTokenTask?.cancel()
         pushTokenTask = nil
         Task {
-            await activity.end(nil, dismissalPolicy: .immediate)
+            for activity in activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
             await ProfileRepository().updatePushTokens(liveActivityPushToken: "")
-            AppLogger.log(category: "notifications", level: .debug, message: "Live Activity ended")
+            AppLogger.log(category: "notifications", level: .debug, message: "Live Activities ended")
         }
         currentActivity = nil
+    }
+
+    /// Applies the temporary feature-off state once per app process.
+    func disableFeatureIfNeeded() {
+        guard !NotificationPreferences.isLiveActivitiesFeatureAvailable,
+              !hasAppliedDisabledFeatureCleanup else { return }
+        hasAppliedDisabledFeatureCleanup = true
+
+        let hasSystemActivity = !Activity<FitUpActivityAttributes>.activities.isEmpty
+        if hasSystemActivity || currentActivity != nil {
+            endActivity()
+        } else {
+            Task {
+                await ProfileRepository().updatePushTokens(liveActivityPushToken: "")
+            }
+        }
+        AppLogger.log(
+            category: "notifications",
+            level: .debug,
+            message: "Live Activities disabled by release feature switch"
+        )
     }
 
     // MARK: - Push token subscription

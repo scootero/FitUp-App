@@ -40,7 +40,13 @@ struct PeerProfileView: View {
                                 .foregroundStyle(FitUpColors.Neon.pink)
                         }
 
-                        if peerId == viewer.id {
+                        if DeletedPlayer.matches(peerId) {
+                            Text("This account was deleted. Profile, friend, message, and challenge controls are unavailable.")
+                                .font(FitUpFont.body(14, weight: .medium))
+                                .foregroundStyle(FitUpColors.Text.secondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.top, 40)
+                        } else if peerId == viewer.id {
                             Text("This is you.")
                                 .font(FitUpFont.body(14, weight: .medium))
                                 .foregroundStyle(FitUpColors.Text.secondary)
@@ -139,7 +145,7 @@ struct PeerProfileView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
 
-            Text("FitUp competitor")
+            Text("FitOff competitor")
                 .font(FitUpFont.body(12))
                 .foregroundStyle(FitUpColors.Text.secondary)
         }
@@ -272,6 +278,10 @@ struct PeerProfileView: View {
     }
 
     private func load() async {
+        if DeletedPlayer.matches(peerId) {
+            isLoading = false
+            return
+        }
         isLoading = true
         errorMessage = nil
 

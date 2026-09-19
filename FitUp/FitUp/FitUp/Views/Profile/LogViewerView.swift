@@ -4,7 +4,7 @@
 //
 //  Slice 14 — Dev Tools log viewer: monospace green log lines, time-range + level filters,
 //  JSON export via ShareLink.
-//  Only rendered when Dev Mode is active (caller guards via DevMode.isActive).
+//  Only rendered from the Debug Developer section in Profile.
 //
 
 import SwiftUI
@@ -147,7 +147,7 @@ struct LogViewerView: View {
         let text = String(data: json, encoding: .utf8) ?? "[]"
         return ShareLink(
             item: text,
-            preview: SharePreview("FitUp Logs")
+            preview: SharePreview("FitOff Logs")
         ) {
             Text("Export")
                 .font(FitUpFont.body(12, weight: .semibold))

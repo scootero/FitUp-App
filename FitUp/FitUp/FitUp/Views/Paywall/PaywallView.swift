@@ -3,8 +3,7 @@
 //  FitUp
 //
 //  Slice 13 — Full paywall sheet backed by native StoreKit 2.
-//  Annual plan is shown first (prominent, gold glass).
-//  Monthly plan below (base glass).
+//  Monthly FitOff Pro only.
 //
 
 import Combine
@@ -14,210 +13,264 @@ struct PaywallView: View {
     var onDismiss: () -> Void
 
     @EnvironmentObject private var sessionStore: SessionStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var vm = PaywallViewModel()
+    @ObservedObject private var subscriptionService = SubscriptionService.shared
+    @State private var hasAppeared = false
+    @State private var isBreathing = false
 
     var body: some View {
-        ZStack {
-            BackgroundGradientView()
+        NavigationStack {
+            ZStack {
+                BackgroundGradientView()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    headerSection
-                    featuresList
-                    plansSection
-                    restoreButton
-                    dismissButton
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        headerSection
+                        featuresList
+                        purchaseArea
+                        legalFooter
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 12)
+                    .padding(.bottom, 32)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 28)
-                .padding(.bottom, 40)
             }
-        }
-        .task {
-            await vm.load()
-        }
-        .onAppear {
-            ProductAnalytics.track(
-                ProductAnalytics.Event.subscriptionScreenViewed,
-                userId: sessionStore.currentProfile?.id
-            )
-        }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .alert("Something went wrong", isPresented: $vm.showError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(vm.errorMessage ?? "Please try again.")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { onDismiss() }
+                }
+            }
+            .task {
+                await vm.load()
+            }
+            .onAppear {
+                ProductAnalytics.track(
+                    ProductAnalytics.Event.subscriptionScreenViewed,
+                    userId: sessionStore.currentProfile?.id
+                )
+                hasAppeared = reduceMotion
+                guard !reduceMotion else { return }
+                withAnimation(.easeOut(duration: 0.5)) { hasAppeared = true }
+                withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: true)) {
+                    isBreathing = true
+                }
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .alert("Something went wrong", isPresented: $vm.showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(vm.errorMessage ?? "Please try again.")
+            }
         }
     }
 
     // MARK: - Header
 
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Upgrade to")
-                .font(FitUpFont.body(15, weight: .semibold))
+        VStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .stroke(FitUpColors.Neon.cyan.opacity(0.35), lineWidth: 1.5)
+                    .frame(width: 74, height: 74)
+                    .scaleEffect(isBreathing ? 1.14 : 0.94)
+                    .opacity(isBreathing ? 0.2 : 0.75)
+                Circle()
+                    .stroke(FitUpColors.Neon.orange.opacity(0.38), lineWidth: 1)
+                    .frame(width: 58, height: 58)
+                    .scaleEffect(isBreathing ? 0.92 : 1.08)
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 25, weight: .black))
+                    .foregroundStyle(FitUpColors.Neon.yellow)
+                    .shadow(color: FitUpColors.Neon.yellow.opacity(0.5), radius: 10)
+            }
+            .accessibilityHidden(true)
+
+            Text(SubscriptionConfig.displayName)
+                .font(FitUpFont.display(34, weight: .black))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [FitUpColors.Neon.cyan, FitUpColors.Neon.orange],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .accessibilityAddTraits(.isHeader)
+
+            Text("More battles. More rivals. No open-match limit.")
+                .font(FitUpFont.body(13, weight: .medium))
+                .multilineTextAlignment(.center)
                 .foregroundStyle(FitUpColors.Text.secondary)
 
-            Text("FitUp Pro")
-                .font(FitUpFont.display(32, weight: .black))
-                .foregroundStyle(FitUpColors.Text.primary)
-
-            Text("Compete without limits.")
-                .font(FitUpFont.body(14, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.secondary)
+            Text("\(vm.monthlyPriceLine). Cancel anytime.")
+                .font(FitUpFont.body(13, weight: .semibold))
+                .foregroundStyle(FitUpColors.Neon.cyan)
         }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Feature bullets
 
     private var featuresList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            FeatureBullet(icon: "infinity", text: "Unlimited simultaneous matches")
-            FeatureBullet(icon: "chart.bar.fill", text: "Live leaderboard & streak bonuses")
-            FeatureBullet(icon: "bolt.fill", text: "Priority matchmaking & detailed stats")
-        }
+        ProFeatureCard(
+            icon: "infinity",
+            title: "Unlimited Simultaneous Matches",
+            detail: "Keep more than one searching, pending, or active battle open at the same time.",
+            tint: FitUpColors.Neon.cyan,
+            isVisible: hasAppeared || reduceMotion,
+            isBreathing: isBreathing && !reduceMotion
+        )
     }
 
-    // MARK: - Plans
+    // MARK: - Purchase
 
-    private var plansSection: some View {
+    @ViewBuilder
+    private var purchaseArea: some View {
         VStack(spacing: 12) {
-            annualCard
-            monthlyCard
-        }
-    }
-
-    private var annualCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                NeonBadge(label: "BEST VALUE", color: FitUpColors.Neon.yellow)
-                Spacer()
-                NeonBadge(label: "SAVE 58%", color: FitUpColors.Neon.yellow)
-            }
-
-            Text(vm.annualPriceString)
-                .font(FitUpFont.display(26, weight: .black))
-                .foregroundStyle(FitUpColors.Neon.yellow)
-
-            Text("per year · billed annually")
-                .font(FitUpFont.body(12, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.secondary)
-
-            Button {
-                Task {
-                    let pid = sessionStore.currentProfile?.id
-                    await vm.purchaseAnnual(profileId: pid)
-                    if vm.didPurchase { onDismiss() }
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    if vm.isPurchasingAnnual {
-                        ProgressView()
-                            .tint(Color.black)
-                            .scaleEffect(0.85)
-                    }
-                    Text(vm.isPurchasingAnnual ? "Processing…" : "Subscribe Annually")
-                        .font(FitUpFont.body(15, weight: .heavy))
+            if subscriptionService.isPremium {
+                Label("FitOff Pro is active", systemImage: "checkmark.seal.fill")
+                    .font(FitUpFont.body(17, weight: .bold))
+                    .foregroundStyle(FitUpColors.Neon.green)
+                    .frame(maxWidth: .infinity)
+                    .padding(18)
+                    .glassCard(.win)
+            } else if subscriptionService.isLoadingProducts {
+                HStack(spacing: 10) {
+                    ProgressView().tint(FitUpColors.Neon.cyan)
+                    Text("Loading FitOff Pro…")
+                        .font(FitUpFont.body(16, weight: .bold))
+                        .foregroundStyle(FitUpColors.Text.primary)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .padding(18)
+                .glassCard(.base)
+            } else {
+                VStack(spacing: 10) {
+                    Button {
+                        Task {
+                            let pid = sessionStore.currentProfile?.id
+                            await vm.purchaseMonthly(profileId: pid)
+                            if vm.didPurchase { onDismiss() }
+                        }
+                    } label: {
+                        HStack(spacing: 9) {
+                            Image(systemName: "crown.fill")
+                            if vm.isPurchasingMonthly {
+                                ProgressView()
+                                    .tint(Color.black)
+                                    .scaleEffect(0.85)
+                            }
+                            VStack(spacing: 2) {
+                                Text(vm.isPurchasingMonthly ? "Processing…" : "Subscribe to FitOff Pro")
+                                    .font(FitUpFont.body(17, weight: .heavy))
+                                if vm.hasMonthlyProduct {
+                                    Text(vm.monthlyPriceLine)
+                                        .font(FitUpFont.body(12, weight: .bold))
+                                }
+                            }
+                            Image(systemName: "crown.fill")
+                        }
+                        .foregroundStyle(Color.black)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .solidButton(color: FitUpColors.Neon.cyan)
+                    .disabled(!vm.hasMonthlyProduct || vm.isPurchasingMonthly || vm.isRestoring)
+
+                    if vm.hasMonthlyProduct {
+                        Text("\(vm.monthlyPriceLine), auto-renewing unless cancelled at least 24 hours before renewal.")
+                            .font(FitUpFont.body(11, weight: .medium))
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                    } else {
+                        Text("The monthly plan is unavailable right now. Try again in a moment.")
+                            .font(FitUpFont.body(12, weight: .medium))
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(FitUpColors.Text.secondary)
+                        Button("Try Again") { Task { await vm.load() } }
+                            .font(FitUpFont.body(13, weight: .semibold))
+                            .foregroundStyle(FitUpColors.Neon.cyan)
+                    }
+                }
             }
-            .solidButton(color: FitUpColors.Neon.cyan)
-            .disabled(vm.isPurchasingAnnual || vm.isPurchasingMonthly || vm.isRestoring)
-            .padding(.top, 6)
-        }
-        .padding(16)
-        .glassCard(.gold)
-    }
-
-    private var monthlyCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(vm.monthlyPriceString)
-                .font(FitUpFont.display(20, weight: .black))
-                .foregroundStyle(FitUpColors.Text.primary)
-
-            Text("per month · billed monthly")
-                .font(FitUpFont.body(12, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.secondary)
 
             Button {
                 Task {
                     let pid = sessionStore.currentProfile?.id
-                    await vm.purchaseMonthly(profileId: pid)
+                    await vm.restore(profileId: pid)
                     if vm.didPurchase { onDismiss() }
                 }
             } label: {
-                HStack(spacing: 8) {
-                    if vm.isPurchasingMonthly {
+                HStack(spacing: 6) {
+                    if vm.isRestoring {
                         ProgressView()
                             .tint(FitUpColors.Neon.cyan)
-                            .scaleEffect(0.85)
+                            .scaleEffect(0.75)
                     }
-                    Text(vm.isPurchasingMonthly ? "Processing…" : "Subscribe Monthly")
-                        .font(FitUpFont.body(15, weight: .heavy))
+                    Text(vm.isRestoring ? "Restoring…" : "Restore Purchases")
+                        .font(FitUpFont.body(13, weight: .semibold))
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .foregroundStyle(FitUpColors.Neon.cyan)
+                .frame(maxWidth: .infinity, minHeight: 44)
             }
-            .ghostButton(color: FitUpColors.Neon.cyan)
-            .disabled(vm.isPurchasingAnnual || vm.isPurchasingMonthly || vm.isRestoring)
-            .padding(.top, 6)
+            .disabled(vm.isRestoring || vm.isPurchasingMonthly)
         }
-        .padding(16)
-        .glassCard(.base)
     }
 
-    // MARK: - Footer actions
-
-    private var restoreButton: some View {
-        Button {
-            Task {
-                let pid = sessionStore.currentProfile?.id
-                await vm.restore(profileId: pid)
-                if vm.didPurchase { onDismiss() }
+    private var legalFooter: some View {
+        VStack(spacing: 7) {
+            HStack(spacing: 16) {
+                Link("Privacy", destination: LegalLinks.privacy)
+                Link("Apple EULA", destination: LegalLinks.standardEULA)
             }
-        } label: {
-            HStack(spacing: 6) {
-                if vm.isRestoring {
-                    ProgressView()
-                        .tint(FitUpColors.Neon.cyan)
-                        .scaleEffect(0.75)
-                }
-                Text(vm.isRestoring ? "Restoring…" : "Restore Purchases")
-                    .font(FitUpFont.body(13, weight: .semibold))
-            }
-            .foregroundStyle(FitUpColors.Neon.cyan)
-            .frame(maxWidth: .infinity)
+            Text("Payment is charged to your Apple ID after confirmation. Manage or cancel in your Apple account settings.")
+                .multilineTextAlignment(.center)
         }
-        .disabled(vm.isRestoring || vm.isPurchasingAnnual || vm.isPurchasingMonthly)
-    }
-
-    private var dismissButton: some View {
-        Button("Not now") { onDismiss() }
-            .font(FitUpFont.body(13, weight: .medium))
-            .foregroundStyle(FitUpColors.Text.tertiary)
-            .frame(maxWidth: .infinity)
+        .font(FitUpFont.body(11, weight: .medium))
+        .foregroundStyle(FitUpColors.Text.tertiary)
+        .frame(maxWidth: .infinity)
     }
 }
 
-// MARK: - Feature bullet
+// MARK: - Feature card
 
-private struct FeatureBullet: View {
+private struct ProFeatureCard: View {
     let icon: String
-    let text: String
+    let title: String
+    let detail: String
+    let tint: Color
+    let isVisible: Bool
+    let isBreathing: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 13) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(FitUpColors.Neon.cyan)
-                .frame(width: 20)
-
-            Text(text)
-                .font(FitUpFont.body(14, weight: .medium))
-                .foregroundStyle(FitUpColors.Text.primary)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(tint)
+                .frame(width: 36, height: 36)
+                .background(tint.opacity(0.14), in: Circle())
+                .scaleEffect(isBreathing ? 1.05 : 1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(FitUpFont.body(14, weight: .bold))
+                    .foregroundStyle(FitUpColors.Text.primary)
+                Text(detail)
+                    .font(FitUpFont.body(12, weight: .medium))
+                    .foregroundStyle(FitUpColors.Text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
         }
+        .padding(14)
+        .glassCard(.base)
+        .overlay {
+            RoundedRectangle(cornerRadius: FitUpRadius.lg, style: .continuous)
+                .strokeBorder(tint.opacity(0.25), lineWidth: 1)
+        }
+        .opacity(isVisible ? 1 : 0)
+        .offset(y: isVisible ? 0 : 7)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -225,18 +278,19 @@ private struct FeatureBullet: View {
 
 @MainActor
 private final class PaywallViewModel: ObservableObject {
-    @Published var annualPriceString = SubscriptionConfig.annualPriceFallback
-    @Published var monthlyPriceString = SubscriptionConfig.monthlyPriceFallback
+    @Published var monthlyPriceString = SubscriptionConfig.unavailablePriceLabel
 
-    @Published var isPurchasingAnnual = false
     @Published var isPurchasingMonthly = false
     @Published var isRestoring = false
     @Published var didPurchase = false
     @Published var showError = false
     @Published var errorMessage: String?
+    @Published var hasMonthlyProduct = false
 
-    private var hasAnnualProduct = false
-    private var hasMonthlyProduct = false
+    var monthlyPriceLine: String {
+        guard hasMonthlyProduct else { return SubscriptionConfig.monthlyPriceFallback }
+        return "\(monthlyPriceString)/month"
+    }
 
     func load() async {
         let details = await SubscriptionService.shared.loadProducts()
@@ -244,47 +298,15 @@ private final class PaywallViewModel: ObservableObject {
             monthlyPriceString = monthly
             hasMonthlyProduct = true
         } else {
-            monthlyPriceString = SubscriptionService.shared.monthlyPriceString
+            monthlyPriceString = SubscriptionConfig.unavailablePriceLabel
             hasMonthlyProduct = false
         }
-        if let annual = details?.annualDisplayPrice {
-            annualPriceString = annual
-            hasAnnualProduct = true
-        } else {
-            annualPriceString = SubscriptionService.shared.annualPriceString
-            hasAnnualProduct = false
-        }
-    }
-
-    func purchaseAnnual(profileId: UUID?) async {
-        if !hasAnnualProduct {
-            await load()
-            guard SubscriptionService.shared.productDetails?.annualDisplayPrice != nil else {
-                showError = true
-                errorMessage = "Annual plan not available right now."
-                return
-            }
-            hasAnnualProduct = true
-        }
-
-        isPurchasingAnnual = true
-        defer { isPurchasingAnnual = false }
-        if let profileId {
-            ProductAnalytics.track(
-                ProductAnalytics.Event.subscriptionPurchaseStarted,
-                userId: profileId,
-                properties: ["package": "annual"]
-            )
-        }
-
-        let state = await SubscriptionService.shared.purchase(plan: .annual)
-        handlePurchaseState(state, package: "annual", profileId: profileId)
     }
 
     func purchaseMonthly(profileId: UUID?) async {
         if !hasMonthlyProduct {
             await load()
-            guard SubscriptionService.shared.productDetails?.monthlyDisplayPrice != nil else {
+            guard SubscriptionService.shared.monthlyDisplayPrice != nil else {
                 showError = true
                 errorMessage = "Monthly plan not available right now."
                 return

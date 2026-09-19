@@ -19,11 +19,15 @@
   },
   "subscriptionGroups" : [
     {
-      "id" : "21500001",
+      "id" : "22390866",
       "localizations" : [
-
+        {
+          "description" : "Unlimited simultaneous matches.",
+          "displayName" : "FitOff Pro",
+          "locale" : "en_US"
+        }
       ],
-      "name" : "FitUp Pro",
+      "name" : "FitOff Pro",
       "subscriptions" : [
         {
           "adHocOffers" : [
@@ -32,50 +36,27 @@
           "codeOffers" : [
 
           ],
-          "displayPrice" : "4.99",
-          "familyShareable" : true,
+          "displayPrice" : "2.99",
+          "familyShareable" : false,
           "groupNumber" : 1,
-          "internalID" : "21500002",
+          "internalID" : "6812914365",
           "localizations" : [
             {
-              "description" : "Unlimited simultaneous matches, live leaderboard access, and priority matchmaking.",
-              "displayName" : "FitUp Pro Monthly",
+              "description" : "Unlimited simultaneous matches.",
+              "displayName" : "FitOff Pro",
               "locale" : "en_US"
             }
           ],
-          "productID" : "fitup_pro_monthly",
+          "productID" : "com.ScottOliver.FitUp.Monthly",
           "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "FitUp Pro Monthly",
-          "type" : "RecurringSubscription"
-        },
-        {
-          "adHocOffers" : [
-
-          ],
-          "codeOffers" : [
-
-          ],
-          "displayPrice" : "29.99",
-          "familyShareable" : true,
-          "groupNumber" : 2,
-          "internalID" : "21500003",
-          "localizations" : [
-            {
-              "description" : "Unlimited simultaneous matches, live leaderboard access, and priority matchmaking. Billed annually.",
-              "displayName" : "FitUp Pro Annual",
-              "locale" : "en_US"
-            }
-          ],
-          "productID" : "fitup_pro_annual",
-          "recurringSubscriptionPeriod" : "P1Y",
-          "referenceName" : "FitUp Pro Annual",
+          "referenceName" : "FitOff Pro Monthly",
           "type" : "RecurringSubscription"
         }
       ]
     }
   ],
   "version" : {
-    "major" : 3,
+    "major" : 4,
     "minor" : 0
   }
 }

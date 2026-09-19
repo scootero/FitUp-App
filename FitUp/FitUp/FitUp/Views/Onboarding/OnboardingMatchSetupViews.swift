@@ -257,9 +257,9 @@ struct OnboardingStartMatchView: View {
                     .foregroundStyle(FitUpColors.Text.primary)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("FitUp is a 1v1 steps competition app.")
+                    Text("FitOff is a 1v1 steps competition app.")
                     Text("Whoever has the most steps at the end of each day wins that day.")
-                    Text("FitUp is 1v1. You'll need another player in the queue. Turn on notifications so we can alert you when you're matched.")
+                    Text("FitOff is 1v1. You'll need another player in the queue. Turn on notifications so we can alert you when you're matched.")
                     Text("Your first match uses Balanced scoring so different activity levels can compete fairly.")
                 }
                 .font(FitUpFont.body(13, weight: .medium))

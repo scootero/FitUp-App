@@ -2,12 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key></key>
-	<string></string>
 	<key>FITUP_PAYWALL_LOGGING</key>
 	<string>$(FITUP_PAYWALL_LOGGING)</string>
-	<key>FITUP_TESTFLIGHT_BYPASS</key>
-	<string>$(FITUP_TESTFLIGHT_BYPASS)</string>
 	<key>SUPABASE_ANON_KEY</key>
 	<string>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV1c2hlamJpem1seHp4b25rdWtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NTQxMjEsImV4cCI6MjA5MDEzMDEyMX0.Ofoo1Kb8NaAaH2sECFen3U6aQ2QREoB_U2lqf3OKnWQ</string>
 	<key>SUPABASE_URL</key>

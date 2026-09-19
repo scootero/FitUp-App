@@ -9,7 +9,6 @@ import StoreKit
 
 struct SubscriptionProductDetails: Equatable, Sendable {
     let monthlyDisplayPrice: String?
-    let annualDisplayPrice: String?
 }
 
 enum SubscriptionPurchaseOutcome: Equatable, Sendable {
@@ -66,8 +65,7 @@ final class LiveSubscriptionStoreClient: SubscriptionStoreClient {
         )
 
         return SubscriptionProductDetails(
-            monthlyDisplayPrice: productsByID[SubscriptionConfig.monthlyProductID]?.displayPrice,
-            annualDisplayPrice: productsByID[SubscriptionConfig.annualProductID]?.displayPrice
+            monthlyDisplayPrice: productsByID[SubscriptionConfig.monthlyProductID]?.displayPrice
         )
     }
 

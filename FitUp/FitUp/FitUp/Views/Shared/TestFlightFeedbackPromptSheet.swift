@@ -14,12 +14,12 @@ struct TestFlightFeedbackPromptSheet: View {
     var body: some View {
         VStack(spacing: 20) {
             VStack(spacing: 8) {
-                Text("Enjoying FitUp?")
+                Text("Enjoying FitOff?")
                     .font(FitUpFont.display(18, weight: .heavy))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(FitUpColors.Text.primary)
 
-                Text("We'd love your feedback after trying FitUp for a bit.")
+                Text("We'd love your feedback after trying FitOff for a bit.")
                     .font(FitUpFont.body(14, weight: .medium))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(FitUpColors.Text.secondary)
